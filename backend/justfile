@@ -41,8 +41,12 @@ down:
     rm -f "{{pid_file}}"
 
 # Apply all pending migrations (needs `just infra up`)
-migrate:
+db-apply:
     cd "{{source_directory()}}" && GOOSE_DRIVER=postgres GOOSE_DBSTRING="{{db_url}}" GOOSE_MIGRATION_DIR=migrations go tool goose up
+
+# Roll back the most recently applied migration
+db-rollback:
+    cd "{{source_directory()}}" && GOOSE_DRIVER=postgres GOOSE_DBSTRING="{{db_url}}" GOOSE_MIGRATION_DIR=migrations go tool goose down
 
 # Show which migrations are applied
 migrate-status:
@@ -55,4 +59,4 @@ migrate-new name:
 # Wipe the public schema and re-apply every migration (test data is disposable)
 db-reset:
     docker compose -f "{{source_directory()}}/../docker-compose.yml" exec -T postgres psql -v ON_ERROR_STOP=1 -U {{pg_user}} -d {{pg_db}} -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
-    just --justfile "{{source_directory()}}/justfile" migrate
+    just --justfile "{{source_directory()}}/justfile" db-apply
