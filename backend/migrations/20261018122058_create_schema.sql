@@ -33,13 +33,6 @@ CREATE TABLE pickup_points (
     radius_m integer          NOT NULL DEFAULT 50 CHECK (radius_m > 0)
 );
 
--- Neihu Science Park boundary as an ordered polygon ring.
-CREATE TABLE park_boundary_points (
-    seq integer          PRIMARY KEY,
-    lat double precision NOT NULL,
-    lng double precision NOT NULL
-);
-
 -- Bus stops inside the park. stop_id is the open-data feed's stopLocationId.
 CREATE TABLE bus_stops (
     id      bigserial PRIMARY KEY,
@@ -242,7 +235,6 @@ DROP TABLE passenger_accepted_stops;
 DROP TABLE passenger_profiles;
 DROP TABLE driver_profiles;
 DROP TABLE bus_stops;
-DROP TABLE park_boundary_points;
 DROP TABLE pickup_points;
 DROP TABLE user_tags;
 DROP TABLE tags;
