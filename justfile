@@ -1,5 +1,9 @@
-hello:
-    @echo "hello world"
+mod backend
+mod infra
+
+# Print all available commands
+help:
+    @just --list --list-submodules
 
 # UI recipes: see ui/CLAUDE.md
 

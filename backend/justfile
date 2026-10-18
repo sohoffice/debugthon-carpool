@@ -1,0 +1,58 @@
+port := env_var_or_default("PORT", "8080")
+pg_db := env_var_or_default("POSTGRES_DB", "carpool")
+pg_user := env_var_or_default("POSTGRES_USER", "carpool")
+pg_password := env_var_or_default("POSTGRES_PASSWORD", "carpool")
+pg_port := env_var_or_default("POSTGRES_PORT", "5432")
+db_url := env_var_or_default("DATABASE_URL", "postgres://" + pg_user + ":" + pg_password + "@localhost:" + pg_port + "/" + pg_db + "?sslmode=disable")
+run_dir := source_directory() / ".run"
+pid_file := run_dir / "server.pid"
+log_file := run_dir / "server.log"
+
+# Build and launch the backend in the background
+up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{source_directory()}}"
+    if [ -f "{{pid_file}}" ] && kill -0 "$(cat "{{pid_file}}")" 2>/dev/null; then
+        echo "backend already running (pid $(cat "{{pid_file}}"))"
+        exit 0
+    fi
+    mkdir -p "{{run_dir}}"
+    go build -o "{{run_dir}}/server" ./cmd/server
+    PORT={{port}} nohup "{{run_dir}}/server" >"{{log_file}}" 2>&1 &
+    echo $! > "{{pid_file}}"
+    echo "backend started on :{{port}} (pid $!, log {{log_file}})"
+
+# Stop the backend started by `up`
+down:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -f "{{pid_file}}" ]; then
+        echo "backend not running"
+        exit 0
+    fi
+    pid=$(cat "{{pid_file}}")
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid"
+        echo "backend stopped (pid $pid)"
+    else
+        echo "backend not running (stale pid file)"
+    fi
+    rm -f "{{pid_file}}"
+
+# Apply all pending migrations (needs `just infra up`)
+migrate:
+    cd "{{source_directory()}}" && GOOSE_DRIVER=postgres GOOSE_DBSTRING="{{db_url}}" GOOSE_MIGRATION_DIR=migrations go tool goose up
+
+# Show which migrations are applied
+migrate-status:
+    cd "{{source_directory()}}" && GOOSE_DRIVER=postgres GOOSE_DBSTRING="{{db_url}}" GOOSE_MIGRATION_DIR=migrations go tool goose status
+
+# Create a new SQL migration, e.g. `just backend migrate-new create_trips`
+migrate-new name:
+    cd "{{source_directory()}}" && go tool goose -dir migrations create {{name}} sql
+
+# Wipe the public schema and re-apply every migration (test data is disposable)
+db-reset:
+    docker compose -f "{{source_directory()}}/../docker-compose.yml" exec -T postgres psql -v ON_ERROR_STOP=1 -U {{pg_user}} -d {{pg_db}} -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+    just --justfile "{{source_directory()}}/justfile" migrate
