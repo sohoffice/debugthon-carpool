@@ -82,8 +82,3 @@ ui/
 1. 複製 `passenger/` 為 `dashboard/`，在 `vite.config.ts` 把 port 改成 5175。
 2. 在 `ui/package.json` 的 `workspaces` 與 `ui/tsconfig.json` 的 `include` 加上 `"dashboard"`。
 3. 如果後端為儀表板提供獨立角色，在 `shared/src/api/client.ts` 的 `Role` 加上該角色。
-
-## 文件語言
-
-- 所有文件（CLAUDE.md、README、docs）一律以繁體中文（zh-TW）撰寫。
-- 程式碼註解一律使用英文。
