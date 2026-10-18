@@ -1,0 +1,9 @@
+/* Shared design tokens. Import after "tailwindcss" in each app's index.css. */
+@source "./";
+
+@theme {
+  --color-brand: #0f766e;
+  --color-brand-dark: #115e59;
+  --color-danger: #b91c1c;
+  --color-simulated: #a16207;
+}
