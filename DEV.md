@@ -27,8 +27,14 @@
 | --- | --- |
 | `just backend up` | 編譯後端並在背景啟動，預設監聽 `:8080`；若已在執行則不重複啟動 |
 | `just backend down` | 停止由 `up` 啟動的後端 |
+| `just backend migrate` | 套用尚未執行的資料庫遷移（需先 `just infra up`） |
+| `just backend migrate-status` | 顯示各遷移的套用狀態 |
+| `just backend migrate-new <名稱>` | 在 `backend/migrations/` 建立新的 SQL 遷移檔 |
+| `just backend db-reset` | 清空 `public` schema 並重新套用全部遷移（測試資料可隨時重建） |
 
 - 以環境變數 `PORT` 變更連接埠，例如 `PORT=9000 just backend up`。
+- 資料庫資料庫遷移使用 [goose](https://github.com/pressly/goose)，以 `go tool goose` 執行（版本鎖定於 `backend/go.mod`，無需另外安裝）。遷移檔為 `backend/migrations/` 下的 SQL，只寫 `-- +goose Up`；測試資料不需保留，改動後用 `just backend db-reset` 重建即可。
+- 連線字串預設由 `POSTGRES_*` 組成，也可直接設定 `DATABASE_URL` 覆寫。
 - 執行檔、pid 檔與日誌位於 `backend/.run/`（`server`、`server.pid`、`server.log`），此目錄已列入 `.gitignore`。
 
 ### 基礎設施
