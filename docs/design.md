@@ -29,6 +29,7 @@
    - [4.13 服務紀錄](#413-服務紀錄)
    - [4.14 系統設定](#414-系統設定)
    - [4.15 資料庫](#415-資料庫)
+     - [資料表關聯圖（ERD）](#資料表關聯圖erd)
    - [4.16 模擬器](#416-模擬器)
    - [4.17 PoC 不交付的元件](#417-poc-不交付的元件)
 5. [主要互動流程](#5-主要互動流程)
@@ -594,6 +595,160 @@ stateDiagram-v2
 **負責需求：** 無直接對應；支撐所有需求。
 
 **互動：** 後端各元件讀寫；SQL 腳本寫入預先準備的資料。
+
+#### 資料表關聯圖（ERD）
+
+資料表定義於 `backend/migrations/20261018122058_create_schema.sql`。圖中只列主鍵、外鍵與關鍵欄位，完整欄位以 migration 為準。
+
+```mermaid
+erDiagram
+    users ||--o{ user_tags : "選擇"
+    tags ||--o{ user_tags : ""
+    users ||--o| driver_profiles : "駕駛常用資料"
+    users ||--o| passenger_profiles : "乘客常用資料"
+    passenger_profiles ||--o{ passenger_accepted_stops : "可接受下車站"
+    bus_stops ||--o{ passenger_accepted_stops : ""
+    pickup_points ||--o{ driver_profiles : "常用上車點"
+
+    users ||--o{ trips : "駕駛"
+    pickup_points ||--o{ trips : "上車點"
+    trips ||--o{ trip_route_stops : "沿途公車站"
+    bus_stops ||--o{ trip_route_stops : ""
+    trips ||--o{ trip_tag_filters : "標籤篩選"
+    tags ||--o{ trip_tag_filters : ""
+
+    users ||--o{ location_reports : "回報位置"
+    trips |o--o{ location_reports : "行程中"
+
+    users ||--o{ ride_requests : "乘客"
+    pickup_points ||--o{ ride_requests : "上車點"
+    trips |o--o{ ride_requests : "分配到"
+    bus_stops |o--o{ ride_requests : "下車站"
+    ride_requests ||--o{ request_tag_filters : "標籤篩選"
+    tags ||--o{ request_tag_filters : ""
+    ride_requests ||--o{ request_candidates : "分配順序"
+    trips ||--o{ request_candidates : ""
+
+    ride_requests ||--o| service_records : "完成後建立"
+    trips ||--o{ service_records : ""
+    users ||--o{ service_records : "駕駛／乘客"
+
+    users {
+        bigint id PK
+        text username UK
+        boolean is_driver
+        boolean is_passenger
+    }
+    tags {
+        bigint id PK
+        text name UK
+        text issuer
+    }
+    user_tags {
+        bigint user_id PK, FK
+        bigint tag_id PK, FK
+    }
+    pickup_points {
+        bigint id PK
+        text name UK
+        double lat
+        double lng
+        int radius_m
+    }
+    park_boundary_points {
+        int seq PK
+        double lat
+        double lng
+    }
+    bus_stops {
+        bigint id PK
+        int stop_id UK
+        text name
+        double lat
+        double lng
+    }
+    driver_profiles {
+        bigint user_id PK, FK
+        bigint usual_pickup_point_id FK
+        int capacity
+    }
+    passenger_profiles {
+        bigint user_id PK, FK
+        time usual_arrival_time
+    }
+    passenger_accepted_stops {
+        bigint user_id PK, FK
+        bigint bus_stop_id PK, FK
+    }
+    trips {
+        bigint id PK
+        bigint driver_id FK
+        bigint pickup_point_id FK
+        int capacity
+        text status
+        boolean auto_accept
+        boolean settings_locked
+        int seats_held
+        int seats_confirmed
+        boolean passed_pickup
+        text route_polyline
+    }
+    trip_route_stops {
+        bigint trip_id PK, FK
+        int seq PK
+        bigint bus_stop_id FK
+    }
+    trip_tag_filters {
+        bigint trip_id PK, FK
+        bigint tag_id PK, FK
+        text intent
+    }
+    location_reports {
+        bigint id PK
+        bigint user_id FK
+        bigint trip_id FK
+        double lat
+        double lng
+        timestamptz reported_at
+    }
+    ride_requests {
+        bigint id PK
+        bigint passenger_id FK
+        bigint pickup_point_id FK
+        bigint trip_id FK
+        bigint dropoff_bus_stop_id FK
+        text status
+        boolean relaxed
+        timestamptz response_deadline_at
+    }
+    request_tag_filters {
+        bigint request_id PK, FK
+        bigint tag_id PK, FK
+        text intent
+    }
+    request_candidates {
+        bigint request_id PK, FK
+        int rank PK
+        bigint trip_id FK
+        text outcome
+    }
+    service_records {
+        bigint id PK
+        bigint request_id UK, FK
+        bigint trip_id FK
+        bigint driver_id FK
+        bigint passenger_id FK
+        timestamptz completed_at
+    }
+    system_settings {
+        text key PK
+        numeric value
+    }
+```
+
+- `system_settings` 與 `park_boundary_points` 沒有外鍵，是獨立的參考資料（DD-20）。
+- `service_records` 另外參考 `pickup_points`、`bus_stops`（下車站），圖中省略以免過於雜亂。
+- `location_reports` 只新增、不修改或刪除，由觸發器強制（DD-06）；座位以 `trips.seats_held`、`seats_confirmed` 計數，並以 `CHECK` 限制總和不超過 `capacity`，使暫留在單一交易內完成（DD-12）。
 
 ### 4.16 模擬器
 
