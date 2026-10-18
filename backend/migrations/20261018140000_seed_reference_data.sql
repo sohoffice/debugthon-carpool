@@ -11,7 +11,7 @@ INSERT INTO pickup_points (name, lat, lng, radius_m) VALUES
 ON CONFLICT (name) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, radius_m = EXCLUDED.radius_m;
 
 -- Neihu Science Park boundary ring: the northern section (west edge along 堤頂大道) plus the southern
--- section down to the north bank of 基隆河 (行愛路 on the east, the river on the west and south). DO UPDATE so a re-run
+-- section down to the north bank of 基隆河 (行愛路 on the east). 河濱公園 strips are left out: the west and south edges run along the levee side of the parks. DO UPDATE so a re-run
 -- (or a DB seeded with an older ring) ends with this ring.
 INSERT INTO park_boundary_points (seq, lat, lng) VALUES
     (1, 25.086, 121.5655),
@@ -24,24 +24,50 @@ INSERT INTO park_boundary_points (seq, lat, lng) VALUES
     (8, 25.0633, 121.5809),
     (9, 25.0618, 121.582),
     (10, 25.0606, 121.5829),
-    (11, 25.0536, 121.583),
-    (12, 25.0533, 121.58),
-    (13, 25.0523, 121.575),
-    (14, 25.0526, 121.5728),
-    (15, 25.054, 121.5722),
-    (16, 25.0597, 121.5718),
-    (17, 25.063, 121.5704),
-    (18, 25.0648, 121.5702),
-    (19, 25.0677, 121.5718),
-    (20, 25.07, 121.5724),
-    (21, 25.0725, 121.5724),
-    (22, 25.075, 121.5722),
-    (23, 25.0807, 121.5627),
-    (24, 25.0825, 121.5618),
-    (25, 25.084, 121.5612),
-    (26, 25.0848, 121.5604)
+    (11, 25.055, 121.5829),
+    (12, 25.0548, 121.5826),
+    (13, 25.0547, 121.5823),
+    (14, 25.054, 121.5812),
+    (15, 25.0539, 121.5808),
+    (16, 25.0531, 121.5766),
+    (17, 25.053, 121.5759),
+    (18, 25.0531, 121.5756),
+    (19, 25.0532, 121.575),
+    (20, 25.0534, 121.5744),
+    (21, 25.0541, 121.574),
+    (22, 25.0545, 121.5739),
+    (23, 25.0552, 121.5738),
+    (24, 25.056, 121.5737),
+    (25, 25.0568, 121.5735),
+    (26, 25.0584, 121.5733),
+    (27, 25.0599, 121.5731),
+    (28, 25.0606, 121.5729),
+    (29, 25.0614, 121.5727),
+    (30, 25.0628, 121.5725),
+    (31, 25.0643, 121.5723),
+    (32, 25.0656, 121.5722),
+    (33, 25.0665, 121.5721),
+    (34, 25.0672, 121.5722),
+    (35, 25.0677, 121.5724),
+    (36, 25.0688, 121.5728),
+    (37, 25.0698, 121.573),
+    (38, 25.0708, 121.5731),
+    (39, 25.0721, 121.573),
+    (40, 25.0731, 121.5729),
+    (41, 25.0736, 121.5727),
+    (42, 25.0744, 121.5723),
+    (43, 25.0752, 121.5719),
+    (44, 25.0763, 121.5711),
+    (45, 25.0769, 121.5703),
+    (46, 25.0774, 121.5687),
+    (47, 25.0778, 121.5676),
+    (48, 25.0785, 121.5648),
+    (49, 25.0807, 121.5627),
+    (50, 25.0825, 121.5618),
+    (51, 25.084, 121.5612),
+    (52, 25.0848, 121.5604)
 ON CONFLICT (seq) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng;
-DELETE FROM park_boundary_points WHERE seq > 26;
+DELETE FROM park_boundary_points WHERE seq > 52;
 
 -- Bus stops inside the park boundary, imported from docs/data/busstop/busstops.csv.
 INSERT INTO bus_stops (stop_id, name, lat, lng) VALUES
