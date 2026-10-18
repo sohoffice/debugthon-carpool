@@ -2,12 +2,14 @@
 
 -- Demo seed data (T03). Every statement is idempotent, so the script can be re-run by hand.
 
--- Pickup points (REQ-002). radius_m is the area used to decide a vehicle has passed (DD-06).
+-- Pickup points (REQ-002), on the ground-level car-park access lanes, before the ramp goes underground:
+-- 世貿 on the lane off 信義路五段 leading to the 世貿一館 car park; 大巨蛋 on the west-side ramp mouth on 光復南路.
+-- radius_m is the area used to decide a vehicle has passed (DD-06).
 INSERT INTO pickup_points (name, lat, lng, radius_m) VALUES
     ('松山車站', 25.049806, 121.578206, 80),
-    ('台北世貿中心', 25.033500, 121.561200, 80),
-    ('台北大巨蛋', 25.042800, 121.560800, 80)
-ON CONFLICT (name) DO NOTHING;
+    ('台北世貿中心', 25.033150, 121.561900, 80),
+    ('台北大巨蛋', 25.044200, 121.557710, 80)
+ON CONFLICT (name) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, radius_m = EXCLUDED.radius_m;
 
 -- Neihu Science Park boundary ring, reaching south to 陽光街 and the southern 瑞光路. DO UPDATE so a re-run
 -- (or a DB seeded with an older ring) ends with this ring.
