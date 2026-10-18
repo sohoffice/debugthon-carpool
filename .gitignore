@@ -1,3 +1,4 @@
 .env
 backend/.run/
 /tmp/
+backend/karate/target/

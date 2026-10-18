@@ -29,6 +29,7 @@
    - [4.13 服務紀錄](#413-服務紀錄)
    - [4.14 系統設定](#414-系統設定)
    - [4.15 資料庫](#415-資料庫)
+     - [資料表關聯圖（ERD）](#資料表關聯圖erd)
    - [4.16 模擬器](#416-模擬器)
    - [4.17 PoC 不交付的元件](#417-poc-不交付的元件)
 5. [主要互動流程](#5-主要互動流程)
@@ -42,7 +43,7 @@
 
 - **時程**：10/24 一天內做出可現場操作的 PoC（G6），架構要簡單、能快速完成。
 - **技術選型**：後端 Go、資料庫 PostgreSQL、前端 React + Tailwind（DD-15～DD-17）。
-- **資料**：帳號、預先定義的標籤、上車點與系統設定由 SQL 腳本預先建立；駕駛與乘客都是模擬帳號（1 個乘客、4 個駕駛）。不使用真實個資（REQ-063、REQ-064）。
+- **資料**：帳號、預先定義的標籤、上車點與系統設定由 SQL 腳本預先建立；駕駛與乘客都是模擬帳號（2 個乘客、5 個駕駛）。不使用真實個資（REQ-063、REQ-064）。
 - **範圍外**：金流與點數、真實定位、真實身分驗證、法規處理。服務紀錄要保留足夠資訊，讓之後的點數分配可以建立在上面。
 - **上車點固定，路線動態決定**：預先定義的只有上車點；每段行程的路線由上車點與內科內的終點決定（REQ-001）。媒合只需比對「同一個上車點、時間接近、目的地相關」，不需要任意地點叫車。
 
@@ -175,7 +176,7 @@ flowchart TB
 
 決定所有後端資料存放在單一 PostgreSQL 資料庫。
 
-- 理由：帳號、行程、請求、座位之間是關聯式資料；座位暫留（DD-12）需要交易保證一致；預先建立的資料以 SQL 維護（DD-19、DD-20）也最直接。上車點、公車站與內科範圍的地理判斷可加上 PostGIS。
+- 理由：帳號、行程、請求、座位之間是關聯式資料；座位暫留（DD-12）需要交易保證一致；預先建立的資料以 SQL 維護（DD-19、DD-20）也最直接。上車點與公車站的地理判斷可加上 PostGIS。
 - 考慮過的替代方案：
   - 記憶體內資料：最快，但服務重啟就遺失，Demo 時風險高，也無法以 SQL 寫入資料。
   - SQLite：單機簡單，但多個連線同時寫入座位時的交易能力較弱。
@@ -333,7 +334,7 @@ flowchart TB
 
 ### 4.6 上車點與站點
 
-**職責：** 預先定義的上車點（REQ-002）、內湖科學園區的範圍，以及園區內的公車站；判斷一個地點是否在園區內，以及哪些公車站位在某段行程路線的沿途。
+**職責：** 預先定義的上車點（REQ-002）、內湖科學園區的範圍（GeoJSON 檔 `docs/data/park/boundary.geojson`，不存資料庫，由後端載入），以及園區內的公車站；判斷一個地點是否在園區內，以及哪些公車站位在某段行程路線的沿途。
 
 **負責需求：** REQ-001、REQ-002、REQ-004
 
@@ -589,11 +590,160 @@ stateDiagram-v2
 
 ### 4.15 資料庫
 
-**職責：** PostgreSQL（DD-15），保存帳號、標籤清單與使用者選擇的標籤、上車點、內科範圍與公車站、行程與其行程路線、車輛回報的完整經緯度紀錄、請求、服務紀錄、常用資料與系統設定。帳號、標籤清單、上車點與站點、系統設定與模擬行程由 SQL 腳本寫入；其餘由後端寫入。各元件只存取自己負責的資料。
+**職責：** PostgreSQL（DD-15），保存帳號、標籤清單與使用者選擇的標籤、上車點與公車站、行程與其行程路線、車輛回報的完整經緯度紀錄、請求、服務紀錄、常用資料與系統設定。帳號、標籤清單、上車點與站點、系統設定與模擬行程由 SQL 腳本寫入；其餘由後端寫入。各元件只存取自己負責的資料。
 
 **負責需求：** 無直接對應；支撐所有需求。
 
 **互動：** 後端各元件讀寫；SQL 腳本寫入預先準備的資料。
+
+#### 資料表關聯圖（ERD）
+
+資料表定義於 `backend/migrations/20261018122058_create_schema.sql`。圖中只列主鍵、外鍵與關鍵欄位，完整欄位以 migration 為準。
+
+```mermaid
+erDiagram
+    users ||--o{ user_tags : "選擇"
+    tags ||--o{ user_tags : ""
+    users ||--o| driver_profiles : "駕駛常用資料"
+    users ||--o| passenger_profiles : "乘客常用資料"
+    passenger_profiles ||--o{ passenger_accepted_stops : "可接受下車站"
+    bus_stops ||--o{ passenger_accepted_stops : ""
+    pickup_points ||--o{ driver_profiles : "常用上車點"
+
+    users ||--o{ trips : "駕駛"
+    pickup_points ||--o{ trips : "上車點"
+    trips ||--o{ trip_route_stops : "沿途公車站"
+    bus_stops ||--o{ trip_route_stops : ""
+    trips ||--o{ trip_tag_filters : "標籤篩選"
+    tags ||--o{ trip_tag_filters : ""
+
+    users ||--o{ location_reports : "回報位置"
+    trips |o--o{ location_reports : "行程中"
+
+    users ||--o{ ride_requests : "乘客"
+    pickup_points ||--o{ ride_requests : "上車點"
+    trips |o--o{ ride_requests : "分配到"
+    bus_stops |o--o{ ride_requests : "下車站"
+    ride_requests ||--o{ request_tag_filters : "標籤篩選"
+    tags ||--o{ request_tag_filters : ""
+    ride_requests ||--o{ request_candidates : "分配順序"
+    trips ||--o{ request_candidates : ""
+
+    ride_requests ||--o| service_records : "完成後建立"
+    trips ||--o{ service_records : ""
+    users ||--o{ service_records : "駕駛／乘客"
+
+    users {
+        bigint id PK
+        text username UK
+        boolean is_driver
+        boolean is_passenger
+    }
+    tags {
+        bigint id PK
+        text name UK
+        text issuer
+    }
+    user_tags {
+        bigint user_id PK, FK
+        bigint tag_id PK, FK
+    }
+    pickup_points {
+        bigint id PK
+        text name UK
+        double lat
+        double lng
+        int radius_m
+    }
+    bus_stops {
+        bigint id PK
+        int stop_id UK
+        text name
+        double lat
+        double lng
+    }
+    driver_profiles {
+        bigint user_id PK, FK
+        bigint usual_pickup_point_id FK
+        int capacity
+    }
+    passenger_profiles {
+        bigint user_id PK, FK
+        time usual_arrival_time
+    }
+    passenger_accepted_stops {
+        bigint user_id PK, FK
+        bigint bus_stop_id PK, FK
+    }
+    trips {
+        bigint id PK
+        bigint driver_id FK
+        bigint pickup_point_id FK
+        int capacity
+        text status
+        boolean auto_accept
+        boolean settings_locked
+        int seats_held
+        int seats_confirmed
+        boolean passed_pickup
+        text route_polyline
+    }
+    trip_route_stops {
+        bigint trip_id PK, FK
+        int seq PK
+        bigint bus_stop_id FK
+    }
+    trip_tag_filters {
+        bigint trip_id PK, FK
+        bigint tag_id PK, FK
+        text intent
+    }
+    location_reports {
+        bigint id PK
+        bigint user_id FK
+        bigint trip_id FK
+        double lat
+        double lng
+        timestamptz reported_at
+    }
+    ride_requests {
+        bigint id PK
+        bigint passenger_id FK
+        bigint pickup_point_id FK
+        bigint trip_id FK
+        bigint dropoff_bus_stop_id FK
+        text status
+        boolean relaxed
+        timestamptz response_deadline_at
+    }
+    request_tag_filters {
+        bigint request_id PK, FK
+        bigint tag_id PK, FK
+        text intent
+    }
+    request_candidates {
+        bigint request_id PK, FK
+        int rank PK
+        bigint trip_id FK
+        text outcome
+    }
+    service_records {
+        bigint id PK
+        bigint request_id UK, FK
+        bigint trip_id FK
+        bigint driver_id FK
+        bigint passenger_id FK
+        timestamptz completed_at
+    }
+    system_settings {
+        text key PK
+        numeric value
+    }
+```
+
+- `system_settings` 沒有外鍵，是獨立的參考資料（DD-20）。
+- `service_records` 另外參考 `pickup_points`、`bus_stops`（下車站），圖中省略以免過於雜亂。
+- `location_reports` 只新增、不修改或刪除，由觸發器強制（DD-06）；座位以 `trips.seats_held`、`seats_confirmed` 計數，並以 `CHECK` 限制總和不超過 `capacity`，使暫留在單一交易內完成（DD-12）。
 
 ### 4.16 模擬器
 

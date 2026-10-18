@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"os"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sohoffice/debugthon-carpool/backend/internal/server"
 )
@@ -12,7 +16,29 @@ func main() {
 	if p := os.Getenv("PORT"); p != "" {
 		addr = ":" + p
 	}
-	if err := server.NewRouter().Run(addr); err != nil {
+
+	pool, err := pgxpool.New(context.Background(), databaseURL())
+	if err != nil {
 		log.Fatal(err)
 	}
+	defer pool.Close()
+
+	if err := server.NewRouter(pool).Run(addr); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// databaseURL uses DATABASE_URL if set, else the app role created by the first migration.
+func databaseURL() string {
+	if u := os.Getenv("DATABASE_URL"); u != "" {
+		return u
+	}
+	get := func(k, def string) string {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+		return def
+	}
+	return fmt.Sprintf("postgres://carpool:carpool@localhost:%s/%s?sslmode=disable",
+		get("POSTGRES_PORT", "5432"), get("POSTGRES_DB", "carpool"))
 }
