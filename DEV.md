@@ -12,6 +12,7 @@
 - [後端 API](#後端-api)
 - [API 整合測試（Karate）](#api-整合測試karate)
 - [測試帳號](#測試帳號)
+- [種子資料](#種子資料)
 
 ## 專案資源
 
@@ -130,3 +131,13 @@
 | `driver5` | 駕駛 阿芬 | 駕駛 | `driver:driver5` |
 
 呼叫 API 時以 `Authorization: Bearer <token>` 指定身分（DD-18），例如 `curl -H 'Authorization: Bearer driver:driver1' localhost:8080/api/ping`。
+
+## 種子資料
+
+由遷移 `backend/migrations/20261018140000_seed_reference_data.sql` 建立，所有語句皆可重複執行（`ON CONFLICT`／`NOT EXISTS`）。
+
+- 上車點：松山車站、台北世貿中心、台北大巨蛋（範圍半徑 80 m）。
+- 內湖科學園區範圍：`park_boundary_points` 的概略多邊形（**尚未在地圖上校對**）；園區內公車站 42 個，由 `docs/data/busstop/busstops.csv` 以該多邊形篩選匯入。
+- 標籤：6 個使用者自選標籤（`issuer = 'self'`）。
+- 模擬行程：`driver1`～`driver3` 皆從松山車站出發、座位 3／4／2、自動接受；`driver4`、`driver5` 無行程，供真人從駕駛介面操作。`driver3` 帶有「不抽菸」「安靜通勤」標籤，`driver2` 帶有「可載行李」。
+- 系統設定預設值在建立結構的遷移中（`system_settings`）。
