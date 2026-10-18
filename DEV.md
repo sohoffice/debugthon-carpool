@@ -10,6 +10,7 @@
   - [前端](#前端)
   - [通用](#通用)
 - [後端 API](#後端-api)
+- [API 整合測試（Karate）](#api-整合測試karate)
 - [測試帳號](#測試帳號)
 
 ## 專案資源
@@ -36,6 +37,7 @@
 | --- | --- |
 | `just backend up` | 編譯後端並在背景啟動，預設監聽 `:8080`；若已在執行則不重複啟動 |
 | `just backend down` | 停止由 `up` 啟動的後端 |
+| `just backend karate` | 啟動後端（若尚未執行）並以 Karate 執行 API 整合測試（見下方說明） |
 | `just backend db-apply` | 套用尚未執行的資料庫遷移（需先 `just infra up`） |
 | `just backend db-rollback` | 回滾最近一次已套用的遷移（執行該檔的 `-- +goose Down`） |
 | `just backend migrate-status` | 顯示各遷移的套用狀態 |
@@ -84,11 +86,34 @@
 
 ## 後端 API
 
-| 方法 | 路徑 | 說明 |
-| --- | --- | --- |
-| GET | `/api/ping` | 健康檢查，回傳 `200 OK` 與 `{"status":"ok"}` |
+| 方法 | 路徑 | 角色 | 說明 |
+| --- | --- | --- | --- |
+| GET | `/api/ping` | 免身分 | 健康檢查，回傳 `200 OK` 與 `{"status":"ok"}` |
+| GET | `/api/me` | 任一 | 目前帳號與角色 |
+| GET | `/api/pickup-points` | 任一 | 上車點清單 |
+| GET | `/api/bus-stops` | 任一 | 園區內公車站清單 |
+| GET | `/api/tags` | 任一 | 標籤清單，`selected` 表示呼叫者是否已選擇 |
+| PUT | `/api/me/tags/:id` | 任一 | 選擇清單中的標籤（重複選擇無影響；不在清單中回 404） |
+| DELETE | `/api/me/tags/:id` | 任一 | 取消選擇標籤 |
+| GET | `/api/driver/profile` | 駕駛 | 常用上車點、常用目的地、可載人數（尚無共乘紀錄時為 `null`） |
+| GET | `/api/passenger/profile` | 乘客 | 平常抵達時間、常用目的地、可接受的下車公車站 |
+
+- 除 `/api/ping` 外都需要 `Authorization: Bearer <角色>:<帳號>`：格式錯誤或帳號不存在回 `401`，帳號沒有該角色或角色不能使用該 API 回 `403`。
+- 錯誤一律回 `{"error":{"code":"...","message":"..."}}`。
+- 系統設定（`system_settings`）只供後端元件透過 `internal/settings` 讀取，每次都查資料庫，改 SQL 後不需重啟即可生效；沒有對外 API（DD-20）。
+- 後端測試（`cd backend && go test ./...`）連線本機資料庫（需先 `just infra up`、`just backend db-apply`），每個測試在交易中執行並回滾；可用 `TEST_DATABASE_URL` 覆寫連線字串。
 
 啟動後可用 `curl -i localhost:8080/api/ping` 驗證。
+
+### API 整合測試（Karate）
+
+測試位於 `backend/karate/`（Maven 專案，[Karate](https://github.com/karatelabs/karate) 2.1.3、Java 21 以上），以 `just backend karate` 執行。
+
+- 針對**已啟動**的後端與資料庫；需先 `just infra up` 與 `just backend db-apply`。測試依賴種子資料：測試帳號（見下節）、標籤、上車點與公車站，不自行建立。
+- 測試資料的原則：**有 REST API 可寫入就用 API**（例如以 `PUT`／`DELETE /api/me/tags/:id` 選擇與取消標籤，並在情境結束前還原）；**只有沒有 API 可用時才用 SQL**（目前是帳號與常用資料，見 DD-19），寫在 `profiles.feature`，由 `Db.java` 以 `carpool` 角色寫入。
+- SQL 建立的帳號名稱帶 `karate-` 前綴與隨機後綴；每個情境結束時由 `cleanup.feature` 刪除（常用資料隨帳號連動刪除），因此情境可平行執行，也不會留下資料。新增這類情境時沿用同一做法。
+- 以 `-DbaseUrl=...` 指定後端位址（預設 `http://localhost:8080`），以 `-DdbUrl=...`、`-DdbUser=...`、`-DdbPassword=...` 指定 JDBC 連線（預設 `jdbc:postgresql://localhost:5432/carpool`、`carpool`／`carpool`）；`just backend karate` 會依 `PORT`、`POSTGRES_PORT`、`POSTGRES_DB` 帶入。
+- `.feature` 檔放在 `backend/karate/src/test/java/carpool/api/`；報表在 `backend/karate/target/karate-reports/`。
 
 ## 測試帳號
 

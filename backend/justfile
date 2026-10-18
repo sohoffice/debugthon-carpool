@@ -40,6 +40,10 @@ down:
     fi
     rm -f "{{pid_file}}"
 
+# Run the Karate API tests against the backend (starts it if needed; needs `just infra up` and `db-apply`)
+karate: up
+    cd "{{source_directory()}}/karate" && mvn -q test -DbaseUrl=http://localhost:{{port}} -DdbUrl=jdbc:postgresql://localhost:{{pg_port}}/{{pg_db}}
+
 # Apply all pending migrations (needs `just infra up`)
 db-apply:
     cd "{{source_directory()}}" && GOOSE_DRIVER=postgres GOOSE_DBSTRING="{{db_url}}" GOOSE_MIGRATION_DIR=migrations go tool goose up
