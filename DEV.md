@@ -47,8 +47,9 @@
 | --- | --- |
 | `just infra up` | 在背景啟動基礎設施並等待就緒 |
 | `just infra down` | 停止並移除基礎設施容器（資料卷保留） |
+| `just infra reset` | 移除容器與資料卷後重新啟動（資料全部清空，之後需再執行 `just backend migrate`） |
 
-- 資料庫名稱、帳號、密碼與連接埠可透過 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_PORT` 覆寫（預設皆為 `carpool`，連接埠 `5432`）。
+- 資料庫名稱、帳號、密碼與連接埠可透過 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_PORT` 覆寫（資料庫預設 `carpool`，帳號與密碼預設 `postgres`，連接埠 `5432`）。這是超級使用者，供 goose 遷移使用；後端以第一個遷移建立的 `carpool` 使用者連線。
 
 ### 前端
 

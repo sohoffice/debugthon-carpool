@@ -5,3 +5,8 @@ up:
 # Stop and remove the infra containers (data volume is kept)
 down:
     docker compose -f {{source_directory()}}/docker-compose.yml down
+
+# Remove the infra containers AND their data volume, then start fresh
+reset:
+    docker compose -f {{source_directory()}}/docker-compose.yml down -v
+    docker compose -f {{source_directory()}}/docker-compose.yml up -d --wait
