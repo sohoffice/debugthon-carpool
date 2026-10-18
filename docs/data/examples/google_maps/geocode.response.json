@@ -1,0 +1,32 @@
+{
+  "status": 200,
+  "body": {
+    "results": [
+      {
+        "address_components": [
+          {"long_name": "測試路1巷", "short_name": "測試路1巷", "types": ["route"]},
+          {"long_name": "內湖區", "short_name": "內湖區", "types": ["administrative_area_level_2", "political"]},
+          {"long_name": "台北市", "short_name": "台北市", "types": ["administrative_area_level_1", "political"]},
+          {"long_name": "台灣", "short_name": "TW", "types": ["country", "political"]},
+          {"long_name": "114", "short_name": "114", "types": ["postal_code"]}
+        ],
+        "formatted_address": "114台灣臺北市內湖區測試路1巷",
+        "geometry": {
+          "bounds": {
+            "northeast": {"lat": 25.081, "lng": 121.571},
+            "southwest": {"lat": 25.079, "lng": 121.569}
+          },
+          "location": {"lat": 25.08, "lng": 121.57},
+          "location_type": "GEOMETRIC_CENTER",
+          "viewport": {
+            "northeast": {"lat": 25.082, "lng": 121.572},
+            "southwest": {"lat": 25.078, "lng": 121.568}
+          }
+        },
+        "place_id": "FAKE_PLACE_ID_1",
+        "types": ["route"]
+      }
+    ],
+    "status": "OK"
+  }
+}

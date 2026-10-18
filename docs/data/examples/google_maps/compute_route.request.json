@@ -1,0 +1,41 @@
+{
+  "method": "POST",
+  "url": "https://routes.googleapis.com/directions/v2:computeRoutes",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.duration,routes.legs.distanceMeters",
+    "X-Goog-Api-Key": "<REDACTED>"
+  },
+  "body": {
+    "origin": {
+      "location": {
+        "latLng": {
+          "latitude": 25.08235,
+          "longitude": 121.566541
+        }
+      }
+    },
+    "destination": {
+      "location": {
+        "latLng": {
+          "latitude": 25.07895,
+          "longitude": 121.57529
+        }
+      }
+    },
+    "intermediates": [
+      {
+        "location": {
+          "latLng": {
+            "latitude": 25.083702,
+            "longitude": 121.594432
+          }
+        }
+      }
+    ],
+    "travelMode": "DRIVE",
+    "routingPreference": "TRAFFIC_AWARE",
+    "languageCode": "zh-TW",
+    "units": "METRIC"
+  }
+}

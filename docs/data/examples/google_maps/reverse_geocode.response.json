@@ -1,0 +1,31 @@
+{
+  "status": 200,
+  "body": {
+    "plus_code": {"compound_code": "FAKE+CODE 台灣臺北市內湖區", "global_code": "FAKEGLOBALCODE"},
+    "results": [
+      {
+        "address_components": [
+          {"long_name": "1", "short_name": "1", "types": ["street_number"]},
+          {"long_name": "測試路一段", "short_name": "測試路一段", "types": ["route"]},
+          {"long_name": "內湖區", "short_name": "內湖區", "types": ["administrative_area_level_2", "political"]},
+          {"long_name": "台北市", "short_name": "台北市", "types": ["administrative_area_level_1", "political"]},
+          {"long_name": "台灣", "short_name": "TW", "types": ["country", "political"]},
+          {"long_name": "114", "short_name": "114", "types": ["postal_code"]}
+        ],
+        "formatted_address": "114台灣臺北市內湖區測試路一段1號",
+        "geometry": {
+          "location": {"lat": 25.082, "lng": 121.566},
+          "location_type": "ROOFTOP",
+          "viewport": {
+            "northeast": {"lat": 25.083, "lng": 121.567},
+            "southwest": {"lat": 25.081, "lng": 121.565}
+          }
+        },
+        "place_id": "FAKE_PLACE_ID_1",
+        "plus_code": {"compound_code": "FAKE+CODE 台灣臺北市內湖區", "global_code": "FAKEGLOBALCODE"},
+        "types": ["street_address"]
+      }
+    ],
+    "status": "OK"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "url": "https://maps.googleapis.com/maps/api/geocode/json?address=%E5%8F%B0%E5%8C%97%E5%B8%82%E5%85%A7%E6%B9%96%E5%8D%80%E7%91%9E%E5%85%89%E8%B7%AF513%E5%B7%B7&language=zh-TW&region=tw&key=%3CREDACTED%3E",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": null
+}

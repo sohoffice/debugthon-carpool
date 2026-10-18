@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "body": {
+    "routes": [
+      {
+        "legs": [
+          {"distanceMeters": 3000, "duration": "500s"},
+          {"distanceMeters": 2300, "duration": "480s"},
+          {"distanceMeters": 800, "duration": "150s"}
+        ],
+        "distanceMeters": 6100,
+        "duration": "1130s"
+      }
+    ]
+  }
+}

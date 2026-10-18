@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "url": "https://maps.googleapis.com/maps/api/geocode/json?latlng=25.08235%2C121.566541&language=zh-TW&key=%3CREDACTED%3E",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": null
+}

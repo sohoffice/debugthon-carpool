@@ -1,0 +1,39 @@
+{
+  "method": "POST",
+  "url": "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Goog-FieldMask": "originIndex,destinationIndex,duration,distanceMeters,status,condition",
+    "X-Goog-Api-Key": "<REDACTED>"
+  },
+  "body": {
+    "origins": [
+      {
+        "waypoint": {
+          "address": "捷運西湖站"
+        }
+      },
+      {
+        "waypoint": {
+          "address": "捷運內湖站"
+        }
+      },
+      {
+        "waypoint": {
+          "address": "捷運港墘站"
+        }
+      }
+    ],
+    "destinations": [
+      {
+        "waypoint": {
+          "address": "台北市內湖區瑞光路513巷"
+        }
+      }
+    ],
+    "travelMode": "DRIVE",
+    "routingPreference": "TRAFFIC_AWARE",
+    "languageCode": "zh-TW",
+    "regionCode": "tw"
+  }
+}

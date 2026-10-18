@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "body": [
+    {"originIndex": 0, "destinationIndex": 0, "status": {}, "distanceMeters": 600, "duration": "120s", "condition": "ROUTE_EXISTS"},
+    {"originIndex": 1, "destinationIndex": 0, "status": {}, "distanceMeters": 3000, "duration": "600s", "condition": "ROUTE_EXISTS"},
+    {"originIndex": 2, "destinationIndex": 0, "status": {}, "distanceMeters": 800, "duration": "150s", "condition": "ROUTE_EXISTS"}
+  ]
+}

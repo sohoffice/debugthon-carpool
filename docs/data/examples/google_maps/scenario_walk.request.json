@@ -1,0 +1,25 @@
+{
+  "method": "POST",
+  "url": "https://routes.googleapis.com/directions/v2:computeRoutes",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.legs.duration,routes.legs.distanceMeters",
+    "X-Goog-Api-Key": "<REDACTED>"
+  },
+  "body": {
+    "origin": {
+      "address": "捷運西湖站"
+    },
+    "destination": {
+      "location": {
+        "latLng": {
+          "latitude": 25.07895,
+          "longitude": 121.57529
+        }
+      }
+    },
+    "travelMode": "WALK",
+    "languageCode": "zh-TW",
+    "regionCode": "tw"
+  }
+}

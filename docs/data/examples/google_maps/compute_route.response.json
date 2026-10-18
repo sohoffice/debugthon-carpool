@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "body": {
+    "routes": [
+      {
+        "legs": [
+          {"distanceMeters": 3000, "duration": "600s"},
+          {"distanceMeters": 2000, "duration": "420s"}
+        ],
+        "distanceMeters": 5000,
+        "duration": "1020s",
+        "polyline": {"encodedPolyline": "FAKE_ENCODED_POLYLINE"}
+      }
+    ]
+  }
+}

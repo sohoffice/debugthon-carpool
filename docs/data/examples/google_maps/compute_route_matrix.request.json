@@ -1,0 +1,47 @@
+{
+  "method": "POST",
+  "url": "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Goog-FieldMask": "originIndex,destinationIndex,duration,distanceMeters,status,condition",
+    "X-Goog-Api-Key": "<REDACTED>"
+  },
+  "body": {
+    "origins": [
+      {
+        "waypoint": {
+          "location": {
+            "latLng": {
+              "latitude": 25.08235,
+              "longitude": 121.566541
+            }
+          }
+        }
+      },
+      {
+        "waypoint": {
+          "location": {
+            "latLng": {
+              "latitude": 25.083702,
+              "longitude": 121.594432
+            }
+          }
+        }
+      }
+    ],
+    "destinations": [
+      {
+        "waypoint": {
+          "location": {
+            "latLng": {
+              "latitude": 25.07895,
+              "longitude": 121.57529
+            }
+          }
+        }
+      }
+    ],
+    "travelMode": "DRIVE",
+    "routingPreference": "TRAFFIC_AWARE"
+  }
+}

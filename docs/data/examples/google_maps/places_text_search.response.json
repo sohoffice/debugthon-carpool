@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "body": {
+    "places": [
+      {
+        "id": "FAKE_PLACE_ID_1",
+        "formattedAddress": "114臺北市內湖區測試路1號",
+        "location": {"latitude": 25.078, "longitude": 121.574},
+        "displayName": {"text": "測試停車場A", "languageCode": "zh-TW"}
+      },
+      {
+        "id": "FAKE_PLACE_ID_2",
+        "formattedAddress": "114臺北市內湖區測試路2號",
+        "location": {"latitude": 25.079, "longitude": 121.576},
+        "displayName": {"text": "測試停車場B", "languageCode": "zh-TW"}
+      }
+    ]
+  }
+}
