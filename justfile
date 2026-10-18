@@ -1,7 +1,7 @@
 hello:
     @echo "hello world"
 
-# UI 指令：見 ui/CLAUDE.md
+# UI recipes: see ui/CLAUDE.md
 
 ui-install:
     cd ui && npm install
