@@ -1,0 +1,136 @@
+{
+  "variant": "light",
+  "backgroundColor": "#edf1ef",
+  "styles": [
+    {
+      "id": "natural.land",
+      "geometry": {
+        "fillColor": "#edf1ef"
+      }
+    },
+    {
+      "id": "infrastructure.urbanArea",
+      "geometry": {
+        "fillColor": "#edf1ef"
+      }
+    },
+    {
+      "id": "natural.water",
+      "geometry": {
+        "fillColor": "#cfe0e4"
+      },
+      "label": {
+        "textFillColor": "#8aa3aa",
+        "textStrokeColor": "#cfe0e4"
+      }
+    },
+    {
+      "id": "pointOfInterest",
+      "geometry": {
+        "visible": false
+      },
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "pointOfInterest.recreation.park",
+      "geometry": {
+        "visible": true,
+        "fillColor": "#dfe9e3"
+      }
+    },
+    {
+      "id": "infrastructure.building",
+      "geometry": {
+        "fillColor": "#e4e9e6",
+        "strokeColor": "#dbe1de"
+      }
+    },
+    {
+      "id": "infrastructure.roadNetwork.road",
+      "geometry": {
+        "fillColor": "#ffffff",
+        "strokeColor": "#dde3e0"
+      },
+      "label": {
+        "textFillColor": "#8a959c",
+        "textStrokeColor": "#ffffff"
+      }
+    },
+    {
+      "id": "infrastructure.roadNetwork.road.highway",
+      "geometry": {
+        "fillColor": "#e1e7e4",
+        "strokeColor": "#c9d2cf"
+      }
+    },
+    {
+      "id": "infrastructure.roadNetwork.road.local",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "infrastructure.transitStation",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "infrastructure.railwayTrack",
+      "geometry": {
+        "visible": false
+      }
+    },
+    {
+      "id": "political",
+      "label": {
+        "textFillColor": "#6b7780",
+        "textStrokeColor": "#edf1ef"
+      }
+    },
+    {
+      "id": "infrastructure.businessCorridor",
+      "geometry": {
+        "visible": false
+      }
+    },
+    {
+      "id": "infrastructure.roadNetwork.roadShield",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "infrastructure.roadNetwork.roadDetail",
+      "geometry": {
+        "visible": false
+      }
+    },
+    {
+      "id": "political.border",
+      "geometry": {
+        "visible": false
+      }
+    },
+    {
+      "id": "political.neighborhood",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "political.landParcel",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "infrastructure.transitStation.busStation",
+      "label": {
+        "visible": false
+      }
+    }
+  ]
+}

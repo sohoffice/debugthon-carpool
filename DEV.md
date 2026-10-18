@@ -52,7 +52,7 @@
 
 ### 前端
 
-前端指令定義於 `ui/justfile`，並透過根目錄 `justfile` 的 `mod ui` 載入（`just ui <指令>`）。開發原則見 `ui/CLAUDE.md`。
+前端指令定義於 `ui/justfile`，並透過根目錄 `justfile` 的 `mod ui` 載入（`just ui <指令>`）。開發原則見 `ui/CLAUDE.md`，UI 設計見 `docs/ui-design.md`。
 
 | 指令 | 說明 |
 | --- | --- |

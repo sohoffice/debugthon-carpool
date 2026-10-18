@@ -2,7 +2,9 @@
 
 內科順路共乘的前端。這是黑客松 MVP：10/24 Demo 時必須能現場操作。先把流程做出來，不要做框架。
 
-先讀：`../OVERVIEW.md` 第 9 節（範圍決定，與其他文件衝突時以此為準）、`../docs/design-1.md` 4.1～4.2、`../docs/requirement.md` US-06～US-16。
+先讀：`../OVERVIEW.md` 第 9 節（範圍決定，與其他文件衝突時以此為準）、`../docs/design.md` 4.1～4.2、`../docs/requirement.md` US-06～US-16；UI 待辦與進度見 `ISSUES.md`。
+
+**UI 設計見 `../docs/ui-design.md`**：畫面、視覺系統、動態與設計決定（UD-nn）都以它為準；它還是草案，標示「提案」的決定可能再改。
 
 ## 目錄結構
 
@@ -18,13 +20,15 @@ ui/
 
 ## 指令（在 `ui/` 下執行）
 
+在專案根目錄也可以用 `just ui <指令>`，見 `../DEV.md` 的「前端」小節。
+
 - `npm install`
 - `npm run dev:driver`／`npm run dev:passenger`
 - `npm test` — Vitest，跑所有 workspace
 - `npm run typecheck`
 - `npm run build`
 
-環境變數放在專案根目錄的 `.env`（見 `../.env.example`）。沒有設定 `VITE_GOOGLE_MAPS_API_KEY` 時，地圖會顯示提示文字，其他功能照常運作。
+環境變數放在專案根目錄的 `.env`，各變數說明見 `../DEV.md`。沒有設定 `VITE_GOOGLE_MAPS_API_KEY` 時，地圖會顯示提示文字，其他功能照常運作。
 
 ## 原則
 
@@ -43,11 +47,12 @@ ui/
 - 以 `usePolling` 輪詢取得狀態（DD-03）。不用 WebSocket、SSE 或推播。
 - 身分是 `Bearer <角色>:<帳號>`（DD-18），由 `createApiClient` 產生。Demo 時用 `?account=<帳號>` 切換帳號，沒有登入畫面。
 - 只透過各 app `src/config.ts` 裡的 `api` 呼叫 API。呼叫路徑為 `/api/...`，開發時由 Vite 轉送到後端。
+- 後端 API 完成前，前端連到一個共用的示範後端開發，連哪個後端由 `API_PROXY_TARGET` 決定，前端程式不切換（`../docs/ui-design.md` 10.2、UD-14）。
 
 ### 3. 設計文件中的角色規則
 
-- **駕駛：** 行程中只顯示「有沒有搭車請求」、該請求的上車點，以及確認／婉拒（DD-04、REQ-066）。不放設定、不放多餘資訊、不加動畫。所有設定都在出發確認畫面。按鈕要大、好按。
-- **乘客：** 不能讓乘客選特定車輛（REQ-031）。顯示供給、送出「今天我要搭」、顯示請求狀態。
+- **駕駛：** 行程中只有一個畫面：有沒有搭車請求、該請求的上車點與下車點、已確認乘客的下車點，以及確認／婉拒、替乘客結束共乘（DD-04、REQ-066）。**行程中不顯示地圖**，也不放設定、統計、提示或動畫。地圖與所有設定只在出發確認畫面。按鈕要大、好按。
+- **乘客：** 不能讓乘客選特定車輛（REQ-031）。顯示供給、送出「今天我要搭」、顯示請求狀態；確認後在地圖上顯示行程路線；下車後由乘客按「結束共乘」（DD-23）。
 - **兩者：** 模擬資料一律用 `<SimulatedBadge />` 標示（REQ-063）。
 
 ### 4. 地圖
@@ -59,7 +64,7 @@ ui/
 ### 5. 版面與樣式
 
 - 行動裝置優先（Demo 時用手機）。以 390px 寬度測試。未來的儀表板是桌面版，所以 `shared` 不放只適用手機的版面。
-- 只用 Tailwind。顏色用 `shared/src/theme.css` 的 token（`brand`、`danger`、`simulated`），不要在 app 裡直接寫新的色碼。
+- 只用 Tailwind。顏色用 `shared/src/theme.css` 的 token（色彩定義與用途見 `../docs/ui-design.md` 8.1），不要在 app 裡直接寫新的色碼。
 - 全螢幕版面用 `h-dvh`。
 
 ### 6. 程式碼
