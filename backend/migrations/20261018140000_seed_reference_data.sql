@@ -9,15 +9,17 @@ INSERT INTO pickup_points (name, lat, lng, radius_m) VALUES
     ('台北大巨蛋', 25.042800, 121.560800, 80)
 ON CONFLICT (name) DO NOTHING;
 
--- Neihu Science Park boundary, an approximate ring; check it on a map before the demo.
+-- Neihu Science Park boundary ring, reaching south to 陽光街 and the southern 瑞光路. DO UPDATE so a re-run
+-- (or a DB seeded with an older ring) ends with this ring.
 INSERT INTO park_boundary_points (seq, lat, lng) VALUES
     (1, 25.086, 121.5655),
     (2, 25.084, 121.579),
-    (3, 25.077, 121.58),
-    (4, 25.073, 121.5775),
-    (5, 25.0745, 121.57),
-    (6, 25.079, 121.564)
-ON CONFLICT (seq) DO NOTHING;
+    (3, 25.077, 121.5805),
+    (4, 25.0705, 121.58),
+    (5, 25.0695, 121.5745),
+    (6, 25.073, 121.569),
+    (7, 25.079, 121.564)
+ON CONFLICT (seq) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng;
 
 -- Bus stops inside the park boundary, imported from docs/data/busstop/busstops.csv.
 INSERT INTO bus_stops (stop_id, name, lat, lng) VALUES
@@ -32,6 +34,8 @@ INSERT INTO bus_stops (stop_id, name, lat, lng) VALUES
     (1083, '基湖站', 25.07973077, 121.5646071),
     (1105, '港墘', 25.08055757, 121.5775386),
     (1106, '港墘路', 25.075848, 121.574502),
+    (1116, '陽光街', 25.073056, 121.576692),
+    (1117, '陽光街', 25.073152, 121.577744),
     (1132, '瑞光路', 25.074821, 121.577343),
     (1149, '麗山高中(環山)', 25.08405797, 121.5768304),
     (1150, '麗山高中(港墘)', 25.08352, 121.57808),
@@ -49,6 +53,7 @@ INSERT INTO bus_stops (stop_id, name, lat, lng) VALUES
     (8612, '內湖運動中心', 25.077240508774, 121.575587990787),
     (8613, '港墘路', 25.075813, 121.574688),
     (8631, '麗山高中(港墘)', 25.08298972, 121.5783099),
+    (8661, '陽光抽水站', 25.07204, 121.57446),
     (50511, '西湖國中', 25.08514, 121.56545),
     (50515, '恕德家商', 25.082118261496, 121.569461375068),
     (1000499, '西湖圖書館(湖光教會)', 25.07910692, 121.5779835),
@@ -89,8 +94,8 @@ ON CONFLICT DO NOTHING;
 -- passenger heading to 瑞光路 who accepts a nearby stop, driver1 and driver3 match the
 -- destination (driver3 also has the suggested tag), driver2 only passes bus stops.
 INSERT INTO trips (driver_id, pickup_point_id, destination_name, destination_lat, destination_lng,
-                   capacity, auto_accept, simulated)
-SELECT u.id, p.id, v.dest, v.lat, v.lng, v.capacity, true, true
+                   capacity, auto_accept, status, settings_locked, started_at, simulated)
+SELECT u.id, p.id, v.dest, v.lat, v.lng, v.capacity, true, 'active', true, now(), true
 FROM (VALUES
     ('driver1', '瑞光路 內科大樓 A', 25.0768, 121.5738, 3),
     ('driver2', '基湖路 內科大樓 B', 25.0805, 121.5668, 4),
@@ -101,10 +106,12 @@ JOIN pickup_points p ON p.name = '松山車站'
 WHERE NOT EXISTS (SELECT 1 FROM trips t WHERE t.driver_id = u.id AND t.simulated);
 
 -- +goose Down
+-- Only works on a freshly seeded DB: once a demo has run, location_reports (append-only) and
+-- requests reference these rows; use `just backend db-reset` then.
 DELETE FROM trips WHERE simulated AND driver_id IN
     (SELECT id FROM users WHERE username IN ('driver1', 'driver2', 'driver3'));
 DELETE FROM user_tags WHERE user_id IN (SELECT id FROM users WHERE username IN ('driver2', 'driver3'));
 DELETE FROM tags WHERE name IN ('不抽菸', '可載行李', '安靜通勤', '可聊天', '可帶寵物', '女性友善');
-DELETE FROM bus_stops WHERE stop_id IN (424, 997, 1001, 1007, 1013, 1039, 1041, 1075, 1083, 1105, 1106, 1132, 1149, 1150, 1153, 4084, 4657, 4761, 8402, 8403, 8404, 8405, 8410, 8527, 8607, 8612, 8613, 8631, 50511, 50515, 1000499, 1000698, 1000723, 1000864, 1000895, 1000896, 1000897, 1001465, 1165604812, 1165604813, 1165604849, 1165608385);
+DELETE FROM bus_stops WHERE stop_id IN (424, 997, 1001, 1007, 1013, 1039, 1041, 1075, 1083, 1105, 1106, 1116, 1117, 1132, 1149, 1150, 1153, 4084, 4657, 4761, 8402, 8403, 8404, 8405, 8410, 8527, 8607, 8612, 8613, 8631, 8661, 50511, 50515, 1000499, 1000698, 1000723, 1000864, 1000895, 1000896, 1000897, 1001465, 1165604812, 1165604813, 1165604849, 1165608385);
 DELETE FROM park_boundary_points;
 DELETE FROM pickup_points WHERE name IN ('松山車站', '台北世貿中心', '台北大巨蛋');

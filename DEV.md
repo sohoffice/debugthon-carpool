@@ -137,7 +137,9 @@
 由遷移 `backend/migrations/20261018140000_seed_reference_data.sql` 建立，所有語句皆可重複執行（`ON CONFLICT`／`NOT EXISTS`）。
 
 - 上車點：松山車站、台北世貿中心、台北大巨蛋（範圍半徑 80 m）。
-- 內湖科學園區範圍：`park_boundary_points` 的概略多邊形（**尚未在地圖上校對**）；園區內公車站 42 個，由 `docs/data/busstop/busstops.csv` 以該多邊形篩選匯入。
+- 內湖科學園區範圍：`park_boundary_points` 的7 點多邊形（南緣到陽光街與瑞光路南段）；園區內公車站 45 個，由 `docs/data/busstop/busstops.csv` 以該多邊形篩選匯入。
 - 標籤：6 個使用者自選標籤（`issuer = 'self'`）。
-- 模擬行程：`driver1`～`driver3` 皆從松山車站出發、座位 3／4／2、自動接受；`driver4`、`driver5` 無行程，供真人從駕駛介面操作。`driver3` 帶有「不抽菸」「安靜通勤」標籤，`driver2` 帶有「可載行李」。
+- 模擬行程：`driver1`～`driver3` 皆從松山車站出發、座位 3／4／2、自動接受，狀態為進行中（`active`、設定已鎖定、`started_at = now()`）；`driver4`、`driver5` 無行程，供真人從駕駛介面操作。`driver3` 帶有「不抽菸」「安靜通勤」標籤，`driver2` 帶有「可載行李」。
+- Demo 乘客（尚未建立為資料，請求時輸入）：`passenger1` 在松山車站，最終目的地約 (25.0765, 121.5742)（瑞光路），可接受的公車站為「瑞光港墘路口」（`stop_id` 1013）與「港墘路」（`stop_id` 1106）。`driver1`、`driver3` 的目的地在其 200 m 內（完全相符），`driver2` 的目的地在基湖路，只能靠沿途公車站相符；取捨結果須待 T07／T08 提供路線與位置後才能驗證。
+- 重建：遷移已套用的資料庫要改種子時，用 `just backend db-reset`。Down 只在剛種子的資料庫可用，跑過 Demo 後（位置紀錄、請求都會參照這些資料）請改用 `db-reset`。
 - 系統設定預設值在建立結構的遷移中（`system_settings`）。
