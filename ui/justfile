@@ -1,0 +1,15 @@
+# Install npm dependencies for all UI workspaces
+install:
+    cd "{{source_directory()}}" && npm install
+
+# Start the driver UI dev server on :5173
+driver:
+    cd "{{source_directory()}}" && npm run dev:driver
+
+# Start the passenger UI dev server on :5174
+passenger:
+    cd "{{source_directory()}}" && npm run dev:passenger
+
+# Typecheck and run all UI tests
+test:
+    cd "{{source_directory()}}" && npm run typecheck && npm test
