@@ -3,24 +3,26 @@
 -- Demo seed data (T03). Every statement is idempotent, so the script can be re-run by hand.
 
 -- Pickup points (REQ-002), on the ground-level car-park access lanes, before the ramp goes underground:
--- 世貿 on the lane off 信義路五段 leading to the 世貿一館 car park; 大巨蛋 on the west-side ramp mouth on 光復南路.
--- radius_m is the area used to decide a vehicle has passed (DD-06).
+-- 世貿 on the lane off 信義路五段 leading to the 世貿一館 car park; 大巨蛋 on the west side, 光復南路. radius_m is the area used to decide a vehicle has passed (DD-06).
 INSERT INTO pickup_points (name, lat, lng, radius_m) VALUES
     ('松山車站', 25.049806, 121.578206, 80),
     ('台北世貿中心', 25.033150, 121.561900, 80),
-    ('台北大巨蛋', 25.044200, 121.557710, 80)
+    ('台北大巨蛋', 25.044249, 121.557934, 80)
 ON CONFLICT (name) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, radius_m = EXCLUDED.radius_m;
 
--- Neihu Science Park boundary ring, reaching south to 陽光街 and the southern 瑞光路. DO UPDATE so a re-run
+-- Neihu Science Park boundary ring: south to 陽光街 and the southern 瑞光路, south-west edge along
+-- 堤頂大道 (kept off the 基隆河 bank and the 中山高 interchange). DO UPDATE so a re-run
 -- (or a DB seeded with an older ring) ends with this ring.
 INSERT INTO park_boundary_points (seq, lat, lng) VALUES
     (1, 25.086, 121.5655),
     (2, 25.084, 121.579),
     (3, 25.077, 121.5805),
-    (4, 25.0705, 121.58),
-    (5, 25.0695, 121.5745),
-    (6, 25.073, 121.569),
-    (7, 25.079, 121.564)
+    (4, 25.071, 121.58),
+    (5, 25.0712, 121.576),
+    (6, 25.0732, 121.5736),
+    (7, 25.075, 121.5722),
+    (8, 25.0807, 121.5627),
+    (9, 25.0825, 121.5645)
 ON CONFLICT (seq) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng;
 
 -- Bus stops inside the park boundary, imported from docs/data/busstop/busstops.csv.
@@ -44,7 +46,6 @@ INSERT INTO bus_stops (stop_id, name, lat, lng) VALUES
     (1153, '麗山街', 25.081473, 121.571386),
     (4084, '麗山國中', 25.0806380998734, 121.573860343024),
     (4657, '港墘派出所', 25.078636, 121.57619),
-    (4761, '金泰公園', 25.07768, 121.56712),
     (8402, '內湖基湖路口', 25.08167506, 121.5653587),
     (8403, '基湖路口', 25.0805158061818, 121.565903409458),
     (8404, '基湖路口', 25.08025003, 121.5662362),
@@ -55,7 +56,6 @@ INSERT INTO bus_stops (stop_id, name, lat, lng) VALUES
     (8612, '內湖運動中心', 25.077240508774, 121.575587990787),
     (8613, '港墘路', 25.075813, 121.574688),
     (8631, '麗山高中(港墘)', 25.08298972, 121.5783099),
-    (8661, '陽光抽水站', 25.07204, 121.57446),
     (50511, '西湖國中', 25.08514, 121.56545),
     (50515, '恕德家商', 25.082118261496, 121.569461375068),
     (1000499, '西湖圖書館(湖光教會)', 25.07910692, 121.5779835),
@@ -114,6 +114,6 @@ DELETE FROM trips WHERE simulated AND driver_id IN
     (SELECT id FROM users WHERE username IN ('driver1', 'driver2', 'driver3'));
 DELETE FROM user_tags WHERE user_id IN (SELECT id FROM users WHERE username IN ('driver2', 'driver3'));
 DELETE FROM tags WHERE name IN ('不抽菸', '可載行李', '安靜通勤', '可聊天', '可帶寵物', '女性友善');
-DELETE FROM bus_stops WHERE stop_id IN (424, 997, 1001, 1007, 1013, 1039, 1041, 1075, 1083, 1105, 1106, 1116, 1117, 1132, 1149, 1150, 1153, 4084, 4657, 4761, 8402, 8403, 8404, 8405, 8410, 8527, 8607, 8612, 8613, 8631, 8661, 50511, 50515, 1000499, 1000698, 1000723, 1000864, 1000895, 1000896, 1000897, 1001465, 1165604812, 1165604813, 1165604849, 1165608385);
+DELETE FROM bus_stops WHERE stop_id IN (424, 997, 1001, 1007, 1013, 1039, 1041, 1075, 1083, 1105, 1106, 1116, 1117, 1132, 1149, 1150, 1153, 4084, 4657, 8402, 8403, 8404, 8405, 8410, 8527, 8607, 8612, 8613, 8631, 50511, 50515, 1000499, 1000698, 1000723, 1000864, 1000895, 1000896, 1000897, 1001465, 1165604812, 1165604813, 1165604849, 1165608385);
 DELETE FROM park_boundary_points;
 DELETE FROM pickup_points WHERE name IN ('松山車站', '台北世貿中心', '台北大巨蛋');
