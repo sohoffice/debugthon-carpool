@@ -13,6 +13,8 @@ interface RouteMapProps {
   route: Route | null
   /** The passenger's bus stop, drawn filled (8.3). */
   dropoffStopId?: number | null
+  /** Other pickup points to show while choosing one; the map then frames them all. */
+  pickupOptions?: PickupPoint[]
   /** Extra space kept free around the route, e.g. under a sheet that covers the map. */
   padding?: { top: number; right: number; bottom: number; left: number }
   className?: string
@@ -37,10 +39,11 @@ function FitBounds({ points, padding }: { points: LatLng[]; padding: RouteMapPro
 }
 
 /** Pickup point, trip route, bus stops along it and destination, framed to fit (8.3 RouteMap). */
-export function RouteMap({ pickup, destination, route, dropoffStopId = null, padding, className, children }: RouteMapProps) {
+export function RouteMap({ pickup, destination, route, dropoffStopId = null, pickupOptions = [], padding, className, children }: RouteMapProps) {
   const path = route ? decodePolyline(route.polyline) : []
   const stops: BusStop[] = route?.bus_stops ?? []
-  const fit = [...path, ...(pickup ? [pickup] : []), ...(destination ? [destination] : [])]
+  const options = pickupOptions.filter((p) => p.id !== pickup?.id)
+  const fit = [...path, ...(pickup ? [pickup] : []), ...(destination ? [destination] : []), ...options]
   return (
     <MapView className={className}>
       <FitBounds points={fit} padding={padding} />
@@ -49,6 +52,9 @@ export function RouteMap({ pickup, destination, route, dropoffStopId = null, pad
         <PlaceMarker key={s.id} kind={s.id === dropoffStopId ? 'dropoff' : 'stop'} position={s} title={s.name} />
       ))}
       {destination && <PlaceMarker kind="destination" position={destination} title={destination.name} />}
+      {options.map((p) => (
+        <PlaceMarker key={p.id} kind="pickup-option" position={p} title={p.name} />
+      ))}
       {pickup && <PlaceMarker kind="pickup" position={pickup} title={pickup.name} />}
       {children}
     </MapView>

@@ -105,7 +105,13 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
   return (
     <div className="relative h-full bg-white">
       <div className="absolute inset-x-0 top-0 h-[44%]">
-        <RouteMap pickup={pickup} destination={destination} route={route} padding={{ top: 72, right: 40, bottom: 56, left: 40 }} />
+        <RouteMap
+          pickup={pickup}
+          destination={destination}
+          route={route}
+          // While choosing the pickup point, all of them are on the map.
+          pickupOptions={open.includes('pickup') ? pickupPoints : []}
+          padding={{ top: 72, right: 48, bottom: 120, left: 48 }} />
       </div>
       <AccountTag />
 

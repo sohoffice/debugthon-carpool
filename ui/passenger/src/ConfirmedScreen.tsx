@@ -28,20 +28,21 @@ export function ConfirmedScreen({ request, celebrate, busy, onBoarded, onCancel 
   const strip = routeStripItems(request.pickup_point.name, ride.route.bus_stops, request.destination.name, { dropoffStopId: ride.dropoff.bus_stop_id })
   return (
     <div className="relative h-full bg-white">
-      <div className="absolute inset-x-0 top-0 h-[42%]">
+      <div className="absolute inset-x-0 top-0 h-[46%]">
         <RouteMap
           pickup={request.pickup_point}
           destination={request.destination}
           route={ride.route}
           dropoffStopId={ride.dropoff.bus_stop_id}
-          padding={{ top: 64, right: 40, bottom: 48, left: 40 }}
+          // The sheet starts at 34% and covers the map's lower part; keep the route above it.
+          padding={{ top: 56, right: 48, bottom: 112, left: 48 }}
         >
           <VehicleMarker position={ride.position} pollIntervalMs={POLL_INTERVAL_MS} title={ride.vehicle.plate} />
         </RouteMap>
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-(--safe-top) bottom-0 overflow-y-auto overscroll-contain">
-        <div className="h-[32%]" />
+        <div className="h-[34%]" />
         <section className="pointer-events-auto min-h-[68%] rounded-t-sheet bg-white px-6 pt-7 pb-[calc(var(--safe-bottom)+148px)] shadow-[0_-12px_32px_-16px_color-mix(in_srgb,var(--color-ink)_40%,transparent)]">
           <div className={celebrate ? 'after-route-draw' : ''}>
             {ride.eta_s !== null ? (
