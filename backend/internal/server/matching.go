@@ -13,10 +13,13 @@ import (
 type matchParams struct {
 	AddressMatchM float64 // address match distance, metres
 	WaitLimitS    float64 // wait limit, seconds
+	WaitWeight    float64 // 1 minute of waiting counts as this many minutes (REQ-042)
+	WalkWeight    float64 // 1 minute of walking counts as this many minutes (REQ-042)
+	TagBonusCapS  float64 // most the preferred tags can lower a cost, seconds (REQ-045)
 }
 
 // loadMatchParams reads the current values on every call, so an edited setting applies at once.
-// wait_limit is stored in minutes.
+// wait_limit and tag_bonus_cap are stored in minutes.
 func loadMatchParams(ctx context.Context, db DB) (matchParams, error) {
 	r := settings.New(db)
 	addr, err := r.Get(ctx, "address_match_distance")
@@ -27,7 +30,20 @@ func loadMatchParams(ctx context.Context, db DB) (matchParams, error) {
 	if err != nil {
 		return matchParams{}, err
 	}
-	return matchParams{AddressMatchM: addr, WaitLimitS: wait * 60}, nil
+	waitW, err := r.Get(ctx, "wait_weight")
+	if err != nil {
+		return matchParams{}, err
+	}
+	walkW, err := r.Get(ctx, "walk_weight")
+	if err != nil {
+		return matchParams{}, err
+	}
+	bonus, err := r.Get(ctx, "tag_bonus_cap")
+	if err != nil {
+		return matchParams{}, err
+	}
+	return matchParams{AddressMatchM: addr, WaitLimitS: wait * 60, WaitWeight: waitW, WalkWeight: walkW,
+		TagBonusCapS: bonus * 60}, nil
 }
 
 // tagFilter is a tag a side asks the other to carry. Only required ones screen (REQ-013,

@@ -138,3 +138,20 @@ func TestLoadMatchParams(t *testing.T) {
 		t.Fatalf("WaitLimitS = %v after editing wait_limit to 5, want 300", p.WaitLimitS)
 	}
 }
+
+func TestLoadMatchParamsRanking(t *testing.T) {
+	tx := testTx(t)
+	p, err := loadMatchParams(context.Background(), tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.WaitWeight != 2 || p.WalkWeight != 1.5 || p.TagBonusCapS != 240 {
+		t.Errorf("defaults = %+v", p)
+	}
+	if _, err := tx.Exec(context.Background(), `UPDATE system_settings SET value = 2 WHERE key = 'walk_weight'`); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ = loadMatchParams(context.Background(), tx); p.WalkWeight != 2 {
+		t.Errorf("walk weight after update = %v, want 2", p.WalkWeight)
+	}
+}
