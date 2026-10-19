@@ -35,6 +35,8 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
 3. 讀開發環境：`DEV.md`（指令、資料庫、測試帳號、種子資料），以及變更所在目錄的 `CLAUDE.md`
    （`backend/CLAUDE.md`、`ui/CLAUDE.md`）。
 4. 看現況：`git status`，確認沒有他人未 commit 的變更會與你的工作重疊；有的話先問開發者。
+5. 請架構師檢查工作單：用 `SendMessage` 通知解決方案架構師 session，第一行寫明工作單與目的（如「T13 about to start」），
+   等架構師確認範圍與追溯一致後才開始實作。找不到架構師 session 時，先問開發者。
 
 ## 實作
 
