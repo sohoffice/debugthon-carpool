@@ -14,7 +14,7 @@ interface MapViewProps {
 export function MapView({ center = DEFAULT_CENTER, zoom = DEFAULT_ZOOM, className = 'h-full w-full', children }: MapViewProps) {
   if (!MAPS_API_KEY) {
     return (
-      <div className={`${className} flex items-center justify-center bg-gray-100 p-4 text-center text-sm text-gray-500`}>
+      <div className={`${className} flex items-center justify-center bg-brand-soft p-4 text-center text-sm text-ink-soft`}>
         地圖未設定：請在專案根目錄 .env 設定 VITE_GOOGLE_MAPS_API_KEY
       </div>
     )

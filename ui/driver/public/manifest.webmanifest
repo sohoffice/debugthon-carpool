@@ -1,0 +1,10 @@
+{
+  "name": "內科順路共乘 · 駕駛",
+  "short_name": "共乘駕駛",
+  "lang": "zh-Hant-TW",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#edf1ef",
+  "theme_color": "#edf1ef"
+}

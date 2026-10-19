@@ -1,4 +1,10 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": ["shared/src", "driver/src", "passenger/src", "*.ts"]
+  "include": [
+    "shared/src",
+    "driver/src",
+    "passenger/src",
+    "mock-server/src",
+    "*.ts"
+  ]
 }

@@ -10,10 +10,11 @@
 
 ```
 ui/
-  shared/     @carpool/shared — 地圖、API 用戶端、輪詢、少量基本元件、主題
-  driver/     駕駛介面   :5173
-  passenger/  乘客介面   :5174
-  dashboard/  （未來）   :5175 — 新增為一個 workspace，共用 shared
+  shared/       @carpool/shared — 地圖、API 用戶端、輪詢、少量基本元件、主題
+  driver/       駕駛介面   :5173
+  passenger/    乘客介面   :5174
+  mock-server/  示範後端   :8081 — 只用 Node 內建模組，不是 workspace（../docs/ui-design.md 10.2）
+  dashboard/    （未來）   :5175 — 新增為一個 workspace，共用 shared
 ```
 
 使用 npm workspaces。`shared` 沒有建置步驟：各 app 直接 import 它的 TypeScript 原始碼。
@@ -24,6 +25,7 @@ ui/
 
 - `npm install`
 - `npm run dev:driver`／`npm run dev:passenger`
+- `npm run mock` — 示範後端；要讓介面連到它，用 `just ui dev-mock`
 - `npm test` — Vitest，跑所有 workspace
 - `npm run typecheck`
 - `npm run build`
@@ -47,6 +49,7 @@ ui/
 - 以 `usePolling` 輪詢取得狀態（DD-03）。不用 WebSocket、SSE 或推播。
 - 身分是 `Bearer <角色>:<帳號>`（DD-18），由 `createApiClient` 產生。Demo 時用 `?account=<帳號>` 切換帳號，沒有登入畫面。
 - 只透過各 app `src/config.ts` 裡的 `api` 呼叫 API。呼叫路徑為 `/api/...`，開發時由 Vite 轉送到後端。
+- API 的格式寫在 `shared/src/api/types.ts`，介面與示範後端共用。Go 後端已有的 API 照抄後端格式；其餘是前端提案的格式，清單見 `../docs/ui-design.md` 10.1。
 - 後端 API 完成前，前端連到一個共用的示範後端開發，連哪個後端由 `API_PROXY_TARGET` 決定，前端程式不切換（`../docs/ui-design.md` 10.2、UD-14）。
 
 ### 3. 設計文件中的角色規則

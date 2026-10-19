@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { App } from './App'
 
 describe('passenger App', () => {
-  it('renders the shell and a map placeholder when no Maps key is set', () => {
+  it('renders inside the phone shell', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: '內科順路共乘 · 乘客' })).toBeInTheDocument()
-    expect(screen.getByText(/地圖未設定/)).toBeInTheDocument()
+    expect(screen.getByText('乘客')).toBeInTheDocument()
+    expect(screen.getByText('模擬車輛')).toBeInTheDocument()
   })
 })

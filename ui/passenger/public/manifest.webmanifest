@@ -1,0 +1,10 @@
+{
+  "name": "內科順路共乘 · 乘客",
+  "short_name": "順路共乘",
+  "lang": "zh-Hant-TW",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#edf1ef",
+  "theme_color": "#edf1ef"
+}

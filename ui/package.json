@@ -13,7 +13,8 @@
     "build": "npm run build -w driver -w passenger",
     "typecheck": "tsc -p .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "mock": "node mock-server/src/main.ts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

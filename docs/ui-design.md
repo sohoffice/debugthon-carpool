@@ -692,6 +692,29 @@ flowchart LR
 | 展示頁的「重設」 | 重設所有 Demo 資料的操作（`POST /api/demo/reset`） |
 | 取消請求 | 取消請求的操作；請求狀態多一個「已取消」 |
 
+**API 清單（提案，ui-oi-10）：** 依上表定出的 API。欄位格式寫成 TypeScript 型別，放在 `ui/shared/src/api/types.ts`，介面與示範後端共用；欄位命名、錯誤格式（`{"error":{"code","message"}}`）和身分都沿用 Go 後端已有的 API。和後端對齊時以這份清單和型別檔為準，格式有變動時兩邊一起改。
+
+| 方法 | 路徑 | 角色 | 回傳 | 說明 |
+|---|---|---|---|---|
+| GET | `/api/places?q=` | 任一 | `Place[]` | 搜尋園區內的目的地，供地址輸入使用（最多 8 筆） |
+| GET | `/api/driver/trip` | 駕駛 | `{ trip }` | 最近一趟行程（進行中或已結束），沒有出發過時為 `null`；上一趟的設定用來預先帶入出發確認（REQ-016）。行程中含待回應的請求、車上乘客與這趟完成的人數 |
+| POST | `/api/driver/route-preview` | 駕駛 | `Route` | 指定上車點與目的地的行程路線與沿途公車站，出發前顯示在地圖上；目的地不在園區內時回 `422 destination_outside_park` |
+| POST | `/api/driver/trips` | 駕駛 | `201 { trip }` | 「我出發了」：以出發設定建立並開始行程；已有進行中的行程時回 `409 trip_active` |
+| POST | `/api/driver/requests/:id/accept` | 駕駛 | `{ trip }` | 確認請求；請求已逾時、改配或取消時回 `409 request_not_pending` |
+| POST | `/api/driver/requests/:id/decline` | 駕駛 | `{ trip }` | 婉拒請求，後端改配下一台車 |
+| POST | `/api/driver/requests/:id/complete` | 駕駛 | `{ trip }` | 「已下車」：替乘客結束共乘（DD-23）；已結束時不報錯 |
+| POST | `/api/passenger/supply` | 乘客 | `Supply` | 供給看板：依目的地、可接受公車站與篩選，回傳乘客所在位置、等待上限與每個上車點的車數、最快到達、空位與各車 ETA |
+| POST | `/api/passenger/requests` | 乘客 | `201 { request }` | 「送出請求」：立即回傳結果（已拒絕、無車可配、等駕駛確認或已確認）；已有進行中的請求時回 `409 request_active` |
+| GET | `/api/passenger/request` | 乘客 | `{ request }` | 最近一筆請求與狀態；已確認時含車輛、ETA、下車點、行程路線與車輛位置、行進方向（UD-15） |
+| POST | `/api/passenger/requests/:id/cancel` | 乘客 | `{ request }` | 取消請求（UD-17）；上車後回 `409 cannot_cancel` |
+| POST | `/api/passenger/requests/:id/complete` | 乘客 | `{ request }` | 「我已下車，結束共乘」；已結束時不報錯 |
+| POST | `/api/demo/reset` | 免身分 | `204` | 重設 Demo 資料（UD-18），兩個後端都要提供 |
+
+- 時間一律是 RFC 3339 字串；距離以公尺、時間長度以秒為單位（欄位名稱以 `_min` 結尾的除外）。
+- 行程路線用 Google 的 encoded polyline（和 `trips.route_polyline` 相同），`RoutePolyline` 可以直接畫。
+- 請求狀態比資料庫多一個 `cancelled`（UD-17），`submitted` 不會回傳給介面（送出時已經決定結果）。
+- 駕駛端不回傳確認期限，介面不顯示倒數（ui-oi-02）。
+
 ### 10.2 開發期間的示範後端
 
 Demo 時接真正的後端（Go）。後端完成前，前端接一個**示範後端**開發，兩者提供同一套 API，切換時前端程式不用改。
@@ -747,7 +770,25 @@ flowchart LR
 |---|---|---|---|
 | POST | `/api/demo/reset` | 示範後端、Go 後端 | 重設成初始狀態；展示頁的「重設」按鈕呼叫（UD-18） |
 | GET | `/api/_mock` | 只有示範後端 | 目前的情境 |
-| POST | `/api/_mock/scenario` | 只有示範後端 | 切換情境，同時重設狀態；開發時用指令呼叫 |
+| POST | `/api/_mock/scenario` | 只有示範後端 | 切換情境（`normal`、`reassign`、`no_cars`、`too_far`），同時重設狀態；開發時用 `just ui mock-scenario` 呼叫 |
+| POST | `/api/_mock/advance` | 只有示範後端 | 把時鐘往前撥幾秒（例如讓車開到目的地）；開發時用 `just ui mock-advance` 呼叫 |
+
+**示範後端的做法：**
+
+- 程式在 `ui/mock-server/`，只用 Node 內建模組，以 `just ui dev-mock` 啟動（同時啟動兩個介面）。
+- 帳號、上車點、公車站、標籤、駕駛的標籤與 `driver1`～`driver3` 的模擬行程，啟動時直接讀 `backend/migrations/` 的種子 SQL，所以和 Go 後端的資料（包括編號）一致。
+- 車輛沿真實道路移動：路徑由真實公車路線的站序組成（`docs/data/busstop`，公開資料），沒有存任何 Google 地圖的資料。車速約時速 13 公里；ETA、是否經過上車點、是否抵達目的地都由位置算出。
+- 媒合是簡化版：條件和 design.md 4.11 相同（同上車點、未經過、有空位、雙向強制標籤、等待上限、目的地或沿途公車站相符），排序時在駕駛介面上出發的車優先，讓台上的駕駛收到請求。
+- 模擬行程經過上車點後，車上沒有乘客就從頭再開一次，讓供給看板一直有車。
+- 「改配」情境把駕駛確認時限縮短為 15 秒，不用操作就會逾時改配；其他情境用系統設定的 60 秒。
+
+**示範後端比 Go 後端種子多的資料（需要後端一起補上）：**
+
+| 資料 | 內容 | 為什麼 |
+|---|---|---|
+| `passenger1` 的常用資料 | 目的地瑞光路 513 巷（25.0765, 121.5742），可接受公車站瑞光港墘路口（1013）、港墘路（1106） | 重設後乘客直接進供給看板（UD-18）；`passenger2` 沒有，用來展示目的地設定 |
+| `driver4` 的上一趟行程（已結束） | 松山車站 → 瑞光路 513 巷，可載 3 人，不自動接受，「不抽菸」建議 | 出發確認畫面「設定沿用上次」，Demo 時一個動作就出發（REQ-017）；`driver5` 沒有，用來展示第一次出發 |
+| 每位駕駛的車輛 | 車牌、顏色、車型（例如 `BEN-0824` 白色 Toyota RAV4） | 已確認畫面要顯示車輛資訊（REQ-052）；資料庫目前沒有車輛欄位 |
 
 ## 11. 需求對應
 

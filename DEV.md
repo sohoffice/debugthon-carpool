@@ -71,9 +71,16 @@
 | `just ui install` | 安裝所有前端 workspace 的 npm 套件（第一次使用前執行） |
 | `just ui driver` | 啟動駕駛介面開發伺服器，網址 `http://localhost:5173` |
 | `just ui passenger` | 啟動乘客介面開發伺服器，網址 `http://localhost:5174` |
+| `just ui dev-mock` | 啟動示範後端（`:8081`）與兩個介面，介面連到示範後端（開發期間用） |
+| `just ui dev` | 啟動兩個介面，連到 Go 後端 `:8080`（後端先用 `just backend up` 啟動） |
+| `just ui mock` | 只啟動示範後端 `:8081` |
+| `just ui mock-scenario <情境>` | 切換示範情境並重設：`normal`、`reassign`、`no_cars`、`too_far` |
+| `just ui mock-advance <秒數>` | 把示範後端的時鐘往前撥，例如讓車開到目的地 |
+| `just ui mock-reset` | 重設示範後端（和 Go 後端相同的 `POST /api/demo/reset`） |
 | `just ui test` | 型別檢查並執行所有前端測試 |
 
-- 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫。
+- 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫；`just ui dev-mock`／`just ui dev` 會自動設定。
+- 示範後端（`ui/mock-server/`）是只用 Node 內建模組的小程式，狀態放在記憶體裡，重啟就回到初始狀態。帳號、上車點、公車站、標籤與模擬行程直接讀 `backend/migrations/` 的種子 SQL，和 Go 後端一致。做法見 `docs/ui-design.md` 10.2。
 - 以網址參數切換 Demo 帳號，例如 `http://localhost:5173/?account=driver2`。
 - 環境變數放在根目錄 `.env`：
   - `VITE_GOOGLE_MAPS_API_KEY`：瀏覽器用的 Google Maps 金鑰，會公開給使用者。請限制為 HTTP 參照網址，且只開 Maps JavaScript API；不要沿用伺服器端的 `MAP_API_KEY`。未設定時地圖顯示提示文字，其他功能照常運作。

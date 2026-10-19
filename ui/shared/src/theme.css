@@ -1,9 +1,90 @@
-/* Shared design tokens. Import after "tailwindcss" in each app's index.css. */
+/* Shared design tokens (docs/ui-design.md 8.1, 8.2). Import after "tailwindcss" in each app's index.css. */
 @source "./";
 
 @theme {
-  --color-brand: #0f766e;
-  --color-brand-dark: #115e59;
-  --color-danger: #b91c1c;
-  --color-simulated: #a16207;
+  /* Carpool line colour: no Taipei Metro line uses it. */
+  --color-brand: #0a7a68;
+  --color-brand-dark: #065a4d;
+  --color-brand-soft: #d9efe9;
+  /* Asphalt: body text, driver in-trip background, required filters. */
+  --color-ink: #1a242c;
+  --color-ink-soft: #55626c;
+  /* Morning: passenger background, cool tint. */
+  --color-paper: #edf1ef;
+  --color-rule: #c9d2cf;
+  /* Road-marking yellow: ONLY for a ride request on the driver screen. */
+  --color-signal: #ffc61a;
+  --color-danger: #c0362c;
+  --color-simulated: #6a4fb8;
+
+  /* Barlow for Latin and digits (road-sign lettering); CJK falls back to the system font per glyph. */
+  --font-sans: 'Barlow', 'PingFang TC', 'Noto Sans TC', 'Microsoft JhengHei', system-ui, sans-serif;
+  /* Barlow Condensed for minutes and plates, like an arrival board. */
+  --font-board: 'Barlow Condensed', 'Barlow', 'PingFang TC', 'Noto Sans TC', system-ui, sans-serif;
+
+  /* Type scale from 8.2. */
+  --text-board: 104px;
+  --text-board--line-height: 0.85;
+  --text-board-sm: 88px;
+  --text-board-sm--line-height: 0.85;
+  --text-drive: 48px;
+  --text-drive--line-height: 1.1;
+  --text-drive-button: 36px;
+  --text-drive-button--line-height: 1;
+
+  --radius-control: 16px;
+  --radius-sheet: 24px;
+}
+
+/* Feel like an app, not a website (UD-11). */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* No pull-to-refresh and no rubber-band scrolling. */
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Apps scroll without visible scrollbars. */
+  * {
+    scrollbar-width: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  button {
+    cursor: pointer;
+    /* No double-tap zoom delay. */
+    touch-action: manipulation;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-brand);
+    outline-offset: 2px;
+  }
 }

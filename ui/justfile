@@ -1,3 +1,6 @@
+mock_url := "http://localhost:8081"
+backend_url := "http://localhost:8080"
+
 # Install npm dependencies for all UI workspaces
 install:
     cd "{{source_directory()}}" && npm install
@@ -9,6 +12,43 @@ driver:
 # Start the passenger UI dev server on :5174
 passenger:
     cd "{{source_directory()}}" && npm run dev:passenger
+
+# Start the mock backend and both UIs against it (development, UD-14)
+dev-mock:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{source_directory()}}"
+    trap 'kill 0' EXIT
+    npm run mock &
+    API_PROXY_TARGET={{mock_url}} npm run dev:driver &
+    API_PROXY_TARGET={{mock_url}} npm run dev:passenger &
+    wait
+
+# Start both UIs against the Go backend on :8080 (start it with `just backend up`)
+dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{source_directory()}}"
+    trap 'kill 0' EXIT
+    API_PROXY_TARGET={{backend_url}} npm run dev:driver &
+    API_PROXY_TARGET={{backend_url}} npm run dev:passenger &
+    wait
+
+# Start only the mock backend on :8081
+mock:
+    cd "{{source_directory()}}" && npm run mock
+
+# Switch the mock scenario and reset: normal, reassign, no_cars, too_far
+mock-scenario name:
+    @curl -sf -X POST -H 'Content-Type: application/json' -d '{"scenario":"{{name}}"}' {{mock_url}}/api/_mock/scenario && echo
+
+# Move the mock clock forward, e.g. to reach the destination
+mock-advance seconds:
+    @curl -sf -X POST -H 'Content-Type: application/json' -d '{"seconds":{{seconds}}}' {{mock_url}}/api/_mock/advance && echo
+
+# Reset the mock to its initial state (same API as the Go backend)
+mock-reset:
+    @curl -sf -X POST {{mock_url}}/api/demo/reset && echo reset
 
 # Typecheck and run all UI tests
 test:

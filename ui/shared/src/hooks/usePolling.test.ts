@@ -49,4 +49,22 @@ describe('usePolling', () => {
     await act(() => vi.advanceTimersByTimeAsync(INTERVAL * 3))
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
+
+  it('mutate shows new data at once and drops a poll that was already in flight', async () => {
+    let resolveSlow: (v: string) => void = () => {}
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce('first')
+      .mockImplementationOnce(() => new Promise((r) => (resolveSlow = r)))
+      .mockResolvedValue('later')
+    const { result } = renderHook(() => usePolling(fetcher, INTERVAL))
+    await act(() => vi.advanceTimersByTimeAsync(INTERVAL))
+
+    act(() => result.current.mutate('from action'))
+    await act(async () => resolveSlow('stale'))
+    expect(result.current.data).toBe('from action')
+
+    await act(() => vi.advanceTimersByTimeAsync(INTERVAL))
+    expect(result.current.data).toBe('later')
+  })
 })

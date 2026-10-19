@@ -40,4 +40,12 @@ describe('createApiClient', () => {
     await expect(request).rejects.toBeInstanceOf(ApiError)
     await expect(request).rejects.toMatchObject({ status: 422, message: 'too far from pickup' })
   })
+
+  it('reads the code and message from the backend error body', async () => {
+    mockFetch(new Response(JSON.stringify({ error: { code: 'too_far', message: '離上車點太遠' } }), { status: 422 }))
+
+    const request = createApiClient('passenger', 'p1').post('/passenger/requests')
+
+    await expect(request).rejects.toMatchObject({ status: 422, code: 'too_far', message: '離上車點太遠' })
+  })
 })
