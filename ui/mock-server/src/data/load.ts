@@ -51,7 +51,7 @@ export function loadStaticData(): StaticData {
     stopIds: [...r.stops].sort((a, b) => a[0] - b[0]).map(([, id]) => id),
   }))
 
-  const geojson = JSON.parse(read('docs/data/park/boundary.geojson'))
+  const geojson = JSON.parse(read('backend/config/park/boundary.geojson'))
   const parkRing = geojson.features[0].geometry.coordinates[0] as [number, number][]
 
   return { seed, csvStops, busRoutes, parkRing }

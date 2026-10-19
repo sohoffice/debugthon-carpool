@@ -36,7 +36,7 @@ describe('existing endpoints match the Go backend', () => {
   it('identifies the caller like DD-18', () => {
     expect(call('GET', '/api/me', 'Bearer driver:driver1')).toEqual({
       status: 200,
-      body: { username: 'driver1', display_name: '駕駛 阿明', role: 'driver', roles: ['driver'], simulated: true },
+      body: { username: 'driver1', display_name: '駕駛 鐵雄', role: 'driver', roles: ['driver'], simulated: true },
     })
     expect(call('GET', '/api/me').status).toBe(401)
     expect(call('GET', '/api/me', 'Bearer driver:nobody').status).toBe(401)
