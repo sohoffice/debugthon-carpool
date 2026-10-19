@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sohoffice/debugthon-carpool/backend/internal/settings"
 )
 
 type activity struct {
@@ -146,7 +147,11 @@ func (s *Server) updatePassedPickup(c *gin.Context, tripID int64) (bool, error) 
 	}
 	rows.Close()
 
-	if !passedPickup(pickup, radiusM, points) {
+	marginM, err := settings.New(s.db).Get(c, "pass_margin")
+	if err != nil {
+		return false, err
+	}
+	if !passedPickup(pickup, radiusM, marginM, points) {
 		return false, nil
 	}
 	_, err = s.db.Exec(c, `

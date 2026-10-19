@@ -95,7 +95,8 @@ func TestDriverPassesPickup(t *testing.T) {
 		passed bool
 	}{
 		{800, false}, {300, false}, {radius - 10, false}, {5, false}, // approach and enter
-		{radius + 40, true},  // leave: passed
+		{radius + 10, false}, // jitter just outside the radius: inside the margin
+		{radius + 40, true},  // leave beyond the margin: passed
 		{radius + 400, true}, // stays passed
 		{5, true},            // coming back does not undo it
 	} {
@@ -115,6 +116,29 @@ func TestDriverPassesPickup(t *testing.T) {
 	}
 	if !passed || !hasTime {
 		t.Fatalf("trip passed_pickup=%v passed_pickup_at set=%v, want both true", passed, hasTime)
+	}
+}
+
+// The margin is read from system_settings on every report, so SQL edits apply at once.
+func TestPassMarginIsConfigurable(t *testing.T) {
+	tx := testTx(t)
+	trip := activeTrip(t, tx)
+	declare(t, tx, trip.token)
+	mustExec(t, tx, `UPDATE system_settings SET value = 0 WHERE key = 'pass_margin'`)
+
+	report(t, tx, trip.token, offsetM(trip.pickup, 5))
+	got := report(t, tx, trip.token, offsetM(trip.pickup, trip.radiusM+10))
+	if got.PassedPickup == nil || !*got.PassedPickup {
+		t.Fatalf("passed_pickup = %v with a zero margin, want true", got.PassedPickup)
+	}
+
+	trip = activeTrip(t, tx)
+	declare(t, tx, trip.token)
+	mustExec(t, tx, `UPDATE system_settings SET value = 100 WHERE key = 'pass_margin'`)
+	report(t, tx, trip.token, offsetM(trip.pickup, 5))
+	got = report(t, tx, trip.token, offsetM(trip.pickup, trip.radiusM+60))
+	if got.PassedPickup == nil || *got.PassedPickup {
+		t.Fatalf("passed_pickup = %v with a 100 m margin at +60 m, want false", got.PassedPickup)
 	}
 }
 
@@ -281,5 +305,17 @@ func TestSeededVehicles(t *testing.T) {
 	}
 	if n != 7 {
 		t.Fatalf("found %d seeded accounts, want 7", n)
+	}
+}
+
+func TestSeededPassMargin(t *testing.T) {
+	tx := testTx(t)
+	var v float64
+	var unit string
+	if err := tx.QueryRow(context.Background(), `SELECT value::float8, unit FROM system_settings WHERE key = 'pass_margin'`).Scan(&v, &unit); err != nil {
+		t.Fatalf("pass_margin setting missing: %v", err)
+	}
+	if v != 25 || unit != "m" {
+		t.Fatalf("pass_margin = %v %s, want 25 m", v, unit)
 	}
 }

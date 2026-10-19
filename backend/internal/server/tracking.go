@@ -17,16 +17,17 @@ func distanceM(a, b latLng) float64 {
 }
 
 // passedPickup reports whether a vehicle has passed the pickup point: some report
-// fell within radiusM of it and a later one fell outside (DD-06). Reports must be
-// in reporting order. Entering alone is not passing, since the vehicle may still
-// be waiting at the point.
-func passedPickup(pickup latLng, radiusM float64, reports []latLng) bool {
+// fell within radiusM of it and a later one fell beyond radiusM+marginM (DD-06).
+// Reports must be in reporting order. Entering alone is not passing, since the
+// vehicle may still be waiting at the point, and the margin keeps positioning
+// noise at the edge of the range from counting as leaving.
+func passedPickup(pickup latLng, radiusM, marginM float64, reports []latLng) bool {
 	entered := false
 	for _, p := range reports {
-		inside := distanceM(pickup, p) <= radiusM
-		if inside {
+		d := distanceM(pickup, p)
+		if d <= radiusM {
 			entered = true
-		} else if entered {
+		} else if entered && d > radiusM+marginM {
 			return true
 		}
 	}

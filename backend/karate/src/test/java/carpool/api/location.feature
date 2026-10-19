@@ -33,6 +33,8 @@ Feature: position reports (POST /api/activities, POST /api/location, GET /api/me
     * match far == { id: '#number', activity_id: '#number', trip_id: '#(tripId)', lat: '#number', lng: '#number', reported_at: '#string', passed_pickup: false }
     * match send(token, at(r + 100)).passed_pickup == false
     * match send(token, at(5)).passed_pickup == false
+    # just outside the radius but inside the pass_margin setting (25 m by default): not left yet
+    * match send(token, at(r + 10)).passed_pickup == false
     * match send(token, at(-(r + 40))).passed_pickup == true
     # once passed it stays passed, even when the car comes back
     * match send(token, at(5)).passed_pickup == true
