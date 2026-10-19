@@ -106,6 +106,9 @@ export function App() {
   let screen
   if (view.kind === 'loading') {
     screen = <LoadingScreen failed={view.failed} />
+  } else if (view.kind === 'request') {
+    // Before the search checks: an open request comes back even without habitual data.
+    screen = <RequestFlow key={view.request.id} initial={view.request} fresh={view.fresh} position={position} onBack={backToSupply} onOpenChange={setReporting} />
   } else if (view.kind === 'setup' || search === null || pickup === null) {
     screen = (
       <DestinationScreen
@@ -115,7 +118,7 @@ export function App() {
         onDone={(s) => (setSearch(s), setView({ kind: 'supply', notice: null }))}
       />
     )
-  } else if (view.kind === 'supply') {
+  } else {
     screen = (
       <>
         <SupplyScreen
@@ -141,8 +144,6 @@ export function App() {
         )}
       </>
     )
-  } else {
-    screen = <RequestFlow key={view.request.id} initial={view.request} fresh={view.fresh} position={position} onBack={backToSupply} onOpenChange={setReporting} />
   }
 
   return (

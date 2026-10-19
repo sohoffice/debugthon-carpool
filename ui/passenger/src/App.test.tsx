@@ -193,6 +193,12 @@ describe('passenger App', () => {
     expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
   })
 
+  it('comes back to the open request after a reload even without habitual data', async () => {
+    fakeBackend({ profile: NO_PROFILE, latest: [request({ status: 'confirmed', ride: RIDE })] })
+    render(<App />)
+    expect(await screen.findByRole('button', { name: '我已上車' })).toBeInTheDocument()
+  })
+
   it('without habitual data starts at the destination setup, which needs a destination and a stop', async () => {
     fakeBackend({ profile: NO_PROFILE })
     render(<App />)

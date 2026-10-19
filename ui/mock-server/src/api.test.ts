@@ -99,6 +99,20 @@ describe('trips, activities and positions match the Go backend', () => {
     expect(call('POST', '/api/activities', 'Bearer driver:driver5')).toMatchObject({ status: 409, body: { error: { code: 'no_active_trip' } } })
     expect(call('POST', '/api/location', 'Bearer driver:driver1', SONGSHAN).status).toBe(201)
   })
+
+  it('decides passed_pickup from the driver’s reports like the Go backend (DD-06)', () => {
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const report = (m: number) => json<{ passed_pickup: boolean }>('POST', '/api/location', DRIVER, near(m)).passed_pickup
+    // Beyond the area without having entered it: not passed.
+    expect(report(-300)).toBe(false)
+    expect(report(300)).toBe(false)
+    expect(report(40)).toBe(false)
+    // Inside the leave margin (radius 80 + margin 25): still not passed.
+    expect(report(100)).toBe(false)
+    expect(report(120)).toBe(true)
+    expect(report(0)).toBe(true)
+    expect(json<TripView>('GET', '/api/driver/trips/current', DRIVER).passed_pickup).toBe(true)
+  })
 })
 
 describe('demo flow', () => {

@@ -34,6 +34,8 @@ export interface Trip {
   seatsConfirmed: number
   completedCount: number
   simulated: boolean
+  /** From the driver's location reports, as the Go backend decides it (DD-06); latched once true. */
+  reports: { enteredPickup: boolean; passedPickup: boolean }
 }
 
 export interface Dropoff {
@@ -186,6 +188,7 @@ export function addTrip(world: World, lookups: Lookups, spec: NewTrip, now: numb
     seatsConfirmed: 0,
     completedCount: 0,
     simulated: spec.simulated,
+    reports: { enteredPickup: false, passedPickup: false },
   }
   // Departing is the driver taking part today (DD-25).
   const withTrip = { ...world, nextTripId: world.nextTripId + 1, trips: [...world.trips, trip] }

@@ -143,7 +143,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       run: ({ user }) => {
         const trip = activeTripOf(world, user.id)
         if (!trip) throw new MockError(404, 'not_found', '目前沒有進行中的行程')
-        return ok({ ...tripView(lookups, trip), passed_pickup: driverTripView(world, lookups, trip, now()).passed_pickup })
+        return ok(tripView(lookups, trip))
       },
     },
     { method: 'GET', pattern: '/api/driver/trips/defaults', access: 'driver', run: ({ user }) => ok(tripDefaultsView(latestTripOf(world, user.id))) },
@@ -172,10 +172,19 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       pattern: '/api/location',
       access: 'any',
       run: ({ user, body }) => {
-        world = reportLocation(world, user.id, locationBody(body), now())
+        world = reportLocation(world, lookups, user.id, locationBody(body), now())
         const a = latestActivityOf(world, user.id)!
         const r = world.lastReports[a.id]
-        return created({ id: r.id, activity_id: a.id, trip_id: a.tripId, lat: r.lat, lng: r.lng, reported_at: new Date(r.atMs).toISOString() })
+        const trip = a.role === 'driver' && a.tripId !== null ? findTrip(world, a.tripId) : undefined
+        return created({
+          id: r.id,
+          activity_id: a.id,
+          trip_id: a.tripId,
+          lat: r.lat,
+          lng: r.lng,
+          reported_at: new Date(r.atMs).toISOString(),
+          ...(trip ? { passed_pickup: trip.reports.passedPickup } : {}),
+        })
       },
     },
 
@@ -189,7 +198,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       access: 'driver',
       run: ({ user }) => {
         const trip = latestTripOf(world, user.id)
-        return ok({ trip: trip ? driverTripView(world, lookups, trip, now()) : null })
+        return ok({ trip: trip ? driverTripView(world, lookups, trip) : null })
       },
     },
     {
@@ -213,7 +222,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
           if (action === 'board') world = driverBoardRide(world, user.id, id)
           if (action === 'complete') world = driverCompleteRide(world, user.id, id)
           const trip = latestTripOf(world, user.id)
-          return ok({ trip: trip ? driverTripView(world, lookups, trip, now()) : null })
+          return ok({ trip: trip ? driverTripView(world, lookups, trip) : null })
         },
       }),
     ),

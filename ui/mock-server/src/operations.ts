@@ -275,12 +275,22 @@ export function declareActivity(world: World, userId: number, role: 'driver' | '
 }
 
 /**
- * POST /api/location. Stored under the caller's latest activity, refused without one. The mock's
- * cars keep moving by time, so a driver's report does not move the car (10.2).
+ * POST /api/location. Stored under the caller's latest activity, refused without one. A driver's
+ * report updates the trip's passed_pickup like the Go backend (DD-06: entered the pickup area, then
+ * beyond radius + leave margin). The mock's cars still move by time, so reports do not move them (10.2).
  */
-export function reportLocation(world: World, userId: number, position: LatLngBody, now: number): World {
+export function reportLocation(world: World, lookups: Lookups, userId: number, position: LatLngBody, now: number): World {
   const activity = latestActivityOf(world, userId)
   if (!activity) throw new MockError(409, 'no_activity', '請先表示今天要參與，再回報位置')
   const report = { id: world.nextReportId, lat: position.lat, lng: position.lng, atMs: now }
-  return { ...world, nextReportId: world.nextReportId + 1, lastReports: { ...world.lastReports, [activity.id]: report } }
+  const stored = { ...world, nextReportId: world.nextReportId + 1, lastReports: { ...world.lastReports, [activity.id]: report } }
+  if (activity.role !== 'driver' || activity.tripId === null) return stored
+  return updateTrip(stored, activity.tripId, (t) => {
+    if (t.reports.passedPickup) return t
+    const pickup = mustGet(lookups.pickupById, t.pickupPointId, 'pickup point')
+    const d = distanceM(pickup, position)
+    if (d <= pickup.radius_m) return { ...t, reports: { enteredPickup: true, passedPickup: false } }
+    const passed = t.reports.enteredPickup && d > pickup.radius_m + (lookups.settings.pass_margin ?? 0)
+    return passed ? { ...t, reports: { enteredPickup: true, passedPickup: true } } : t
+  })
 }

@@ -55,7 +55,7 @@ export function tripView(lookups: Lookups, trip: Trip): TripView {
     seats_available: seatsFree(trip),
     auto_accept: trip.autoAccept,
     settings_locked: true,
-    passed_pickup: false,
+    passed_pickup: trip.reports.passedPickup,
     tag_filters: trip.tagFilters.map((f) => ({ ...f, name: lookups.tagById.get(f.tag_id)?.name })),
     route: trip.route,
     started_at: iso(trip.startedAtMs),
@@ -74,12 +74,11 @@ export function tripDefaultsView(trip: Trip | undefined): TripDefaults {
   }
 }
 
-export function driverTripView(world: World, lookups: Lookups, trip: Trip, now: number): DriverTrip {
+export function driverTripView(world: World, lookups: Lookups, trip: Trip): DriverTrip {
   const onTrip = world.requests.filter((r) => assignedTripId(r) === trip.id)
   const pending = onTrip.find((r) => r.status === 'waiting_driver')
   return {
     ...tripView(lookups, trip),
-    passed_pickup: passedPickup(trip, now, lookups),
     ended_at: trip.endedAtMs === null ? null : iso(trip.endedAtMs),
     pending_request: pending
       ? {
