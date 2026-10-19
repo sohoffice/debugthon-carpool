@@ -26,8 +26,9 @@ Feature: role-restricted APIs
     * match response contains { usual_pickup_point: '#null', usual_destination: '#null', capacity: '#null' }
 
   Scenario: passenger profile for a passenger
+    # passenger2: passenger1 carries demo habitual data (demo_seed_extras)
     * path 'api', 'passenger', 'profile'
-    * header Authorization = 'Bearer passenger:passenger1'
+    * header Authorization = 'Bearer passenger:passenger2'
     * method get
     * status 200
     * match response contains { usual_arrival_time: '#null', usual_destination: '#null', accepted_stops: '#[]' }

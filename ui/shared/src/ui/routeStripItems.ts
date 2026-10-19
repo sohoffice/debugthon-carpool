@@ -18,8 +18,9 @@ interface BuildOptions {
 }
 
 /**
- * Route strip rows for pickup → bus stops → destination. Repeated names (both sides of a road)
- * are shown once. Returns how many stops were left out, so the screen can say so.
+ * Route strip rows for pickup → bus stops → destination. A name is shown once along the route
+ * (both sides of a road, or a stop the route passes twice); the passenger's stop wins over a
+ * namesake. Returns how many stops were left out, so the screen can say so.
  */
 export function routeStripItems(
   pickupName: string,
@@ -27,7 +28,14 @@ export function routeStripItems(
   destinationName: string,
   { dropoffStopId = null, maxStops = 3 }: BuildOptions = {},
 ): { items: RouteStripItem[]; hidden: number } {
-  const unique = stops.filter((s, i) => i === 0 || s.name !== stops[i - 1].name || s.id === dropoffStopId)
+  const dropoffName = stops.find((s) => s.id === dropoffStopId)?.name
+  const seen = new Set<string>()
+  const unique = stops.filter((s) => {
+    if (s.id === dropoffStopId) return true
+    if (s.name === dropoffName || seen.has(s.name)) return false
+    seen.add(s.name)
+    return true
+  })
   const dropoffIndex = unique.findIndex((s) => s.id === dropoffStopId)
   const keep = new Set<number>()
   if (unique.length <= maxStops) {
