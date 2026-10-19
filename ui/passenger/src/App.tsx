@@ -22,7 +22,8 @@ import { SubmitSheet } from './SubmitSheet'
 import { SupplyScreen } from './SupplyScreen'
 
 type View =
-  | { kind: 'loading'; failed: boolean }
+  /** `missing`: the backend answered 404, so it does not have this API yet (not a connection problem). */
+  | { kind: 'loading'; failed: boolean; missing?: string }
   | { kind: 'setup' }
   | { kind: 'supply'; notice: string | null }
   | { kind: 'request'; request: PassengerRequest; fresh: boolean }
@@ -60,8 +61,9 @@ export function App() {
         // An open request comes back after a reload; habitual data skips the setup (5, REQ-025).
         if (latest.request && isOpen(latest.request)) setView({ kind: 'request', request: latest.request, fresh: false })
         else setView(habitual ? { kind: 'supply', notice: null } : { kind: 'setup' })
-      } catch {
-        if (!cancelled) setView({ kind: 'loading', failed: true })
+      } catch (err) {
+        const missing = err instanceof ApiError && err.status === 404 ? err.message : undefined
+        if (!cancelled) setView({ kind: 'loading', failed: true, missing })
         setTimeout(() => !cancelled && boot(), 3000)
       }
     }
@@ -105,7 +107,7 @@ export function App() {
 
   let screen
   if (view.kind === 'loading') {
-    screen = <LoadingScreen failed={view.failed} />
+    screen = <LoadingScreen failed={view.failed} missing={view.missing} />
   } else if (view.kind === 'request') {
     // Before the search checks: an open request comes back even without habitual data.
     screen = <RequestFlow key={view.request.id} initial={view.request} fresh={view.fresh} position={position} onBack={backToSupply} onOpenChange={setReporting} />

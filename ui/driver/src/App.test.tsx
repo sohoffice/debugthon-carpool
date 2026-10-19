@@ -125,6 +125,12 @@ describe('driver App', () => {
     expect(await screen.findByRole('heading', { name: /目前沒有/ })).toBeInTheDocument()
   })
 
+  it('says the backend lacks the trip API instead of "cannot connect" on a 404', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: { code: 'not_found', message: '找不到這個 API' } }), { status: 404 })))
+    render(<App />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('後端還沒有提供行程查詢（找不到這個 API）')
+  })
+
   it('has no debug mode without ?debug=1 (DD-14)', async () => {
     fakeBackend([{ trip: null }], { defaults: NEVER_DEPARTED })
     render(<App />)

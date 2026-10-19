@@ -48,7 +48,9 @@ export function App() {
   let screen
   if (polling.data === undefined) {
     tone = 'dark'
-    screen = <LoadingScreen failed={offline} />
+    // 404: the backend answers but does not have this API yet (not a connection problem).
+    const missing = polling.error instanceof ApiError && polling.error.status === 404 ? polling.error.message : undefined
+    screen = <LoadingScreen failed={offline} missing={missing} />
   } else if (trip?.status === 'active' && trip.pending_request) {
     tone = 'dark'
     const request = trip.pending_request
