@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -15,7 +14,7 @@ type activity struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// createActivity records that the caller takes part today (carpool-oi-11): the
+// createActivity records that the caller takes part today (DD-25): the
 // master record their location reports go to. A driver's activity is linked to
 // their active trip, so a driver must have one (409 otherwise); a passenger's is
 // linked later, when a request is confirmed. Declaring again starts a new
@@ -84,7 +83,7 @@ func (s *Server) reportLocation(c *gin.Context) {
 		SELECT id, role, trip_id, created_at FROM activities WHERE user_id = $1 ORDER BY id DESC LIMIT 1`,
 		c.GetInt64(ctxUserID)).Scan(&act.ID, &act.Role, &act.TripID, &act.CreatedAt)
 	if isNoRows(err) {
-		apiError(c, http.StatusConflict, "no_activity", "請先表示參與（POST /api/activities）再回報位置")
+		apiError(c, http.StatusConflict, "no_activity", "請先表示今天要參與，再回報位置")
 		return
 	}
 	if err != nil {
@@ -181,21 +180,4 @@ func (s *Server) listMyLocationReports(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, out)
-}
-
-// latestPosition is the position the request flow checks for the passenger
-// (REQ-034): the latest report of their current, i.e. latest, passenger activity.
-// Declaring again starts a new activity, so an older activity's position is not
-// returned; ok is false until the new one has a report. at is the report time, for
-// the caller to apply its freshness limit.
-func latestPosition(ctx context.Context, db DB, userID int64) (pos latLng, at time.Time, ok bool, err error) {
-	err = db.QueryRow(ctx, `
-		SELECT r.lat, r.lng, r.reported_at FROM location_reports r
-		 WHERE r.activity_id = (SELECT id FROM activities
-		                         WHERE user_id = $1 AND role = 'passenger' ORDER BY id DESC LIMIT 1)
-		 ORDER BY r.id DESC LIMIT 1`, userID).Scan(&pos.Lat, &pos.Lng, &at)
-	if isNoRows(err) {
-		return latLng{}, time.Time{}, false, nil
-	}
-	return pos, at, err == nil, err
 }

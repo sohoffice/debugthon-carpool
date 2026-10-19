@@ -159,25 +159,17 @@ func TestAllReportsAreKept(t *testing.T) {
 	}
 }
 
-func TestPassengerReportsAndLatest(t *testing.T) {
+func TestPassengerReports(t *testing.T) {
 	tx := testTx(t)
-	ctx := context.Background()
-	id, token := newUser(t, tx, rolePassenger)
-	if _, _, ok, err := latestPosition(ctx, tx, id); err != nil || ok {
-		t.Fatalf("before any report: ok=%v err=%v, want ok=false", ok, err)
-	}
-
+	_, token := newUser(t, tx, rolePassenger)
 	declare(t, tx, token)
+
 	first := latLng{25.0800, 121.5700}
 	last := latLng{25.0850, 121.5750}
-	if r := report(t, tx, token, first); r.TripID != nil {
-		t.Fatalf("passenger report has trip_id %d, want none", *r.TripID)
-	}
-	report(t, tx, token, last)
-
-	got, at, ok, err := latestPosition(ctx, tx, id)
-	if err != nil || !ok || got != last || at.IsZero() {
-		t.Fatalf("latestPosition = %v at %v ok=%v err=%v, want %v with a time", got, at, ok, err, last)
+	for _, p := range []latLng{first, last} {
+		if r := report(t, tx, token, p); r.TripID != nil || r.PassedPickup != nil {
+			t.Fatalf("passenger report has trip_id %v passed_pickup %v, want neither", r.TripID, r.PassedPickup)
+		}
 	}
 
 	// Every passenger report can be read back.
@@ -186,27 +178,6 @@ func TestPassengerReportsAndLatest(t *testing.T) {
 	list := decode[[]reportView](t, w)
 	if len(list) != 2 || list[0].Lat != first.Lat || list[1].Lat != last.Lat || list[0].ReportedAt == "" {
 		t.Fatalf("reports = %+v, want the two sent", list)
-	}
-
-	// Declaring again starts a new activity with no report yet: the old position no longer counts.
-	declare(t, tx, token)
-	if _, _, ok, err := latestPosition(ctx, tx, id); err != nil || ok {
-		t.Fatalf("after declaring again: ok=%v err=%v, want ok=false", ok, err)
-	}
-	again := latLng{25.0900, 121.5800}
-	report(t, tx, token, again)
-	if got, _, ok, _ := latestPosition(ctx, tx, id); !ok || got != again {
-		t.Fatalf("latestPosition = %v ok=%v, want %v", got, ok, again)
-	}
-
-	// A report under a driver activity is not a passenger position, even for the same user.
-	var actID int64
-	if err := tx.QueryRow(ctx, `INSERT INTO activities (user_id, role) VALUES ($1, 'driver') RETURNING id`, id).Scan(&actID); err != nil {
-		t.Fatal(err)
-	}
-	mustExec(t, tx, `INSERT INTO location_reports (activity_id, lat, lng) VALUES ($1, 25.0, 121.0)`, actID)
-	if got, _, _, _ := latestPosition(ctx, tx, id); got != again {
-		t.Fatalf("latestPosition = %v after a driver-activity report, want %v", got, again)
 	}
 }
 

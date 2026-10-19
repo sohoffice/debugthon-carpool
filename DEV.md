@@ -98,7 +98,7 @@
 | DELETE | `/api/me/tags/:id` | 任一 | 取消選擇標籤 |
 | GET | `/api/driver/profile` | 駕駛 | 常用上車點、常用目的地、可載人數（尚無共乘紀錄時為 `null`） |
 | GET | `/api/passenger/profile` | 乘客 | 平常抵達時間、常用目的地、可接受的下車公車站 |
-| POST | `/api/activities` | 任一 | 表示今天要參與，建立位置回報的主檔（carpool-oi-11），回 `201`。駕駛的主檔關聯到進行中的行程（沒有則回 `409 no_active_trip`）；乘客的主檔不關聯行程。再次呼叫會建立新的主檔 |
+| POST | `/api/activities` | 任一 | 表示今天要參與，建立位置回報的主檔（DD-25），回 `201`。駕駛的主檔關聯到進行中的行程（沒有則回 `409 no_active_trip`）；乘客的主檔在請求被確認時才關聯到行程（T12／T13），建立當下不關聯。再次呼叫會建立新的主檔 |
 | POST | `/api/location` | 任一 | 回報位置 `{"lat","lng"}`，回 `201`，歸入呼叫者最新的主檔（從未建立過回 `409 no_activity`）。駕駛的回報若主檔有行程，會回傳 `passed_pickup`。座標缺漏或超出範圍回 `400 invalid_location` |
 | GET | `/api/me/location-reports` | 任一 | 呼叫者所有回報過的位置，由舊到新（位置紀錄只新增、不修改） |
 
