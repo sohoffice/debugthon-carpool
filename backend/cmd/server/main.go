@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sohoffice/debugthon-carpool/backend/internal/park"
 	"github.com/sohoffice/debugthon-carpool/backend/internal/server"
 )
 
@@ -23,7 +24,12 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := server.NewRouter(pool).Run(addr); err != nil {
+	boundary, err := park.Load(parkBoundaryPath())
+	if err != nil {
+		log.Fatal(err)
+	}
+	deps := server.Deps{Park: boundary}
+	if err := server.NewRouter(pool, deps).Run(addr); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -41,4 +47,12 @@ func databaseURL() string {
 	}
 	return fmt.Sprintf("postgres://carpool:carpool@localhost:%s/%s?sslmode=disable",
 		get("POSTGRES_PORT", "5432"), get("POSTGRES_DB", "carpool"))
+}
+
+// parkBoundaryPath uses PARK_BOUNDARY if set, else the GeoJSON in config/ (the backend runs from backend/).
+func parkBoundaryPath() string {
+	if p := os.Getenv("PARK_BOUNDARY"); p != "" {
+		return p
+	}
+	return "config/park/boundary.geojson"
 }

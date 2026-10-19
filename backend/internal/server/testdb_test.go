@@ -9,18 +9,32 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/sohoffice/debugthon-carpool/backend/internal/park"
 )
+
+func testDatabaseURL() string {
+	if url := os.Getenv("TEST_DATABASE_URL"); url != "" {
+		return url
+	}
+	return "postgres://carpool:carpool@localhost:5432/carpool?sslmode=disable"
+}
+
+// testDeps loads the real park boundary and routes in a straight line, so tests never reach out.
+func testDeps(t *testing.T) Deps {
+	t.Helper()
+	boundary, err := park.Load("../../config/park/boundary.geojson")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Deps{Park: boundary, Routes: straightRoute{}}
+}
 
 // testTx opens a transaction on the local database and rolls it back when the
 // test ends, so fixtures never leak. Needs `just infra up` and `just backend db-apply`.
 func testTx(t *testing.T) pgx.Tx {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		url = "postgres://carpool:carpool@localhost:5432/carpool?sslmode=disable"
-	}
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, url)
+	conn, err := pgx.Connect(ctx, testDatabaseURL())
 	if err != nil {
 		t.Fatalf("connect database (run `just infra up` and `just backend db-apply`): %v", err)
 	}
@@ -50,7 +64,7 @@ func call(t *testing.T, db DB, method, path, token, body string) *httptest.Respo
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	w := httptest.NewRecorder()
-	NewRouter(db).ServeHTTP(w, req)
+	NewRouter(db, testDeps(t)).ServeHTTP(w, req)
 	return w
 }
 

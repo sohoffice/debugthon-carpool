@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/sohoffice/debugthon-carpool/backend/internal/park"
 )
 
 // DB is satisfied by *pgxpool.Pool and pgx.Tx (tests run inside a transaction).
@@ -16,14 +17,28 @@ type DB interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 // Server holds the dependencies shared by all handlers.
-type Server struct{ db DB }
+type Server struct {
+	db     DB
+	park   *park.Boundary
+	routes RouteProvider
+}
+
+// Deps are the collaborators that are not the database.
+type Deps struct {
+	Park   *park.Boundary // 內湖科學園區 boundary, for checking destinations
+	Routes RouteProvider  // plans the pickup -> destination route; nil means the simulated straight line
+}
 
 // NewRouter builds the HTTP router with all API routes registered.
-func NewRouter(db DB) *gin.Engine {
-	s := &Server{db: db}
+func NewRouter(db DB, deps Deps) *gin.Engine {
+	s := &Server{db: db, park: deps.Park, routes: deps.Routes}
+	if s.routes == nil {
+		s.routes = straightRoute{}
+	}
 
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
@@ -47,8 +62,13 @@ func NewRouter(db DB) *gin.Engine {
 	authed.POST("/activities", s.createActivity)
 	authed.POST("/location", s.reportLocation)
 	authed.GET("/me/location-reports", s.listMyLocationReports)
+	authed.GET("/trips/:id", s.getTrip)
 
-	authed.Group("/driver", requireRole(roleDriver)).GET("/profile", s.getDriverProfile)
+	driver := authed.Group("/driver", requireRole(roleDriver))
+	driver.GET("/profile", s.getDriverProfile)
+	driver.POST("/trips", s.depart)
+	driver.GET("/trips/current", s.currentTrip)
+	driver.GET("/trips/defaults", s.tripDefaults)
 	authed.Group("/passenger", requireRole(rolePassenger)).GET("/profile", s.getPassengerProfile)
 
 	return r

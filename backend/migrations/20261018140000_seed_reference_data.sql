@@ -10,7 +10,7 @@ INSERT INTO pickup_points (name, lat, lng, radius_m) VALUES
     ('台北大巨蛋', 25.044249, 121.557934, 80)
 ON CONFLICT (name) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, radius_m = EXCLUDED.radius_m;
 
--- Bus stops inside the park boundary (docs/data/park/boundary.geojson), filtered from
+-- Bus stops inside the park boundary (backend/config/park/boundary.geojson), filtered from
 -- docs/data/busstop/busstops.csv.
 INSERT INTO bus_stops (stop_id, name, lat, lng) VALUES
     (194, '治磐新村', 25.0830692818289, 121.564098538475),
