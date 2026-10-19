@@ -38,6 +38,7 @@
 | --- | --- |
 | `just backend up` | 編譯後端並在背景啟動，預設監聽 `:8080`；若已在執行則不重複啟動 |
 | `just backend down` | 停止由 `up` 啟動的後端 |
+| `just backend test` | 執行後端 Go 測試（`go test ./...`），需先 `just infra up` 與 `just backend db-apply` |
 | `just backend karate` | 啟動後端（若尚未執行）並以 Karate 執行 API 整合測試（見下方說明） |
 | `just backend db-apply` | 套用尚未執行的資料庫遷移（需先 `just infra up`） |
 | `just backend db-rollback` | 回滾最近一次已套用的遷移（執行該檔的 `-- +goose Down`） |
