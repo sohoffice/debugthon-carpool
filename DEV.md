@@ -98,6 +98,9 @@
 | DELETE | `/api/me/tags/:id` | 任一 | 取消選擇標籤 |
 | GET | `/api/driver/profile` | 駕駛 | 常用上車點、常用目的地、可載人數（尚無共乘紀錄時為 `null`） |
 | GET | `/api/passenger/profile` | 乘客 | 平常抵達時間、常用目的地、可接受的下車公車站 |
+| POST | `/api/activities` | 任一 | 表示今天要參與，建立位置回報的主檔（carpool-oi-11），回 `201`。駕駛的主檔關聯到進行中的行程（沒有則回 `409 no_active_trip`）；乘客的主檔不關聯行程。再次呼叫會建立新的主檔 |
+| POST | `/api/location` | 任一 | 回報位置 `{"lat","lng"}`，回 `201`，歸入呼叫者最新的主檔（從未建立過回 `409 no_activity`）。駕駛的回報若主檔有行程，會回傳 `passed_pickup`。座標缺漏或超出範圍回 `400 invalid_location` |
+| GET | `/api/me/location-reports` | 任一 | 呼叫者所有回報過的位置，由舊到新（位置紀錄只新增、不修改） |
 
 - 除 `/api/ping` 外都需要 `Authorization: Bearer <角色>:<帳號>`：格式錯誤或帳號不存在回 `401`，帳號沒有該角色或角色不能使用該 API 回 `403`。
 - 錯誤一律回 `{"error":{"code":"...","message":"..."}}`。
@@ -113,6 +116,8 @@
 - 針對**已啟動**的後端與資料庫；需先 `just infra up` 與 `just backend db-apply`。測試依賴種子資料：測試帳號（見下節）、標籤、上車點與公車站，不自行建立。
 - 測試資料的原則：**有 REST API 可寫入就用 API**（例如以 `PUT`／`DELETE /api/me/tags/:id` 選擇與取消標籤，並在情境結束前還原）；**只有沒有 API 可用時才用 SQL**（目前是帳號與常用資料，見 DD-19），寫在 `profiles.feature`，由 `Db.java` 以 `carpool` 角色寫入。
 - SQL 建立的帳號名稱帶 `karate-` 前綴與隨機後綴；每個情境結束時由 `cleanup.feature` 刪除（常用資料隨帳號連動刪除），因此情境可平行執行，也不會留下資料。新增這類情境時沿用同一做法。
+- **新增或修改 API 的任務，一律要同時補上 Karate 情境**，覆蓋成功、被拒絕與未帶 token 的情況。
+- 位置回報（`location.feature`）是例外：`location_reports` 只新增（DD-06），觸發器擋下 `DELETE`，且回報掛在 `activities` 之下、`activities.user_id` 的外鍵不連動刪除，所以表示過參與的帳號無法被刪除。做法：每個情境各用一個全新的 `karate-track-` 帳號（可平行、斷言精確）；目前沒有行程 API，進行中的行程以 SQL 建立；情境結束時由 `cleanup-tracking.feature` 將該帳號的行程設為 `completed`，並刪除從未表示過參與的帳號。表示過參與的 `karate-track-` 帳號會留在資料庫，不影響其他測試與供給查詢。
 - 以 `-DbaseUrl=...` 指定後端位址（預設 `http://localhost:8080`），以 `-DdbUrl=...`、`-DdbUser=...`、`-DdbPassword=...` 指定 JDBC 連線（預設 `jdbc:postgresql://localhost:5432/carpool`、`carpool`／`carpool`）；`just backend karate` 會依 `PORT`、`POSTGRES_PORT`、`POSTGRES_DB` 帶入。
 - `.feature` 檔放在 `backend/karate/src/test/java/carpool/api/`；報表在 `backend/karate/target/karate-reports/`。
 
@@ -140,6 +145,7 @@
 - 內湖科學園區範圍：不存資料庫，是 GeoJSON 檔 `docs/data/park/boundary.geojson` 的 52 點多邊形，涵蓋北段與南段（西緣沿堤頂大道（北端到內湖路一段）與基隆河河濱公園的堤防側（河濱公園不含在內），南段北到民權東路六段、南到基隆河北岸、東到行愛路）；園區內公車站 97 個，由 `docs/data/busstop/busstops.csv` 以該多邊形篩選匯入。
 - 標籤：6 個使用者自選標籤（`issuer = 'self'`）。
 - 模擬行程：`driver1`～`driver3` 皆從松山車站出發、座位 3／4／2、自動接受，狀態為進行中（`active`、設定已鎖定、`started_at = now()`）；`driver4`、`driver5` 無行程，供真人從駕駛介面操作。`driver3` 帶有「不抽菸」「安靜通勤」標籤，`driver2` 帶有「可載行李」。
+- 車輛與位置回報主檔：由遷移 `backend/migrations/20261019130000_activities_and_vehicles.sql` 建立 `vehicles`、`activities` 兩張表。`driver1`～`driver5` 各有 1 輛車（車牌與描述為暫定的範例資料，可自行修改）；3 筆模擬行程的駕駛各有 1 筆關聯到該行程的主檔，讓模擬器可直接回報位置。乘客的主檔在乘客呼叫 `POST /api/activities` 時才建立。
 - Demo 乘客（尚未建立為資料，請求時輸入）：`passenger1` 在松山車站，最終目的地約 (25.0765, 121.5742)（瑞光路），可接受的公車站為「瑞光港墘路口」（`stop_id` 1013）與「港墘路」（`stop_id` 1106）。`driver1`、`driver3` 的目的地在其 200 m 內（完全相符），`driver2` 的目的地在基湖路，只能靠沿途公車站相符；取捨結果須待 T07／T08 提供路線與位置後才能驗證。
 - 重建：遷移已套用的資料庫要改種子時，用 `just backend db-reset`。Down 只在剛種子的資料庫可用，跑過 Demo 後（位置紀錄、請求都會參照這些資料）請改用 `db-reset`。
 - 系統設定預設值在建立結構的遷移中（`system_settings`）。

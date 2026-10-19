@@ -44,6 +44,9 @@ func NewRouter(db DB) *gin.Engine {
 	authed.GET("/tags", s.listTags)
 	authed.PUT("/me/tags/:id", s.selectTag)
 	authed.DELETE("/me/tags/:id", s.deselectTag)
+	authed.POST("/activities", s.createActivity)
+	authed.POST("/location", s.reportLocation)
+	authed.GET("/me/location-reports", s.listMyLocationReports)
 
 	authed.Group("/driver", requireRole(roleDriver)).GET("/profile", s.getDriverProfile)
 	authed.Group("/passenger", requireRole(rolePassenger)).GET("/profile", s.getPassengerProfile)
