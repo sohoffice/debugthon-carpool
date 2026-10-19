@@ -40,6 +40,10 @@ down:
     fi
     rm -f "{{pid_file}}"
 
+# Run the Go unit tests (needs `just infra up` and `db-apply`)
+test:
+    cd "{{source_directory()}}" && go test ./...
+
 # Run the Karate API tests against the backend (starts it if needed; needs `just infra up` and `db-apply`)
 karate: up
     cd "{{source_directory()}}/karate" && mvn -q test -DbaseUrl=http://localhost:{{port}} -DdbUrl=jdbc:postgresql://localhost:{{pg_port}}/{{pg_db}}

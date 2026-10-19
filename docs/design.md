@@ -29,7 +29,7 @@
    - [4.13 服務紀錄](#413-服務紀錄)
    - [4.14 系統設定](#414-系統設定)
    - [4.15 資料庫](#415-資料庫)
-     - [資料表關聯圖（ERD）](#資料表關聯圖erd)
+     - [資料表歸屬](#資料表歸屬)
    - [4.16 模擬器](#416-模擬器)
    - [4.17 PoC 不交付的元件](#417-poc-不交付的元件)
 5. [主要互動流程](#5-主要互動流程)
@@ -73,7 +73,7 @@ PoC 只交付**駕駛介面**與**乘客介面**。Phase 1 的需求全部由本
 flowchart TB
     DUI[駕駛介面<br/>React + Tailwind]
     PUI[乘客介面<br/>React + Tailwind]
-    SIM[模擬器<br/>車輛移動]
+    SIM[模擬器<br/>駕駛介面除錯模式]
 
     subgraph Backend[共乘平台後端 · Go]
         API[API 層<br/>Bearer token 身分]
@@ -101,8 +101,8 @@ flowchart TB
     end
 
     DUI -- 輪詢／操作 --> API
-    PUI -- 輪詢／操作 --> API
-    SIM -- 回報駕駛與乘客位置 --> API
+    PUI -- 輪詢／操作／回報乘客位置 --> API
+    SIM -- 回報駕駛位置 --> API
     API --> ACC & TAG & STN & TRIP & TRK & SUP & RQ
     TRIP --> STN & TT & TRK
     TRK --> TT
@@ -118,7 +118,7 @@ flowchart TB
 **分層說明：**
 
 - **用戶端**：駕駛介面與乘客介面是兩個分開的介面，都以輪詢向後端取得狀態。
-- **模擬器**：Demo 用的獨立程式，只負責沿預先定義的路徑，持續回報駕駛與乘客的模擬位置，以和真實定位相同的方式回報。
+- **模擬器**：Demo 用，做在駕駛介面的除錯模式中（DD-14），不是獨立程式。替選定的駕駛帳號沿預先定義的路徑持續回報模擬位置，以和真實定位相同的方式回報。乘客的位置由乘客介面的除錯模式提供（DD-26）。
 - **後端**：單一 Go 服務，內部依職責切成元件。核心是兩條鏈：
   - **供給鏈**：行程管理（含行程路線）→ 位置追蹤（位置與 ETA）
   - **媒合鏈**：請求流程 → 媒合引擎
@@ -222,7 +222,7 @@ flowchart TB
 
 #### DD-24 Demo 時所有元件在同一台機器上本地執行
 
-決定 Demo 時後端服務、PostgreSQL（docker-compose）、駕駛介面、乘客介面與模擬器全部在同一台機器上本地執行，不部署到雲端；駕駛與乘客介面以瀏覽器開啟本機網址操作。
+決定 Demo 時後端服務、PostgreSQL（docker-compose）、駕駛介面（含模擬器）、乘客介面全部在同一台機器上本地執行，不部署到雲端；駕駛與乘客介面以瀏覽器開啟本機網址操作。
 
 - 理由：Demo 由團隊現場操作，不需要讓觀眾連線；本地執行不必處理部署、網域與網路，現場斷網也不影響 Demo，重設資料也最簡單。
 - 考慮過的替代方案：
@@ -240,19 +240,21 @@ flowchart TB
 **職責：**
 
 - **出發前**：選擇適用於自己的標籤；出發確認（目的地、可載人數、上車點、標籤篩選與意圖、自動接受），預先帶入上次的設定，不需修改時一次操作即可出發；確認時在地圖上顯示由上車點到目的地的行程路線與沿途公車站。
-- **行程中**：只呈現是否有搭車請求、該請求的上車點與下車點、已確認乘客的下車點，以及確認／婉拒與替乘客結束共乘的操作（DD-04）。
+- **行程中**：只呈現是否有搭車請求、該請求的上車點與下車點、已確認乘客的下車點與是否已上車，以及確認／婉拒、標記乘客已上車（DD-27）與替乘客結束共乘的操作（DD-04）。
+- **PoC 除錯模式**（網址帶 `?debug=1` 才出現，標示為模擬）：選擇主畫面的駕駛身分；承載模擬器（[4.16](#416-模擬器)、DD-14）。
 
-**負責需求：** REQ-003、REQ-008、REQ-015、REQ-017、REQ-019、REQ-020、REQ-021、REQ-063、REQ-066、REQ-067
+**負責需求：** REQ-003、REQ-008、REQ-015、REQ-017、REQ-019、REQ-020、REQ-021、REQ-063、REQ-066、REQ-067、REQ-068
 
 **互動：** 以駕駛 token 呼叫 API 層；行程中輪詢待回應的搭車請求。
 
 #### DD-04 駕駛行程中只呈現單一極簡畫面
 
-決定駕駛介面在行程進行中只呈現一個畫面，內容只有「有沒有搭車請求」、該請求的上車點與下車點、已確認乘客的下車點，以及確認／婉拒、替乘客結束共乘的單一操作；不顯示地圖、統計、提示或動畫，也不提供任何設定的入口。所有設定與路線顯示集中在出發確認畫面。
+決定駕駛介面在行程進行中只呈現一個畫面，內容只有「有沒有搭車請求」、該請求的上車點與下車點、已確認乘客的下車點與是否已上車，以及確認／婉拒、標記乘客已上車、替乘客結束共乘的單一操作；不顯示地圖、統計、提示或動畫，也不提供任何設定的入口。所有設定與路線顯示集中在出發確認畫面。
 
 - 理由：駕駛安全原則已定（G5）；從介面結構上就移除行程中的其他資訊與設定入口，比在每個畫面加上限制更可靠。路線在出發確認時已經顯示（REQ-003），行程中不需要再顯示。
 - 考慮過的替代方案：
   - 行程中保留地圖與設定入口但加警告：仍然讓駕駛在開車時分心，違反 REQ-066。
+- 例外：PoC 除錯模式（DD-14）是 Demo 工具，不屬於駕駛產品；只在網址帶除錯參數時出現，不受本決定限制。
 - 需求連結：
   - REQ-003
   - REQ-019
@@ -265,14 +267,35 @@ flowchart TB
 
 - 選擇適用於自己的標籤。
 - 最終目的地與可接受的下車公車站輸入（預先帶入從共乘累積的常用設定）、標籤篩選與意圖。
-- 每個上車點的卡片（相關車輛數量、最快到達時間、剩餘座位）與時間軸（範圍為「等待上限」）；不提供選車操作。
-- 「今天我要搭」：送出時可再調整篩選；立即顯示分配結果或「目前沒有可搭的車」。
-- 請求狀態：等待中、已確認（上車地點、車輛資訊、ETA，並在地圖上顯示該行程路線與沿途公車站）、已放寬標示、無車可配（接駁公車或步行的替代方案）。
+- 上車點選擇（預設為離目前位置最近的上車點，DD-26；可改選）；該上車點的卡片（相關車輛數量、最快到達時間、剩餘座位）與時間軸（範圍為「等待上限」）；不提供選車操作。
+- 「今天我要搭」：先建立乘客的參與主檔，再送出請求並附上乘客當下的位置；同一位置以非同步方式回報為主檔的第一筆回報（DD-25）。送出時可再調整篩選；立即顯示分配結果或「目前沒有可搭的車」。
+- 請求狀態：等待中、已確認（上車地點、車輛資訊、ETA，並在地圖上顯示該行程路線與沿途公車站，以及「已上車」操作，DD-27）、已上車（只顯示「結束共乘」操作）、已放寬標示、無車可配（接駁公車或步行的替代方案）。
 - 下車後的「結束共乘」操作，這是結束共乘的主要方式（DD-23）。
+- **PoC 除錯模式**：設定乘客的目前位置；參與主檔建立後持續送出位置（DD-26）。
 
-**負責需求：** REQ-003、REQ-008、REQ-024、REQ-025、REQ-029、REQ-030、REQ-031、REQ-032、REQ-035、REQ-036、REQ-047、REQ-051、REQ-052、REQ-053、REQ-063、REQ-067
+**負責需求：** REQ-003、REQ-008、REQ-024、REQ-025、REQ-029、REQ-030、REQ-031、REQ-032、REQ-035、REQ-036、REQ-047、REQ-051、REQ-052、REQ-053、REQ-063、REQ-067、REQ-068
 
-**互動：** 以乘客 token 呼叫 API 層；輪詢供給狀態與請求狀態。
+**互動：** 以乘客 token 呼叫 API 層；輪詢供給狀態與請求狀態；參與主檔建立後透過位置回報 API（DD-08）回報乘客位置。
+
+#### DD-26 PoC 的乘客位置由乘客介面的除錯模式提供
+
+決定乘客介面提供「除錯模式」，取代日後的真實定位，只做兩件事：
+
+1. **設定目前位置**：由操作者指定乘客當下的位置（例如上車點附近）。
+2. **持續送出位置**：參與主檔建立後（DD-25），定時把目前位置透過位置回報 API 回報（DD-08）。
+
+乘客介面透過單一的「目前位置」來源取得位置，PoC 由除錯模式提供；按下「今天我要搭」時以目前位置送出請求。除錯模式在介面中標示為模擬（REQ-063）。
+
+- 理由：按下「今天我要搭」時就需要乘客當下的位置；位置在乘客介面內設定，不需要另一個程式，也不必向後端查詢。乘客送出請求時基本上已在上車點（REQ-034），不需要模擬沿路徑移動，指定位置即可；操作者改變目前位置時，持續送出的位置也跟著改變。乘客介面和使用真實定位時一樣，自己取得位置並回報，日後換成手機定位只需替換「目前位置」的來源，後端不需改動。
+- 考慮過的替代方案：
+  - 另寫獨立的乘客模擬器程式：乘客介面要另外向它取得當下位置，Demo 時也要多啟動、操作一個程式。
+  - 在乘客介面內沿預先定義的路徑模擬移動：Demo 只需要乘客在上車點附近，路徑與速度的設定用不到。
+  - 由模擬器（DD-14）一併回報乘客位置：乘客介面不知道自己當下的位置；模擬器還要在送出請求前就開始回報。
+  - 瀏覽器定位：得到的是 Demo 現場的位置，不在上車點附近。
+- 需求連結：
+  - REQ-034
+  - REQ-061
+  - REQ-063
 
 ### 4.3 API 層
 
@@ -284,7 +307,7 @@ flowchart TB
 
 ### 4.4 帳號與身分
 
-**職責：** 帳號與角色（駕駛、乘客或兩者）的查詢；保存並提供從共乘紀錄累積的常用資料：
+**職責：** 帳號與角色（駕駛、乘客或兩者）、駕駛車輛資訊的查詢；保存並提供從共乘紀錄累積的常用資料：
 
 - **駕駛**：常用上車點、常用的最終目的地、可載人數
 - **乘客**：平常抵達時段、常用的最終目的地、可接受的下車公車站
@@ -292,6 +315,57 @@ flowchart TB
 **負責需求：** REQ-005、REQ-006、REQ-007、REQ-025
 
 **互動：** 供 API 層辨識身分；行程管理與供給查詢取得常用資料作為預設值；請求流程在共乘完成時通知更新常用資料。
+
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o| vehicles : "駕駛的車輛"
+    users ||--o| driver_profiles : "駕駛常用資料"
+    users ||--o| passenger_profiles : "乘客常用資料"
+    passenger_profiles ||--o{ passenger_accepted_stops : "可接受下車站"
+    bus_stops ||--o{ passenger_accepted_stops : ""
+    pickup_points ||--o{ driver_profiles : "常用上車點"
+
+    users {
+        bigint id PK
+        text username UK
+        boolean is_driver
+        boolean is_passenger
+    }
+    vehicles {
+        bigint user_id PK, FK
+        text plate
+        text description
+    }
+    driver_profiles {
+        bigint user_id PK, FK
+        bigint usual_pickup_point_id FK
+        text usual_destination_name
+        double usual_destination_lat
+        double usual_destination_lng
+        int capacity
+    }
+    passenger_profiles {
+        bigint user_id PK, FK
+        time usual_arrival_time
+        text usual_destination_name
+        double usual_destination_lat
+        double usual_destination_lng
+    }
+    passenger_accepted_stops {
+        bigint user_id PK, FK
+        bigint bus_stop_id PK, FK
+    }
+    pickup_points {
+        bigint id PK
+    }
+    bus_stops {
+        bigint id PK
+    }
+```
+
+- `vehicles` 保存駕駛的車輛資訊（車牌、車輛描述，例如顏色與車款），在駕駛確認請求時提供給乘客（REQ-052）。與帳號一樣由 SQL 預先建立（DD-19）；不放在 `driver_profiles`，因為常用資料會依共乘紀錄重新計算。
 
 #### DD-19 帳號由 SQL 預先建立，常用資料由共乘紀錄累積
 
@@ -316,6 +390,27 @@ flowchart TB
 
 **互動：** 駕駛與乘客介面取得標籤清單並選擇或取消選擇自己的標籤；媒合引擎向標籤元件詢問篩選是否符合。
 
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o{ user_tags : "選擇"
+    tags ||--o{ user_tags : ""
+
+    tags {
+        bigint id PK
+        text name UK
+        text issuer
+    }
+    user_tags {
+        bigint user_id PK, FK
+        bigint tag_id PK, FK
+    }
+    users {
+        bigint id PK
+    }
+```
+
 #### DD-05 標籤以預先定義的清單提供，使用者自選；模型保留發行者
 
 決定標籤清單由 SQL 預先建立，使用者只能從清單中選擇或取消選擇適用於自己的標籤，不能新增標籤內容。每個標籤記錄發行者；PoC 只有「使用者自選」一種，篩選比對只看標籤本身、不看發行者。
@@ -334,11 +429,31 @@ flowchart TB
 
 ### 4.6 上車點與站點
 
-**職責：** 預先定義的上車點（REQ-002）、內湖科學園區的範圍（GeoJSON 檔 `docs/data/park/boundary.geojson`，不存資料庫，由後端載入），以及園區內的公車站；判斷一個地點是否在園區內，以及哪些公車站位在某段行程路線的沿途。
+**職責：** 預先定義的上車點（REQ-002）、內湖科學園區的範圍（GeoJSON 檔 `backend/config/park/boundary.geojson`，不存資料庫，由後端載入），以及園區內的公車站；判斷一個地點是否在園區內，以及哪些公車站位在某段行程路線的沿途。
 
 **負責需求：** REQ-001、REQ-002、REQ-004
 
 **互動：** 行程管理在出發時檢查上車點與目的地；媒合引擎判斷下車點；用戶端取得上車點清單與地圖標示。
+
+**資料表：** 兩張表彼此沒有關聯，由 SQL 腳本寫入。
+
+```mermaid
+erDiagram
+    pickup_points {
+        bigint id PK
+        text name UK
+        double lat
+        double lng
+        int radius_m
+    }
+    bus_stops {
+        bigint id PK
+        int stop_id UK
+        text name
+        double lat
+        double lng
+    }
+```
 
 ### 4.7 行程管理
 
@@ -346,19 +461,80 @@ flowchart TB
 
 - 駕駛當天的行程：出發（目的地、可載人數、上車點、標籤篩選與意圖、自動接受），預先帶入上一次的出發設定。
 - 出發時檢查上車點是預先定義的上車點之一、目的地位於內科園區內，並建立「上車點 → 目的地」的行程路線（DD-21）。
+- 開始行程即代表駕駛表示今天要載人：由位置追蹤建立駕駛的參與主檔並關聯到該行程（DD-25）。
 - 行程狀態、已確認的乘客與剩餘座位。
 
 **負責需求：** REQ-001、REQ-003、REQ-015、REQ-016、REQ-019、REQ-021、REQ-039
 
-**互動：** 出發時從帳號與身分取得常用資料、從上一次行程取得預設值；向上車點與站點檢查地點；向路線與旅行時間估算取得行程路線；開始行程後交給位置追蹤；請求流程向行程管理暫留、確認與釋放座位。
+**互動：** 出發時從駕駛上一次的行程取得預設值（首次出發的駕駛沒有預設值）；向上車點與站點檢查地點；向路線與旅行時間估算取得行程路線；開始行程時由位置追蹤建立駕駛的參與主檔；請求流程向行程管理暫留、確認與釋放座位。
+
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o{ trips : "駕駛"
+    pickup_points ||--o{ trips : "上車點"
+    trips ||--o{ trip_route_stops : "沿途公車站"
+    bus_stops ||--o{ trip_route_stops : ""
+    trips ||--o{ trip_tag_filters : "標籤篩選"
+    tags ||--o{ trip_tag_filters : ""
+
+    trips {
+        bigint id PK
+        bigint driver_id FK
+        bigint pickup_point_id FK
+        text destination_name
+        double destination_lat
+        double destination_lng
+        int capacity
+        text status
+        boolean auto_accept
+        boolean settings_locked
+        int seats_held
+        int seats_confirmed
+        boolean passed_pickup
+        text route_polyline
+        int route_distance_m
+        int route_duration_s
+        boolean route_simulated
+    }
+    trip_route_stops {
+        bigint trip_id PK, FK
+        int seq PK
+        bigint bus_stop_id FK
+    }
+    trip_tag_filters {
+        bigint trip_id PK, FK
+        bigint tag_id PK, FK
+        text intent
+    }
+    users {
+        bigint id PK
+    }
+    pickup_points {
+        bigint id PK
+    }
+    bus_stops {
+        bigint id PK
+    }
+    tags {
+        bigint id PK
+    }
+```
+
+- 座位以 `seats_held`、`seats_confirmed` 計數，並以 `CHECK` 限制總和不超過 `capacity`，使暫留在單一交易內完成（DD-12）。
+- `passed_pickup` 由位置追蹤寫入（DD-06）。
+- 每位駕駛同一時間只能有一段進行中的行程，由 `trips` 上的部分唯一索引（`driver_id`，限 `status = 'active'`）保證，兩個同時送出的出發請求只有一個會成功，另一個回 `409 already_active`。
+- 路線由 `RouteProvider` 介面取得（4.9）；出發時才呼叫，結果連同沿途公車站（距路線 50 公尺內，依行進順序）一起保存。
 
 #### DD-07 行程開始後設定即鎖定
 
-決定行程一經開始，其標籤篩選、意圖與自動接受設定在後端即鎖定，任何修改請求都會被拒絕。
+決定行程的標籤篩選、意圖與自動接受設定是出發時的快照，只在出發時寫入；後端沒有任何修改這些設定的 API，因此行程一經開始（出發即開始），設定即鎖定（`settings_locked`）。對設定路徑的修改請求都找不到對應的 API，一律被拒絕（`404`）。
 
-- 理由：駕駛介面不提供行程中的設定入口（DD-04）只是介面層的保護；後端鎖定才能保證媒合依據在行程中不變，也讓媒合結果可以預期。
+- 理由：駕駛介面不提供行程中的設定入口（DD-04）只是介面層的保護；後端不提供修改設定的 API，才能保證媒合依據在行程中不變，也讓媒合結果可以預期。
 - 考慮過的替代方案：
   - 只在用戶端限制：其他呼叫者仍可修改，無法保證 REQ-019。
+  - 提供修改 API，但行程開始後以鎖定旗標拒絕：行程一建立就是開始狀態，未鎖定的分支在產品中走不到，只是多餘的程式。
 - 需求連結：
   - REQ-019
 
@@ -382,26 +558,61 @@ flowchart TB
 
 **職責：**
 
-- 接收並完整保存行程中車輛回報的每一筆經緯度與時間（DD-06）。
-- 以實際的經緯度判斷車輛是否已經過上車點（DD-06）。
+- 在駕駛或乘客表示今天要參與時建立參與主檔，並在有行程可關聯時關聯到行程（DD-25）。
+- 接收並完整保存駕駛與乘客回報的每一筆經緯度與時間，歸入回報者最新的參與主檔（DD-06、DD-25）。
+- 以駕駛主檔的實際經緯度判斷車輛是否已經過上車點（DD-06）。
 - 尚未經過上車點時，從車輛當下的經緯度估算到達上車點的時間（ETA）。
-- 接收並保存乘客回報的經緯度與時間，提供乘客的最新位置，供請求流程檢查送出請求距離。
 
-**負責需求：** REQ-023、REQ-034、REQ-037
+**負責需求：** REQ-023、REQ-037
 
-**互動：** 從行程管理得知哪些車在行程中及其上車點；從模擬器（日後為真實定位）接收駕駛與乘客的位置；提供乘客最新位置給請求流程；向路線與旅行時間估算取得行車時間；提供位置與 ETA 給供給查詢與媒合引擎。
+**互動：** 從行程管理得知哪些車在行程中及其上車點，並在行程開始時建立駕駛的參與主檔；乘客介面在按下「今天我要搭」時建立乘客的參與主檔；請求流程在請求確認時把乘客的主檔關聯到行程；從模擬器（日後為真實定位）與乘客介面接收駕駛與乘客的位置；向路線與旅行時間估算取得行車時間；從系統設定讀取離開緩衝；提供位置與 ETA 給供給查詢與媒合引擎。
+
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o{ activities : "表示參與"
+    trips |o--o{ activities : "關聯行程"
+    activities ||--o{ location_reports : "回報位置"
+
+    activities {
+        bigint id PK
+        bigint user_id FK
+        text role
+        bigint trip_id FK
+        timestamptz created_at
+    }
+    location_reports {
+        bigint id PK
+        bigint activity_id FK
+        double lat
+        double lng
+        timestamptz reported_at
+    }
+    users {
+        bigint id PK
+    }
+    trips {
+        bigint id PK
+    }
+```
+
+- `activities` 是位置回報的參與主檔（DD-25），每次表示參與建立一筆；每筆回報都歸入該使用者最新的主檔。
+- `trip_id` 在有行程可關聯時才填入：駕駛的主檔建立時就關聯到出發的行程，乘客的主檔在請求被確認時關聯。一段行程因此關聯駕駛與各乘客的主檔；判斷是否經過上車點時只讀取 `role` 為駕駛的主檔的回報。
+- `location_reports` 只新增、不修改或刪除，由觸發器強制（DD-06）。
 
 #### DD-06 保存原始經緯度；以上車點範圍判斷是否經過，以當下位置估算 ETA
 
-決定車輛回報的每一筆位置都以原始經緯度與時間完整保存，不覆寫、不捨棄。車輛的進度只回答兩個問題，兩者都直接以經緯度判斷，不與任何預先規劃的路徑比對：
+決定駕駛與乘客回報的每一筆位置都以原始經緯度與時間完整保存，歸入回報者的參與主檔（DD-25），不覆寫、不捨棄。車輛的進度只回答兩個問題，兩者都直接以經緯度判斷，不與任何預先規劃的路徑比對：
 
-- **是否已經過上車點**：車輛實際回報的經緯度曾進入上車點周圍的範圍，之後又離開。一旦判定經過，就不再改變。
+- **是否已經過上車點**：車輛實際回報的經緯度曾進入上車點周圍的範圍（距上車點不超過範圍半徑），之後又離開到範圍加「離開緩衝」之外（距上車點超過範圍半徑＋離開緩衝）。落在兩者之間的回報不改變判斷。一旦判定經過，就不再改變。離開緩衝是系統設定（4.14），每次判斷時讀取，修改後立即生效。
 - **尚未經過時，離上車點多遠**：從車輛當下的經緯度，由路線與旅行時間估算計算到上車點的行車時間（ETA），不以已行駛的時間或距離推估。
 
 車輛到上車點之前怎麼開、是否繞路都不影響判斷，因此不需要偵測是否偏離原本的路線。上車點之後沿途會經過哪些公車站與先後順序，以保存的行程路線（DD-21）判斷。
 
-- 理由：媒合只關心車輛是否已經過上車點，以及還要多久才會到；兩者都能由經緯度直接得到，車輛改道或塞車時也正確。原始經緯度是唯一真實的資料，服務紀錄的實際路徑與日後的分析也需要它。
+- 理由：媒合只關心車輛是否已經過上車點，以及還要多久才會到；兩者都能由經緯度直接得到，車輛改道或塞車時也正確。原始經緯度是唯一真實的資料，服務紀錄的實際路徑與日後的分析也需要它。離開緩衝避免車輛停在範圍邊緣等乘客時，定位誤差讓回報稍微跑出範圍，就被誤判為已經過；而「已經過」一旦判定就不再改變，誤判無法回復。
 - 考慮過的替代方案：
+  - 進入與離開使用同一個門檻（只看範圍半徑）：停在範圍邊緣的車，定位誤差就可能讓它被判定已經過，之後不再被媒合。
   - 把位置投影到預先規劃的路徑上，以沿路徑的距離判斷進度，並偵測偏離後重新規劃：車輛到上車點前的路徑與媒合無關，卻要處理偏離判斷、重新規劃與定位誤差，增加複雜度。
   - 以已行駛的時間或距離推算位置與 ETA：車輛繞路、塞車或停等時就不準。
   - 只保存推算後的結果：無法事後重建實際行駛的路線。
@@ -413,7 +624,7 @@ flowchart TB
 
 #### DD-08 位置來源抽象化
 
-決定位置追蹤只透過一個「位置回報」API 接收駕駛與乘客的位置，以呼叫者的 token 區分是誰的位置，不區分來源；模擬器與日後的真實定位都是這個 API 的使用者。
+決定位置追蹤只透過一個「位置回報」API 接收駕駛與乘客的位置，以呼叫者的 token 區分是誰的位置，不區分來源；模擬器與日後的真實定位都是這個 API 的使用者。回報歸入呼叫者最新的參與主檔（DD-25），從未表示過參與的呼叫者，回報會被拒絕。乘客送出搭車請求時附上的位置只用來檢查送出請求距離（DD-25），同一位置仍經位置回報 API 回報。
 
 - 理由：PoC 的駕駛與乘客位置都是模擬的，但其餘系統不應因此改變；日後換成真實定位時只需換掉位置來源。
 - 考慮過的替代方案：
@@ -423,6 +634,28 @@ flowchart TB
   - REQ-023
   - REQ-034
   - REQ-061
+
+#### DD-25 位置回報歸屬於參與主檔
+
+決定使用者表示今天要參與時，建立一筆參與主檔（`activities`）：駕駛在出發時（表示今天要載人），乘客在按下「今天我要搭」時（表示今天要搭車）。之後的每筆位置回報都歸入該使用者最新的主檔；從未建立過主檔的使用者，回報會被拒絕。主檔在有行程可關聯時關聯到行程：駕駛的主檔建立時就關聯到出發的行程，乘客的主檔在請求被確認時才關聯。伺服器不追蹤主檔何時結束；再次表示參與就建立新的主檔，舊的主檔自然不再使用。
+
+- 乘客按下「今天我要搭」時，乘客介面依序：
+  1. 建立參與主檔，並等待完成；
+  2. 送出搭車請求，附上乘客當下的位置；同時以非同步方式，把同一位置回報為主檔的第一筆回報。
+- 送出請求距離（REQ-034）以請求附上的位置檢查，並保存在請求上（`ride_requests.submitted_lat`、`submitted_lng`），不依賴位置回報，因此不需要位置的有效時限。
+- 判斷是否經過上車點（DD-06）只讀取駕駛主檔的回報；同一行程關聯的乘客主檔不影響判斷。
+- 理由：駕駛與乘客以同一種方式歸屬回報，只在使用者表示參與之後才記錄位置；乘客要搭車時才開始收集位置。請求附上的位置就是送出當下的位置，送出請求距離的檢查不會用到舊的位置。主檔先建立完成，自動接受在送出請求時就確認，關聯到行程的也是這次的主檔。以「最新的主檔」取代結束狀態，不需要處理關閉頁面、逾時等結束時機。服務紀錄也能由主檔取得駕駛與乘客的實際路徑（REQ-055）。
+- 考慮過的替代方案：
+  - 駕駛的回報歸入行程、乘客的回報不歸屬任何紀錄：乘客前一次搭車留下的位置也可能通過送出請求距離的檢查，同一帳號以不同角色的回報也無法區分。
+  - 乘客在查看供給之前就開始回報，以最新回報檢查送出請求距離：較早收集乘客位置，還要另訂位置的有效時限，Demo 時表示參與與送出請求之間也要等第一筆回報。
+  - 主檔也以非同步方式建立：自動接受可能在主檔建立前就確認請求，使乘客較舊的主檔被關聯到行程。
+  - 回報歸入乘客請求（`ride_requests`）：請求必須在送出前就建立，要多一個「尚未送出」的狀態，送出請求距離的檢查與分配時機也要跟著改變（REQ-036）。
+  - 由伺服器追蹤主檔的開啟與結束（關閉頁面、關閉按鈕、逾時）：關閉頁面難以可靠偵測，重新整理頁面也會被誤判；沒有任何功能需要知道主檔是否結束。
+- 需求連結：
+  - REQ-023
+  - REQ-034
+  - REQ-037
+  - REQ-055
 
 ### 4.9 路線與旅行時間估算
 
@@ -436,6 +669,10 @@ flowchart TB
 
 決定路線與旅行時間估算以統一介面對內提供路徑與時間，對外透過可替換的轉接器呼叫各資料來源；外部來源不可用時，改用簡化估算（例如直線路徑、以直線距離估算時間）並把結果標記為模擬。估算結果可以快取。
 
+行程管理透過窄介面 `RouteProvider`（上車點、目的地 → 路線）取得行程路線（DD-21）；目前只有模擬備援一個實作：路線為上車點到目的地的直線，距離取直線距離 × 1.3，行車速度取時速 20 公里（約每分鐘 333 公尺），結果標記為模擬。這兩個數字是設計取值，真實來源完成後由轉接器取代。
+
+媒合引擎透過窄介面 `WalkProvider`（下車點、最終目的地 → 步行時間）取得步行時間，乘車時間則向 `RouteProvider` 取得上車點到下車點的行車時間；`WalkProvider` 目前也只有模擬備援一個實作：步行距離取直線距離 × 1.3，步行速度取每分鐘 80 公尺，結果標記為模擬，真實來源完成後由轉接器取代。
+
 - 理由：路線規劃、步行與路況來源尚未定案（[carpool-oi-02](#7-待討論議題)），有費用與頻率限制，Demo 現場也可能斷線；隔離後可以替換來源，且 Demo 不因外部服務中斷而失敗。上車點固定且少、目的地都在內科，快取效果好。
 - 考慮過的替代方案：
   - 各元件直接呼叫外部 API：來源一換就要改多處；外部服務失敗會直接讓媒合失敗。
@@ -448,11 +685,11 @@ flowchart TB
 
 ### 4.10 供給查詢
 
-**職責：** 乘客到站前的即時供給：依乘客的最終目的地、可接受公車站與篩選條件，找出相關車輛，產生每個上車點的卡片（數量、最快到達、剩餘座位）與時間軸（範圍為「等待上限」）。每次乘客介面輪詢時重新計算。依步行時間建議公車站（REQ-026）為 Phase 2。
+**職責：** 乘客到站前的即時供給：依乘客選定的上車點、最終目的地、可接受公車站與篩選條件，找出相關車輛，產生該上車點的卡片（數量、最快到達、剩餘座位）與時間軸（範圍為「等待上限」）。每次乘客介面輪詢時重新計算。依步行時間建議公車站（REQ-026）為 Phase 2。
 
 **負責需求：** REQ-024、REQ-025、REQ-028、REQ-029、REQ-030、REQ-032、REQ-033；REQ-026 為 Phase 2
 
-**互動：** 使用媒合引擎的資格篩選（DD-10）找出相關車輛；向路線與旅行時間估算取得步行時間；從帳號與身分取得乘客的常用資料作為預設值。
+**互動：** 使用媒合引擎的資格篩選（DD-10）找出相關車輛；從帳號與身分取得乘客的常用資料作為預設值。
 
 ### 4.11 媒合引擎
 
@@ -460,7 +697,7 @@ flowchart TB
 1. **資格篩選**：硬性條件
    - 行程的上車點與乘客相同，且車輛尚未經過該上車點
    - 目的地相關：駕駛目的地與乘客最終目的地相距在「地址相符距離」內，或行程路線沿途會經過乘客任一可接受的公車站
-   - 扣除已確認乘客後仍有空位
+   - 扣除已暫留與已確認的乘客後仍有空位
    - 雙向強制標籤都符合
    - 等待時間不超過「等待上限」
 2. **排序**：對通過篩選的車計算感受成本（含建議標籤的優先幅度；駕駛的建議篩選不影響），在駕駛目的地與沿途可接受公車站中選定乘車加步行最短的下車點，依成本與同分規則排序。
@@ -503,11 +740,69 @@ flowchart TB
 
 ### 4.12 請求流程
 
-**職責：** 每一筆搭車請求的生命週期：檢查送出距離、取得排序、立即分配給第一台車或回覆無車可配、等待駕駛回應或自動接受、逾時或婉拒時改配、未符合全部建議標籤時標示「已放寬」、完成後建立服務紀錄並通知帳號與身分更新常用資料。提供駕駛「待回應的請求」與乘客「請求狀態」的查詢，供兩個介面輪詢。乘客上車後，若下車點需要調整，由駕駛與乘客自行協商，平台不介入。
+**職責：** 每一筆搭車請求的生命週期：檢查送出距離、取得排序、立即分配給第一台車或回覆無車可配、等待駕駛回應或自動接受、逾時或婉拒時改配、未符合全部建議標籤時標示「已放寬」、乘客或駕駛標記乘客已上車（DD-27）、完成後建立服務紀錄並通知帳號與身分更新常用資料。提供駕駛「待回應的請求」與乘客「請求狀態」的查詢，供兩個介面輪詢。乘客上車後，若下車點需要調整，由駕駛與乘客自行協商，平台不介入。
 
-**負責需求：** REQ-006、REQ-007、REQ-022、REQ-034、REQ-035、REQ-036、REQ-047、REQ-048、REQ-049、REQ-050、REQ-051、REQ-052、REQ-053、REQ-055、REQ-067
+**負責需求：** REQ-006、REQ-007、REQ-022、REQ-034、REQ-035、REQ-036、REQ-047、REQ-048、REQ-049、REQ-050、REQ-051、REQ-052、REQ-053、REQ-055、REQ-067、REQ-068
 
-**互動：** 向位置追蹤取得乘客最新位置以檢查送出請求距離；呼叫媒合引擎排序；向行程管理暫留、確認與釋放座位；完成時寫入服務紀錄，並通知帳號與身分更新駕駛與乘客的常用資料。
+**互動：** 以請求附上的乘客位置檢查送出請求距離（DD-25）；呼叫媒合引擎排序；向行程管理暫留、確認與釋放座位；請求確認時通知位置追蹤把乘客的參與主檔關聯到該行程；完成時寫入服務紀錄，並通知帳號與身分更新駕駛與乘客的常用資料。
+
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o{ ride_requests : "乘客"
+    pickup_points ||--o{ ride_requests : "上車點"
+    trips |o--o{ ride_requests : "分配到"
+    bus_stops |o--o{ ride_requests : "下車站"
+    ride_requests ||--o{ request_tag_filters : "標籤篩選"
+    tags ||--o{ request_tag_filters : ""
+    ride_requests ||--o{ request_candidates : "分配順序"
+    trips ||--o{ request_candidates : ""
+    bus_stops |o--o{ request_candidates : "下車站"
+
+    ride_requests {
+        bigint id PK
+        bigint passenger_id FK
+        bigint pickup_point_id FK
+        text destination_name
+        double destination_lat
+        double destination_lng
+        bigint trip_id FK
+        bigint dropoff_bus_stop_id FK
+        text status
+        boolean relaxed
+        timestamptz response_deadline_at
+    }
+    request_tag_filters {
+        bigint request_id PK, FK
+        bigint tag_id PK, FK
+        text intent
+    }
+    request_candidates {
+        bigint request_id PK, FK
+        int rank PK
+        bigint trip_id FK
+        bigint dropoff_bus_stop_id FK
+        text outcome
+    }
+    users {
+        bigint id PK
+    }
+    pickup_points {
+        bigint id PK
+    }
+    trips {
+        bigint id PK
+    }
+    bus_stops {
+        bigint id PK
+    }
+    tags {
+        bigint id PK
+    }
+```
+
+請求的狀態轉移：
 
 ```mermaid
 stateDiagram-v2
@@ -518,11 +813,26 @@ stateDiagram-v2
     等待駕駛 --> 已確認: 駕駛確認／自動接受
     等待駕駛 --> 等待駕駛: 婉拒或逾時 → 改配下一台
     等待駕駛 --> 無車可配: 排序中已無車
+    已確認 --> 已上車: 乘客或駕駛標記已上車
     已確認 --> 已完成: 乘客或駕駛結束共乘
+    已上車 --> 已完成: 乘客或駕駛結束共乘
     已拒絕 --> [*]
     無車可配 --> [*]
     已完成 --> [*]
 ```
+
+#### DD-27 上車由乘客或駕駛標記
+
+決定乘客上車時，由乘客在乘客介面、或駕駛在行程畫面標記該乘客「已上車」。兩邊的操作都送到請求流程，同一筆請求只會標記一次，先到的操作生效，後到的直接視為已上車。標記不是結束共乘的前提：未標記上車的已確認請求仍可直接結束（DD-23）。已上車不改變座位的佔用，座位維持正式佔用直到共乘完成。
+
+- 理由：讓雙方與系統都知道等待階段已結束，乘客介面不再顯示 ETA 與上車資訊，駕駛也知道哪些已確認乘客已在車上。比照 DD-23 讓雙方都能操作，任一方忘記時另一方仍可標記；不強制先上車再結束，避免漏標記時共乘無法收尾。
+- 考慮過的替代方案：
+  - 依位置自動判定：Demo 中乘客的位置由除錯模式手動設定（DD-26），而且位置追蹤在車輛經過上車點後就不再追蹤（DD-06），無法可靠判斷乘客是否已在車上。
+  - 只讓乘客標記：乘客忘記操作時，駕駛無法更正，雙方對乘客是否已上車的認知不一致。
+- 需求連結：
+  - REQ-053
+  - REQ-066
+  - REQ-068
 
 #### DD-23 共乘由乘客或駕駛結束，以乘客為主
 
@@ -569,13 +879,63 @@ stateDiagram-v2
 
 **互動：** 由請求流程寫入；帳號與身分讀取以累積常用資料；日後的點數分配、供需預測與「減少車次」統計讀取。
 
+**資料表：**
+
+```mermaid
+erDiagram
+    ride_requests ||--o| service_records : "完成後建立"
+    trips ||--o{ service_records : ""
+    users ||--o{ service_records : "駕駛／乘客"
+    pickup_points ||--o{ service_records : "上車點"
+    bus_stops |o--o{ service_records : "下車站"
+
+    service_records {
+        bigint id PK
+        bigint request_id UK, FK
+        bigint trip_id FK
+        bigint driver_id FK
+        bigint passenger_id FK
+        bigint pickup_point_id FK
+        bigint dropoff_bus_stop_id FK
+        text dropoff_name
+        double dropoff_lat
+        double dropoff_lng
+        timestamptz completed_at
+    }
+    ride_requests {
+        bigint id PK
+    }
+    trips {
+        bigint id PK
+    }
+    users {
+        bigint id PK
+    }
+    pickup_points {
+        bigint id PK
+    }
+    bus_stops {
+        bigint id PK
+    }
+```
+
 ### 4.14 系統設定
 
-**職責：** 保存媒合參數（送出請求距離、地址相符距離、等待上限、等待加重、步行加重、標籤加分上限、駕駛確認時限），供媒合引擎、供給查詢與請求流程讀取。
+**職責：** 保存媒合參數（送出請求距離、地址相符距離、等待上限、等待加重、步行加重、標籤加分上限、駕駛確認時限、離開緩衝），供媒合引擎、供給查詢、請求流程與位置追蹤讀取。
 
 **負責需求：** REQ-060
 
-**互動：** 媒合引擎、供給查詢、請求流程讀取參數。
+**互動：** 媒合引擎、供給查詢、請求流程與位置追蹤（離開緩衝）讀取參數。
+
+**資料表：** 沒有外鍵，是獨立的參考資料（DD-20）。
+
+```mermaid
+erDiagram
+    system_settings {
+        text key PK
+        numeric value
+    }
+```
 
 #### DD-20 系統設定以 SQL 維護
 
@@ -590,187 +950,51 @@ stateDiagram-v2
 
 ### 4.15 資料庫
 
-**職責：** PostgreSQL（DD-15），保存帳號、標籤清單與使用者選擇的標籤、上車點與公車站、行程與其行程路線、車輛回報的完整經緯度紀錄、請求、服務紀錄、常用資料與系統設定。帳號、標籤清單、上車點與站點、系統設定與模擬行程由 SQL 腳本寫入；其餘由後端寫入。各元件只存取自己負責的資料。
+**職責：** PostgreSQL（DD-15），保存帳號、標籤清單與使用者選擇的標籤、上車點與公車站、行程與其行程路線、車輛資訊、參與主檔與駕駛及乘客回報的完整經緯度紀錄、請求、服務紀錄、常用資料與系統設定。帳號、標籤清單、上車點與站點、系統設定與模擬行程由 SQL 腳本寫入；其餘由後端寫入。各元件只存取自己負責的資料。
 
 **負責需求：** 無直接對應；支撐所有需求。
 
 **互動：** 後端各元件讀寫；SQL 腳本寫入預先準備的資料。
 
-#### 資料表關聯圖（ERD）
+#### 資料表歸屬
 
-資料表定義於 `backend/migrations/20261018122058_create_schema.sql`。圖中只列主鍵、外鍵與關鍵欄位，完整欄位以 migration 為準。
+資料表定義於 `backend/migrations/20261018122058_create_schema.sql`。每張資料表由一個元件負責，資料表關聯圖（ERD）放在負責的元件下；圖中只列主鍵、外鍵與關鍵欄位，完整欄位以 migration 為準；本文件描述目標設計，尚未加入 migration 的資料表與欄位以本文件為準。屬於其他元件的資料表在圖中只列主鍵，表示跨元件的參考。
 
-```mermaid
-erDiagram
-    users ||--o{ user_tags : "選擇"
-    tags ||--o{ user_tags : ""
-    users ||--o| driver_profiles : "駕駛常用資料"
-    users ||--o| passenger_profiles : "乘客常用資料"
-    passenger_profiles ||--o{ passenger_accepted_stops : "可接受下車站"
-    bus_stops ||--o{ passenger_accepted_stops : ""
-    pickup_points ||--o{ driver_profiles : "常用上車點"
-
-    users ||--o{ trips : "駕駛"
-    pickup_points ||--o{ trips : "上車點"
-    trips ||--o{ trip_route_stops : "沿途公車站"
-    bus_stops ||--o{ trip_route_stops : ""
-    trips ||--o{ trip_tag_filters : "標籤篩選"
-    tags ||--o{ trip_tag_filters : ""
-
-    users ||--o{ location_reports : "回報位置"
-    trips |o--o{ location_reports : "行程中"
-
-    users ||--o{ ride_requests : "乘客"
-    pickup_points ||--o{ ride_requests : "上車點"
-    trips |o--o{ ride_requests : "分配到"
-    bus_stops |o--o{ ride_requests : "下車站"
-    ride_requests ||--o{ request_tag_filters : "標籤篩選"
-    tags ||--o{ request_tag_filters : ""
-    ride_requests ||--o{ request_candidates : "分配順序"
-    trips ||--o{ request_candidates : ""
-
-    ride_requests ||--o| service_records : "完成後建立"
-    trips ||--o{ service_records : ""
-    users ||--o{ service_records : "駕駛／乘客"
-
-    users {
-        bigint id PK
-        text username UK
-        boolean is_driver
-        boolean is_passenger
-    }
-    tags {
-        bigint id PK
-        text name UK
-        text issuer
-    }
-    user_tags {
-        bigint user_id PK, FK
-        bigint tag_id PK, FK
-    }
-    pickup_points {
-        bigint id PK
-        text name UK
-        double lat
-        double lng
-        int radius_m
-    }
-    bus_stops {
-        bigint id PK
-        int stop_id UK
-        text name
-        double lat
-        double lng
-    }
-    driver_profiles {
-        bigint user_id PK, FK
-        bigint usual_pickup_point_id FK
-        int capacity
-    }
-    passenger_profiles {
-        bigint user_id PK, FK
-        time usual_arrival_time
-    }
-    passenger_accepted_stops {
-        bigint user_id PK, FK
-        bigint bus_stop_id PK, FK
-    }
-    trips {
-        bigint id PK
-        bigint driver_id FK
-        bigint pickup_point_id FK
-        int capacity
-        text status
-        boolean auto_accept
-        boolean settings_locked
-        int seats_held
-        int seats_confirmed
-        boolean passed_pickup
-        text route_polyline
-    }
-    trip_route_stops {
-        bigint trip_id PK, FK
-        int seq PK
-        bigint bus_stop_id FK
-    }
-    trip_tag_filters {
-        bigint trip_id PK, FK
-        bigint tag_id PK, FK
-        text intent
-    }
-    location_reports {
-        bigint id PK
-        bigint user_id FK
-        bigint trip_id FK
-        double lat
-        double lng
-        timestamptz reported_at
-    }
-    ride_requests {
-        bigint id PK
-        bigint passenger_id FK
-        bigint pickup_point_id FK
-        bigint trip_id FK
-        bigint dropoff_bus_stop_id FK
-        text status
-        boolean relaxed
-        timestamptz response_deadline_at
-    }
-    request_tag_filters {
-        bigint request_id PK, FK
-        bigint tag_id PK, FK
-        text intent
-    }
-    request_candidates {
-        bigint request_id PK, FK
-        int rank PK
-        bigint trip_id FK
-        text outcome
-    }
-    service_records {
-        bigint id PK
-        bigint request_id UK, FK
-        bigint trip_id FK
-        bigint driver_id FK
-        bigint passenger_id FK
-        timestamptz completed_at
-    }
-    system_settings {
-        text key PK
-        numeric value
-    }
-```
-
-- `system_settings` 沒有外鍵，是獨立的參考資料（DD-20）。
-- `service_records` 另外參考 `pickup_points`、`bus_stops`（下車站），圖中省略以免過於雜亂。
-- `location_reports` 只新增、不修改或刪除，由觸發器強制（DD-06）；座位以 `trips.seats_held`、`seats_confirmed` 計數，並以 `CHECK` 限制總和不超過 `capacity`，使暫留在單一交易內完成（DD-12）。
+| 元件 | 資料表 |
+|---|---|
+| [4.4 帳號與身分](#44-帳號與身分) | `users`、`vehicles`、`driver_profiles`、`passenger_profiles`、`passenger_accepted_stops` |
+| [4.5 標籤](#45-標籤) | `tags`、`user_tags` |
+| [4.6 上車點與站點](#46-上車點與站點) | `pickup_points`、`bus_stops` |
+| [4.7 行程管理](#47-行程管理) | `trips`、`trip_route_stops`、`trip_tag_filters` |
+| [4.8 位置追蹤](#48-位置追蹤) | `activities`、`location_reports` |
+| [4.12 請求流程](#412-請求流程) | `ride_requests`、`request_tag_filters`、`request_candidates` |
+| [4.13 服務紀錄](#413-服務紀錄) | `service_records` |
+| [4.14 系統設定](#414-系統設定) | `system_settings` |
 
 ### 4.16 模擬器
 
-**職責：** Demo 用：替每個駕駛與乘客帳號，沿模擬器設定中預先定義的路徑、以設定的速度前進，並持續回報模擬位置。
-
-- **駕駛**：該駕駛有進行中的行程時（包括 SQL 預先建立的模擬行程，以及真人從駕駛介面出發的行程），沿「出發位置 → 上車點 → 目的地」的路徑回報位置。
-- **乘客**：沿乘客的路徑（例如從捷運出口走到上車點）回報位置。
+**職責：** Demo 用，做在駕駛介面的除錯模式中：替選定的每個駕駛帳號，沿預先定義的路徑、以設定的速度前進，並持續回報模擬位置。該駕駛有進行中的行程時（包括 SQL 預先建立的模擬行程，以及真人從駕駛介面出發的行程；兩者都已有關聯到行程的參與主檔，DD-25），沿「出發位置 → 上車點 → 目的地」的路徑回報位置，抵達路徑終點即停止。主畫面的駕駛與其他模擬駕駛各自沿自己的路徑移動，互不影響。模擬狀態不保存，重新整理後須重新啟動，從路徑起點開始。乘客的位置不由模擬器提供，改由乘客介面的除錯模式提供（DD-26）。
 
 這些路徑只供模擬器產生位置，後端不據此追蹤（DD-06）。模擬器只負責回報位置，不負責出發、送出請求、確認、婉拒或其他操作。
 
 **負責需求：** REQ-061、REQ-063、REQ-064、REQ-065
 
-**互動：** 透過 API 層得知哪些行程正在進行；以各帳號的 token 透過位置回報 API（DD-08）回報位置。
+**互動：** 以各帳號的 token 透過 API 層得知該駕駛是否有進行中的行程，並透過位置回報 API（DD-08）回報位置。
 
-#### DD-14 模擬器沿預先定義的路徑持續回報位置，走公開 API
+#### DD-14 模擬器是駕駛介面的除錯模式，沿預先定義的路徑回報位置，走公開 API
 
-決定模擬器是獨立的程式，只做一件事：替每個駕駛與乘客帳號，沿模擬器設定中預先定義的路徑、以設定的速度前進，並透過位置回報 API 持續回報位置。每個帳號的路徑與速度寫在模擬器的設定中；駕駛只在有進行中的行程時回報。SQL 預先建立的模擬行程（上車點、內科內的目的地、座位）啟用自動接受，使它們不需人工操作即可被媒合。
+決定模擬器做在駕駛介面的除錯模式中，只做一件事：替選定的駕駛帳號，沿預先定義的路徑、以設定的速度前進，並透過位置回報 API 持續回報位置。每個帳號的路徑與速度寫在駕駛介面的靜態設定中；只在駕駛有進行中的行程、已有參與主檔時回報（DD-25）。乘客的位置改由乘客介面的除錯模式提供（DD-26）。SQL 預先建立的模擬行程（上車點、內科內的目的地、座位）同時建立駕駛的參與主檔，並啟用自動接受，使它們不需人工操作即可被媒合。
 
-- 理由：PoC 沒有真實定位，所有駕駛與乘客的位置都必須由模擬器提供，包括真人操作的帳號；預先定義路徑，Demo 每次的行為都可以重現。模擬器的範圍越小越可靠；位置、ETA、送出請求距離、媒合與座位都經過正式路徑；之後換成真實定位，系統不需要任何改動。啟用自動接受，模擬駕駛被分配時就不會一路逾時。
+- 理由：PoC 沒有真實定位，所有駕駛的位置都必須由模擬器提供，包括真人操作的帳號；預先定義路徑，Demo 每次的行為都可以重現。模擬器的範圍越小越可靠；位置、ETA、送出請求距離、媒合與座位都經過正式路徑；之後換成真實定位，系統不需要任何改動。啟用自動接受，模擬駕駛被分配時就不會一路逾時。與乘客介面的除錯模式（DD-26）同一模式，Demo 時不必多啟動、操作一個程式；身分本來就由 token 決定（DD-18），除錯模式可以直接代表多個駕駛帳號。
+- 影響：頁面開著即可持續移動，不需保持在前景；位置依經過時間計算。瀏覽器可能降低背景分頁的計時頻率，模擬器須確保回報不會跳過上車點範圍（DD-06）。
 - 考慮過的替代方案：
+  - 獨立的 Go 模擬器程式：Demo 時要多啟動一個程式，也要另外處理與駕駛介面的帳號對應；好處是不受瀏覽器分頁限制，但 Demo 本來就在同一台機器上開著視窗（DD-24）。
   - 模擬器也模擬出發、送出請求、確認、婉拒等操作：範圍擴大，且與駕駛、乘客介面重複；Demo 時真人操作介面就能展示這些流程。
   - 由使用者在地圖上手動指定位置：Demo 時要多操作，位置也不會持續變化，看不出車輛接近。
   - 由模擬器向路線規劃服務即時取得路徑：每次 Demo 的路徑可能不同，也多依賴外部服務。上車點之後的路徑即使與後端保存的行程路線不同也無妨，後端在車輛經過上車點後不再追蹤（DD-06）。
   - 直接寫入資料庫或在後端內建假資料：快，但繞過位置追蹤，Demo 看到的行為不代表真實系統。
 - 需求連結：
   - REQ-022
-  - REQ-034
   - REQ-061
   - REQ-065
 
@@ -807,13 +1031,13 @@ sequenceDiagram
     TRIP-->>D: 行程路線與沿途公車站（地圖）
     D->>API: 我出發了
     API->>TRIP: 開始行程並鎖定設定
-    TRIP->>TRK: 開始追蹤此車
-    Note over SIM: 模擬駕駛的行程已由 SQL 預先建立
+    TRIP->>TRK: 建立駕駛的參與主檔並關聯此行程（DD-25）
+    Note over SIM: 模擬駕駛的行程與參與主檔已由 SQL 預先建立
     SIM->>API: 取得模擬用的行駛路徑（driver:sim01）
     loop 行程中
         SIM->>API: 回報位置
         API->>TRK: 更新位置
-        TRK->>TRK: 保存經緯度；是否進入後離開上車點範圍？
+        TRK->>TRK: 保存經緯度（歸入駕駛最新的主檔）；是否進入後離開上車點範圍？
         opt 尚未經過上車點
             TRK->>TT: 從目前經緯度計算到上車點的 ETA
         end
@@ -828,15 +1052,13 @@ sequenceDiagram
     participant API as API 層
     participant SUP as 供給查詢
     participant MAT as 媒合引擎
-    participant TT as 路線與旅行時間估算
 
     loop 每個輪詢間隔
-        P->>API: 最終目的地、可接受公車站、篩選（passenger:bar）
+        P->>API: 上車點、最終目的地、可接受公車站、篩選（passenger:bar）
         API->>SUP: 查詢供給
-        SUP->>TT: 各公車站到目的地的步行時間
         SUP->>MAT: 資格篩選（不排序）
         MAT-->>SUP: 相關車輛與 ETA（等待上限內）
-        SUP-->>P: 上車點卡片與時間軸
+        SUP-->>P: 該上車點的卡片與時間軸
     end
 ```
 
@@ -846,14 +1068,20 @@ sequenceDiagram
 sequenceDiagram
     actor P as 乘客介面
     participant RQ as 請求流程
+    participant TRK as 位置追蹤
     participant MAT as 媒合引擎
     participant TRIP as 行程管理
     actor D as 駕駛介面
     participant REC as 服務紀錄
     participant ACC as 帳號與身分
 
-    P->>RQ: 今天我要搭（目的地、篩選）
-    RQ->>RQ: 以乘客最新位置檢查送出請求距離
+    P->>TRK: 建立乘客的參與主檔（等待完成，DD-25）
+    par
+        P->>RQ: 今天我要搭（目的地、篩選、目前位置）
+    and
+        P->>TRK: 回報同一位置（主檔的第一筆回報）
+    end
+    RQ->>RQ: 以請求附上的位置檢查送出請求距離
     RQ->>MAT: 資格篩選＋排序
     MAT-->>RQ: 排序後的車輛清單
     alt 沒有任何車
@@ -866,12 +1094,20 @@ sequenceDiagram
         alt 駕駛確認（或自動接受）
             D->>RQ: 確認
             RQ->>TRIP: 座位轉為正式佔用
+            RQ->>TRK: 乘客的參與主檔關聯到此行程（DD-25）
         else 婉拒或逾時
             RQ->>TRIP: 釋放座位
             RQ->>RQ: 改配下一台；已無車則標為無車可配
         end
         P->>RQ: 輪詢請求狀態
         RQ-->>P: 已確認（上車地點、車輛資訊、ETA、行程路線）／無車可配（替代方案）
+    end
+    opt 乘客上車（DD-27）
+        alt 乘客標記
+            P->>RQ: 已上車
+        else 駕駛標記
+            D->>RQ: 標記該乘客已上車
+        end
     end
     Note over P,D: 乘客下車
     alt 乘客結束共乘（主要方式）
@@ -905,10 +1141,12 @@ sequenceDiagram
 | carpool-oi-01 | 供需統計的資料來源 | 使用登記資料、服務紀錄，或使用者事先登記隔天的角色？ | 已決定 | 依歷史資料預測，Phase 2 交付；冷啟動時的呈現仍待確認（requirement OI-05） |
 | carpool-oi-02 | 路線、步行時間與路況的資料來源 | 路線規劃：地圖服務的路線 API；步行：Google Maps Routes、OpenRouteService、自架 OSRM／Valhalla 或簡化估算；路況：TDX 即時車速或路線規劃 API。需考慮費用、頻率限制與 Demo 穩定度。 | 待討論 | – |
 | carpool-oi-03 | App 不在前景時的駕駛通知 | 駕駛開車時 App 可能在背景，是否需要手機系統推播或語音提示？ | 已決定 | PoC 以輪詢取得狀態（DD-03），App 必須在前景；手機推播日後再評估 |
-| carpool-oi-04 | 乘客與駕駛位置的取得方式 | 真實定位不在範圍內，但送出請求距離（REQ-034）需要乘客位置，是否經過上車點與 ETA（DD-06）需要車輛位置。 | 已決定 | 模擬器替駕駛與乘客沿預先定義的路徑持續回報位置（DD-14） |
+| carpool-oi-04 | 乘客與駕駛位置的取得方式 | 真實定位不在範圍內，但送出請求距離（REQ-034）需要乘客位置，是否經過上車點與 ETA（DD-06）需要車輛位置。 | 已決定 | 模擬器替駕駛與乘客沿預先定義的路徑持續回報位置（DD-14）；乘客的位置後來改由乘客介面的除錯模式提供（DD-26）；模擬器後來改做在駕駛介面的除錯模式（DD-14） |
 | carpool-oi-05 | 共乘完成的判定 | 由駕駛、乘客、車輛到達下車點，或其他事件觸發完成並建立服務紀錄？常用資料的更新（DD-19）也依此觸發。 | 已決定 | 乘客或駕駛都可以結束乘客的共乘，以乘客為主（REQ-067、DD-23） |
 | carpool-oi-06 | 指定標籤請求的優先順序 | 「有指定標籤的請求優先媒合」是否仍存在？若存在，會影響請求流程的座位暫留順序（DD-12）。 | 已決定 | 沒有另外的優先規則。強制標籤篩選是硬性條件（REQ-040），建議標籤篩選是計分因素、會影響排序（REQ-045）；座位競爭仍依送出順序（REQ-048、DD-12） |
 | carpool-oi-07 | 技術選型 | 後端與前端的語言、框架與資料儲存。 | 已決定 | 後端 Go、資料庫 PostgreSQL、前端 React + Tailwind（DD-15～DD-17） |
 | carpool-oi-08 | 部署平台 | 後端、資料庫與前端部署在哪裡，Demo 當天如何讓觀眾開啟。 | 已決定 | Demo 時全部在同一台機器上本地執行（DD-24） |
 | carpool-oi-09 | 輪詢間隔與確認時限 | 駕駛介面、乘客介面的輪詢間隔，以及對應的駕駛確認時限預設值（DD-03）。 | 待討論 | – |
 | carpool-oi-10 | REQ-062 與範圍決定衝突 | REQ-062 要求模擬企業與企業標籤，但 OVERVIEW 第 9 節決定 PoC 只有使用者自選的標籤，且企業標籤（US-04）已移到 Phase 2。REQ-062 是否也應移到 Phase 2？ | 待討論 | PoC 暫依範圍決定不交付 |
+| carpool-oi-11 | 位置回報歸屬於哪個主檔 | 駕駛開始行程後才回報位置（DD-14），回報歸入該行程；乘客的回報目前不屬於任何主檔。送出請求距離（REQ-034）在送出請求當下就需要乘客位置，因此乘客必須在請求建立前就開始回報。可能做法：(A) 回報歸入乘客請求（ride_requests）：乘客表示要搭車時就建立請求，送出時再檢查距離與媒合，需要多一個「尚未送出」的狀態；(B) 新增「活動」主檔：使用者表示參與時建立（駕駛在出發並表示今天要載人時，乘客在表示今天要搭車時），之後的每筆回報都歸入該使用者最新的主檔，從未建立過主檔就拒絕回報。主檔在有行程可關聯時關聯到行程：駕駛的主檔建立時就關聯到出發的行程，乘客的主檔在請求被確認時關聯。伺服器不追蹤主檔是否結束：再次表示參與就建立新的主檔，舊的主檔自然不再使用。送出請求距離（REQ-034）以目前主檔的最新回報檢查，且該回報必須夠新（時間待定）。 | 已決定 | 採做法 B，新增參與主檔（DD-25）；乘客在按下「今天我要搭」時才建立主檔，送出請求距離以請求附上的位置檢查 |
+| carpool-oi-12 | PoC 乘客位置的來源 | 乘客送出請求時要附上當下的位置（DD-25），但 PoC 沒有真實定位，乘客介面不知道自己的位置；瀏覽器定位會得到 Demo 現場的位置。可能做法：(a) 乘客介面從網址參數取得 Demo 位置（與目前從網址取得帳號的方式相同），日後換成真實定位；(b) 向後端查詢模擬器回報的最新位置，但乘客又要在送出前就開始回報；(c) 瀏覽器定位加上 Demo 用的覆寫。另需決定：送出請求之後，模擬器是否還替乘客沿路徑回報位置（只影響服務紀錄中乘客的實際路徑）。 | 已決定 | 乘客介面的除錯模式設定目前位置，並在參與主檔建立後持續送出位置（DD-26）；日後換成真實定位 |
