@@ -137,11 +137,11 @@
 | --- | --- | --- | --- |
 | `passenger1` | 乘客 小美 | 乘客 | `passenger:passenger1` |
 | `passenger2` | 乘客 小華 | 乘客 | `passenger:passenger2` |
-| `driver1` | 駕駛 阿明 | 駕駛 | `driver:driver1` |
-| `driver2` | 駕駛 阿強 | 駕駛 | `driver:driver2` |
-| `driver3` | 駕駛 阿珍 | 駕駛 | `driver:driver3` |
-| `driver4` | 駕駛 阿德 | 駕駛 | `driver:driver4` |
-| `driver5` | 駕駛 阿芬 | 駕駛 | `driver:driver5` |
+| `driver1` | 駕駛 鐵雄 | 駕駛 | `driver:driver1` |
+| `driver2` | 駕駛 大明 | 駕駛 | `driver:driver2` |
+| `driver3` | 駕駛 珍珍 | 駕駛 | `driver:driver3` |
+| `driver4` | 駕駛 阿丁 | 駕駛 | `driver:driver4` |
+| `driver5` | 駕駛 阿龍 | 駕駛 | `driver:driver5` |
 
 呼叫 API 時以 `Authorization: Bearer <token>` 指定身分（DD-18），例如 `curl -H 'Authorization: Bearer driver:driver1' localhost:8080/api/ping`。
 
