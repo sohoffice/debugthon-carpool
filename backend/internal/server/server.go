@@ -69,7 +69,9 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	driver.POST("/trips", s.depart)
 	driver.GET("/trips/current", s.currentTrip)
 	driver.GET("/trips/defaults", s.tripDefaults)
-	authed.Group("/passenger", requireRole(rolePassenger)).GET("/profile", s.getPassengerProfile)
+	passenger := authed.Group("/passenger", requireRole(rolePassenger))
+	passenger.GET("/profile", s.getPassengerProfile)
+	passenger.GET("/supply", s.getSupply)
 
 	return r
 }

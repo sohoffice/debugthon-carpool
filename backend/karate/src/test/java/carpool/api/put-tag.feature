@@ -1,0 +1,9 @@
+@ignore
+Feature: select a tag (arguments: token, id)
+
+  Scenario:
+    * configure headers = { Authorization: '#("Bearer " + token)' }
+    * url baseUrl
+    * path 'api', 'me', 'tags', id
+    * method put
+    * status 204
