@@ -29,7 +29,7 @@
    - [4.13 服務紀錄](#413-服務紀錄)
    - [4.14 系統設定](#414-系統設定)
    - [4.15 資料庫](#415-資料庫)
-     - [資料表關聯圖（ERD）](#資料表關聯圖erd)
+     - [資料表歸屬](#資料表歸屬)
    - [4.16 模擬器](#416-模擬器)
    - [4.17 PoC 不交付的元件](#417-poc-不交付的元件)
 5. [主要互動流程](#5-主要互動流程)
@@ -284,7 +284,7 @@ flowchart TB
 
 ### 4.4 帳號與身分
 
-**職責：** 帳號與角色（駕駛、乘客或兩者）的查詢；保存並提供從共乘紀錄累積的常用資料：
+**職責：** 帳號與角色（駕駛、乘客或兩者）、駕駛車輛資訊的查詢；保存並提供從共乘紀錄累積的常用資料：
 
 - **駕駛**：常用上車點、常用的最終目的地、可載人數
 - **乘客**：平常抵達時段、常用的最終目的地、可接受的下車公車站
@@ -292,6 +292,57 @@ flowchart TB
 **負責需求：** REQ-005、REQ-006、REQ-007、REQ-025
 
 **互動：** 供 API 層辨識身分；行程管理與供給查詢取得常用資料作為預設值；請求流程在共乘完成時通知更新常用資料。
+
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o| vehicles : "駕駛的車輛"
+    users ||--o| driver_profiles : "駕駛常用資料"
+    users ||--o| passenger_profiles : "乘客常用資料"
+    passenger_profiles ||--o{ passenger_accepted_stops : "可接受下車站"
+    bus_stops ||--o{ passenger_accepted_stops : ""
+    pickup_points ||--o{ driver_profiles : "常用上車點"
+
+    users {
+        bigint id PK
+        text username UK
+        boolean is_driver
+        boolean is_passenger
+    }
+    vehicles {
+        bigint user_id PK, FK
+        text plate
+        text description
+    }
+    driver_profiles {
+        bigint user_id PK, FK
+        bigint usual_pickup_point_id FK
+        text usual_destination_name
+        double usual_destination_lat
+        double usual_destination_lng
+        int capacity
+    }
+    passenger_profiles {
+        bigint user_id PK, FK
+        time usual_arrival_time
+        text usual_destination_name
+        double usual_destination_lat
+        double usual_destination_lng
+    }
+    passenger_accepted_stops {
+        bigint user_id PK, FK
+        bigint bus_stop_id PK, FK
+    }
+    pickup_points {
+        bigint id PK
+    }
+    bus_stops {
+        bigint id PK
+    }
+```
+
+- `vehicles` 保存駕駛的車輛資訊（車牌、車輛描述，例如顏色與車款），在駕駛確認請求時提供給乘客（REQ-052）。與帳號一樣由 SQL 預先建立（DD-19）；不放在 `driver_profiles`，因為常用資料會依共乘紀錄重新計算。
 
 #### DD-19 帳號由 SQL 預先建立，常用資料由共乘紀錄累積
 
@@ -315,6 +366,27 @@ flowchart TB
 **負責需求：** REQ-008、REQ-013、REQ-014；REQ-009～REQ-012 為 Phase 2
 
 **互動：** 駕駛與乘客介面取得標籤清單並選擇或取消選擇自己的標籤；媒合引擎向標籤元件詢問篩選是否符合。
+
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o{ user_tags : "選擇"
+    tags ||--o{ user_tags : ""
+
+    tags {
+        bigint id PK
+        text name UK
+        text issuer
+    }
+    user_tags {
+        bigint user_id PK, FK
+        bigint tag_id PK, FK
+    }
+    users {
+        bigint id PK
+    }
+```
 
 #### DD-05 標籤以預先定義的清單提供，使用者自選；模型保留發行者
 
@@ -340,6 +412,26 @@ flowchart TB
 
 **互動：** 行程管理在出發時檢查上車點與目的地；媒合引擎判斷下車點；用戶端取得上車點清單與地圖標示。
 
+**資料表：** 兩張表彼此沒有關聯，由 SQL 腳本寫入。
+
+```mermaid
+erDiagram
+    pickup_points {
+        bigint id PK
+        text name UK
+        double lat
+        double lng
+        int radius_m
+    }
+    bus_stops {
+        bigint id PK
+        int stop_id UK
+        text name
+        double lat
+        double lng
+    }
+```
+
 ### 4.7 行程管理
 
 **職責：**
@@ -351,6 +443,60 @@ flowchart TB
 **負責需求：** REQ-001、REQ-003、REQ-015、REQ-016、REQ-019、REQ-021、REQ-039
 
 **互動：** 出發時從帳號與身分取得常用資料、從上一次行程取得預設值；向上車點與站點檢查地點；向路線與旅行時間估算取得行程路線；開始行程後交給位置追蹤；請求流程向行程管理暫留、確認與釋放座位。
+
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o{ trips : "駕駛"
+    pickup_points ||--o{ trips : "上車點"
+    trips ||--o{ trip_route_stops : "沿途公車站"
+    bus_stops ||--o{ trip_route_stops : ""
+    trips ||--o{ trip_tag_filters : "標籤篩選"
+    tags ||--o{ trip_tag_filters : ""
+
+    trips {
+        bigint id PK
+        bigint driver_id FK
+        bigint pickup_point_id FK
+        text destination_name
+        double destination_lat
+        double destination_lng
+        int capacity
+        text status
+        boolean auto_accept
+        boolean settings_locked
+        int seats_held
+        int seats_confirmed
+        boolean passed_pickup
+        text route_polyline
+    }
+    trip_route_stops {
+        bigint trip_id PK, FK
+        int seq PK
+        bigint bus_stop_id FK
+    }
+    trip_tag_filters {
+        bigint trip_id PK, FK
+        bigint tag_id PK, FK
+        text intent
+    }
+    users {
+        bigint id PK
+    }
+    pickup_points {
+        bigint id PK
+    }
+    bus_stops {
+        bigint id PK
+    }
+    tags {
+        bigint id PK
+    }
+```
+
+- 座位以 `seats_held`、`seats_confirmed` 計數，並以 `CHECK` 限制總和不超過 `capacity`，使暫留在單一交易內完成（DD-12）。
+- `passed_pickup` 由位置追蹤寫入（DD-06）。
 
 #### DD-07 行程開始後設定即鎖定
 
@@ -390,6 +536,40 @@ flowchart TB
 **負責需求：** REQ-023、REQ-034、REQ-037
 
 **互動：** 從行程管理得知哪些車在行程中及其上車點；從模擬器（日後為真實定位）接收駕駛與乘客的位置；提供乘客最新位置給請求流程；向路線與旅行時間估算取得行車時間；提供位置與 ETA 給供給查詢與媒合引擎。
+
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o{ activities : "表示參與"
+    trips |o--o{ activities : "關聯行程"
+    activities ||--o{ location_reports : "回報位置"
+
+    activities {
+        bigint id PK
+        bigint user_id FK
+        text role
+        bigint trip_id FK
+        timestamptz created_at
+    }
+    location_reports {
+        bigint id PK
+        bigint activity_id FK
+        double lat
+        double lng
+        timestamptz reported_at
+    }
+    users {
+        bigint id PK
+    }
+    trips {
+        bigint id PK
+    }
+```
+
+- `activities` 是位置回報的主檔（[carpool-oi-11](#7-待討論議題) 做法 B）：駕駛在出發並表示今天要載人時、乘客在表示今天要搭車時各建立一筆。每筆回報都歸入該使用者最新的主檔；從未建立過主檔就拒絕回報。伺服器不追蹤主檔是否結束，再次表示參與就建立新的主檔。
+- `trip_id` 在有行程可關聯時才填入：駕駛的主檔建立時就關聯到出發的行程，乘客的主檔在請求被確認時關聯。一段行程因此關聯駕駛與各乘客的主檔；判斷是否經過上車點時只讀取 `role` 為駕駛的主檔的回報。
+- `location_reports` 只新增、不修改或刪除，由觸發器強制（DD-06）。
 
 #### DD-06 保存原始經緯度；以上車點範圍判斷是否經過，以當下位置估算 ETA
 
@@ -509,6 +689,64 @@ flowchart TB
 
 **互動：** 向位置追蹤取得乘客最新位置以檢查送出請求距離；呼叫媒合引擎排序；向行程管理暫留、確認與釋放座位；完成時寫入服務紀錄，並通知帳號與身分更新駕駛與乘客的常用資料。
 
+**資料表：**
+
+```mermaid
+erDiagram
+    users ||--o{ ride_requests : "乘客"
+    pickup_points ||--o{ ride_requests : "上車點"
+    trips |o--o{ ride_requests : "分配到"
+    bus_stops |o--o{ ride_requests : "下車站"
+    ride_requests ||--o{ request_tag_filters : "標籤篩選"
+    tags ||--o{ request_tag_filters : ""
+    ride_requests ||--o{ request_candidates : "分配順序"
+    trips ||--o{ request_candidates : ""
+    bus_stops |o--o{ request_candidates : "下車站"
+
+    ride_requests {
+        bigint id PK
+        bigint passenger_id FK
+        bigint pickup_point_id FK
+        text destination_name
+        double destination_lat
+        double destination_lng
+        bigint trip_id FK
+        bigint dropoff_bus_stop_id FK
+        text status
+        boolean relaxed
+        timestamptz response_deadline_at
+    }
+    request_tag_filters {
+        bigint request_id PK, FK
+        bigint tag_id PK, FK
+        text intent
+    }
+    request_candidates {
+        bigint request_id PK, FK
+        int rank PK
+        bigint trip_id FK
+        bigint dropoff_bus_stop_id FK
+        text outcome
+    }
+    users {
+        bigint id PK
+    }
+    pickup_points {
+        bigint id PK
+    }
+    trips {
+        bigint id PK
+    }
+    bus_stops {
+        bigint id PK
+    }
+    tags {
+        bigint id PK
+    }
+```
+
+請求的狀態轉移：
+
 ```mermaid
 stateDiagram-v2
     [*] --> 已送出
@@ -569,6 +807,46 @@ stateDiagram-v2
 
 **互動：** 由請求流程寫入；帳號與身分讀取以累積常用資料；日後的點數分配、供需預測與「減少車次」統計讀取。
 
+**資料表：**
+
+```mermaid
+erDiagram
+    ride_requests ||--o| service_records : "完成後建立"
+    trips ||--o{ service_records : ""
+    users ||--o{ service_records : "駕駛／乘客"
+    pickup_points ||--o{ service_records : "上車點"
+    bus_stops |o--o{ service_records : "下車站"
+
+    service_records {
+        bigint id PK
+        bigint request_id UK, FK
+        bigint trip_id FK
+        bigint driver_id FK
+        bigint passenger_id FK
+        bigint pickup_point_id FK
+        bigint dropoff_bus_stop_id FK
+        text dropoff_name
+        double dropoff_lat
+        double dropoff_lng
+        timestamptz completed_at
+    }
+    ride_requests {
+        bigint id PK
+    }
+    trips {
+        bigint id PK
+    }
+    users {
+        bigint id PK
+    }
+    pickup_points {
+        bigint id PK
+    }
+    bus_stops {
+        bigint id PK
+    }
+```
+
 ### 4.14 系統設定
 
 **職責：** 保存媒合參數（送出請求距離、地址相符距離、等待上限、等待加重、步行加重、標籤加分上限、駕駛確認時限），供媒合引擎、供給查詢與請求流程讀取。
@@ -576,6 +854,16 @@ stateDiagram-v2
 **負責需求：** REQ-060
 
 **互動：** 媒合引擎、供給查詢、請求流程讀取參數。
+
+**資料表：** 沒有外鍵，是獨立的參考資料（DD-20）。
+
+```mermaid
+erDiagram
+    system_settings {
+        text key PK
+        numeric value
+    }
+```
 
 #### DD-20 系統設定以 SQL 維護
 
@@ -596,154 +884,20 @@ stateDiagram-v2
 
 **互動：** 後端各元件讀寫；SQL 腳本寫入預先準備的資料。
 
-#### 資料表關聯圖（ERD）
+#### 資料表歸屬
 
-資料表定義於 `backend/migrations/20261018122058_create_schema.sql`。圖中只列主鍵、外鍵與關鍵欄位，完整欄位以 migration 為準。
+資料表定義於 `backend/migrations/20261018122058_create_schema.sql`。每張資料表由一個元件負責，資料表關聯圖（ERD）放在負責的元件下；圖中只列主鍵、外鍵與關鍵欄位，完整欄位以 migration 為準；本文件描述目標設計，尚未加入 migration 的資料表與欄位以本文件為準。屬於其他元件的資料表在圖中只列主鍵，表示跨元件的參考。
 
-```mermaid
-erDiagram
-    users ||--o{ user_tags : "選擇"
-    tags ||--o{ user_tags : ""
-    users ||--o| driver_profiles : "駕駛常用資料"
-    users ||--o| passenger_profiles : "乘客常用資料"
-    passenger_profiles ||--o{ passenger_accepted_stops : "可接受下車站"
-    bus_stops ||--o{ passenger_accepted_stops : ""
-    pickup_points ||--o{ driver_profiles : "常用上車點"
-
-    users ||--o{ trips : "駕駛"
-    pickup_points ||--o{ trips : "上車點"
-    trips ||--o{ trip_route_stops : "沿途公車站"
-    bus_stops ||--o{ trip_route_stops : ""
-    trips ||--o{ trip_tag_filters : "標籤篩選"
-    tags ||--o{ trip_tag_filters : ""
-
-    users ||--o{ location_reports : "回報位置"
-    trips |o--o{ location_reports : "行程中"
-
-    users ||--o{ ride_requests : "乘客"
-    pickup_points ||--o{ ride_requests : "上車點"
-    trips |o--o{ ride_requests : "分配到"
-    bus_stops |o--o{ ride_requests : "下車站"
-    ride_requests ||--o{ request_tag_filters : "標籤篩選"
-    tags ||--o{ request_tag_filters : ""
-    ride_requests ||--o{ request_candidates : "分配順序"
-    trips ||--o{ request_candidates : ""
-
-    ride_requests ||--o| service_records : "完成後建立"
-    trips ||--o{ service_records : ""
-    users ||--o{ service_records : "駕駛／乘客"
-
-    users {
-        bigint id PK
-        text username UK
-        boolean is_driver
-        boolean is_passenger
-    }
-    tags {
-        bigint id PK
-        text name UK
-        text issuer
-    }
-    user_tags {
-        bigint user_id PK, FK
-        bigint tag_id PK, FK
-    }
-    pickup_points {
-        bigint id PK
-        text name UK
-        double lat
-        double lng
-        int radius_m
-    }
-    bus_stops {
-        bigint id PK
-        int stop_id UK
-        text name
-        double lat
-        double lng
-    }
-    driver_profiles {
-        bigint user_id PK, FK
-        bigint usual_pickup_point_id FK
-        int capacity
-    }
-    passenger_profiles {
-        bigint user_id PK, FK
-        time usual_arrival_time
-    }
-    passenger_accepted_stops {
-        bigint user_id PK, FK
-        bigint bus_stop_id PK, FK
-    }
-    trips {
-        bigint id PK
-        bigint driver_id FK
-        bigint pickup_point_id FK
-        int capacity
-        text status
-        boolean auto_accept
-        boolean settings_locked
-        int seats_held
-        int seats_confirmed
-        boolean passed_pickup
-        text route_polyline
-    }
-    trip_route_stops {
-        bigint trip_id PK, FK
-        int seq PK
-        bigint bus_stop_id FK
-    }
-    trip_tag_filters {
-        bigint trip_id PK, FK
-        bigint tag_id PK, FK
-        text intent
-    }
-    location_reports {
-        bigint id PK
-        bigint user_id FK
-        bigint trip_id FK
-        double lat
-        double lng
-        timestamptz reported_at
-    }
-    ride_requests {
-        bigint id PK
-        bigint passenger_id FK
-        bigint pickup_point_id FK
-        bigint trip_id FK
-        bigint dropoff_bus_stop_id FK
-        text status
-        boolean relaxed
-        timestamptz response_deadline_at
-    }
-    request_tag_filters {
-        bigint request_id PK, FK
-        bigint tag_id PK, FK
-        text intent
-    }
-    request_candidates {
-        bigint request_id PK, FK
-        int rank PK
-        bigint trip_id FK
-        text outcome
-    }
-    service_records {
-        bigint id PK
-        bigint request_id UK, FK
-        bigint trip_id FK
-        bigint driver_id FK
-        bigint passenger_id FK
-        timestamptz completed_at
-    }
-    system_settings {
-        text key PK
-        numeric value
-    }
-```
-
-- `system_settings` 沒有外鍵，是獨立的參考資料（DD-20）。
-- `service_records` 另外參考 `pickup_points`、`bus_stops`（下車站），圖中省略以免過於雜亂。
-- `location_reports` 只新增、不修改或刪除，由觸發器強制（DD-06）；座位以 `trips.seats_held`、`seats_confirmed` 計數，並以 `CHECK` 限制總和不超過 `capacity`，使暫留在單一交易內完成（DD-12）。
+| 元件 | 資料表 |
+|---|---|
+| [4.4 帳號與身分](#44-帳號與身分) | `users`、`vehicles`、`driver_profiles`、`passenger_profiles`、`passenger_accepted_stops` |
+| [4.5 標籤](#45-標籤) | `tags`、`user_tags` |
+| [4.6 上車點與站點](#46-上車點與站點) | `pickup_points`、`bus_stops` |
+| [4.7 行程管理](#47-行程管理) | `trips`、`trip_route_stops`、`trip_tag_filters` |
+| [4.8 位置追蹤](#48-位置追蹤) | `activities`、`location_reports` |
+| [4.12 請求流程](#412-請求流程) | `ride_requests`、`request_tag_filters`、`request_candidates` |
+| [4.13 服務紀錄](#413-服務紀錄) | `service_records` |
+| [4.14 系統設定](#414-系統設定) | `system_settings` |
 
 ### 4.16 模擬器
 
@@ -912,3 +1066,4 @@ sequenceDiagram
 | carpool-oi-08 | 部署平台 | 後端、資料庫與前端部署在哪裡，Demo 當天如何讓觀眾開啟。 | 已決定 | Demo 時全部在同一台機器上本地執行（DD-24） |
 | carpool-oi-09 | 輪詢間隔與確認時限 | 駕駛介面、乘客介面的輪詢間隔，以及對應的駕駛確認時限預設值（DD-03）。 | 待討論 | – |
 | carpool-oi-10 | REQ-062 與範圍決定衝突 | REQ-062 要求模擬企業與企業標籤，但 OVERVIEW 第 9 節決定 PoC 只有使用者自選的標籤，且企業標籤（US-04）已移到 Phase 2。REQ-062 是否也應移到 Phase 2？ | 待討論 | PoC 暫依範圍決定不交付 |
+| carpool-oi-11 | 位置回報歸屬於哪個主檔 | 駕駛開始行程後才回報位置（DD-14），回報歸入該行程；乘客的回報目前不屬於任何主檔。送出請求距離（REQ-034）在送出請求當下就需要乘客位置，因此乘客必須在請求建立前就開始回報。可能做法：(A) 回報歸入乘客請求（ride_requests）：乘客表示要搭車時就建立請求，送出時再檢查距離與媒合，需要多一個「尚未送出」的狀態；(B) 新增「活動」主檔：使用者表示參與時建立（駕駛在出發並表示今天要載人時，乘客在表示今天要搭車時），之後的每筆回報都歸入該使用者最新的主檔，從未建立過主檔就拒絕回報。主檔在有行程可關聯時關聯到行程：駕駛的主檔建立時就關聯到出發的行程，乘客的主檔在請求被確認時關聯。伺服器不追蹤主檔是否結束：再次表示參與就建立新的主檔，舊的主檔自然不再使用。送出請求距離（REQ-034）以目前主檔的最新回報檢查，且該回報必須夠新（時間待定）。 | 待討論 | PoC 暫維持：駕駛的回報歸入進行中的行程，乘客不需主檔即可回報 |
