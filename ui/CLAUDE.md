@@ -13,6 +13,7 @@ ui/
   shared/       @carpool/shared — 地圖、API 用戶端、輪詢、少量基本元件、主題
   driver/       駕駛介面   :5173
   passenger/    乘客介面   :5174
+  showcase/     展示頁     :5170 — Demo 時並排嵌入兩個介面與「重設」（../docs/ui-design.md UD-18）
   mock-server/  示範後端   :8081 — 只用 Node 內建模組，不是 workspace（../docs/ui-design.md 10.2）
   dashboard/    （未來）   :5175 — 新增為一個 workspace，共用 shared
 ```
@@ -24,7 +25,7 @@ ui/
 在專案根目錄也可以用 `just ui <指令>`，見 `../DEV.md` 的「前端」小節。
 
 - `npm install`
-- `npm run dev:driver`／`npm run dev:passenger`
+- `npm run dev:driver`／`npm run dev:passenger`／`npm run dev:showcase`
 - `npm run mock` — 示範後端；要讓介面連到它，用 `just ui dev-mock`
 - `npm test` — Vitest，跑所有 workspace
 - `npm run typecheck`
@@ -54,13 +55,14 @@ ui/
 
 ### 3. 設計文件中的角色規則
 
-- **駕駛：** 行程中只有一個畫面：有沒有搭車請求、該請求的上車點與下車點、已確認乘客的下車點，以及確認／婉拒、替乘客結束共乘（DD-04、REQ-066）。**行程中不顯示地圖**，也不放設定、統計、提示或動畫。地圖與所有設定只在出發確認畫面。按鈕要大、好按。
-- **乘客：** 不能讓乘客選特定車輛（REQ-031）。顯示供給、送出「今天我要搭」、顯示請求狀態；確認後在地圖上顯示行程路線；下車後由乘客按「結束共乘」（DD-23）。
+- **駕駛：** 行程中只有一個畫面：有沒有搭車請求、該請求的上車點與下車點、已確認乘客的下車點與是否已上車，以及確認／婉拒、標記已上車、替乘客結束共乘（DD-04、DD-27、REQ-066）。**行程中不顯示地圖**，也不放設定、統計、提示或動畫。地圖與所有設定只在出發確認畫面。按鈕要大、好按。
+- **乘客：** 不能讓乘客選特定車輛（REQ-031）。顯示選定上車點的供給（預設最近，可改選，REQ-029）、送出「今天我要搭」（先建立參與主檔，再附上目前位置送出，DD-25）、顯示請求狀態；確認後在地圖上顯示行程路線，乘客按「我已上車」（DD-27）；下車後由乘客按「結束共乘」（DD-23）。乘客的目前位置只從 `passenger/src/position.ts` 取得（DD-26）。
 - **兩者：** 模擬資料一律用 `<SimulatedBadge />` 標示（REQ-063）。
+- **除錯模式：** 只有網址帶 `?debug=1` 才出現（`DebugSheet`）。駕駛端放帳號切換與模擬器（DD-14），乘客端放目前位置（DD-26）。它是 Demo 工具，不受 DD-04 限制，但不要把產品功能放進去。
 
 ### 4. 地圖
 
-- 使用 Google Maps（`@vis.gl/react-google-maps`），**一律包在 `shared/src/map/` 裡**。各 app 從 `@carpool/shared` import `MapView`、`PlaceMarker`、`RoutePolyline`，不直接 import `@vis.gl/*`。日後換地圖服務只需改一個地方。
+- 使用 Google Maps（`@vis.gl/react-google-maps`），**一律包在 `shared/src/map/` 裡**。各 app 從 `@carpool/shared` import `RouteMap`、`VehicleMarker`、`MapView`、`PlaceMarker`、`RoutePolyline`，不直接 import `@vis.gl/*`。日後換地圖服務只需改一個地方。
 - `RoutePolyline` 接受 `path`（座標陣列）或 Google 的 `encodedPath`（Routes API 回傳的 polyline 可直接傳入）。
 - 需要新的地圖功能時：通用的才加到 `shared/src/map/`；否則在 app 內以 shared 的元件組合出來。
 

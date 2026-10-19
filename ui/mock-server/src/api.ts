@@ -6,19 +6,32 @@ import type { SeedUser } from './data/seed.ts'
 import { MockError } from './errors.ts'
 import {
   accept,
+  boardRide,
   cancelRequest,
   completeRide,
+  declareActivity,
   decline,
   depart,
+  driverBoardRide,
   driverCompleteRide,
+  reportLocation,
   submitRequest,
   tick,
 } from './operations.ts'
 import { buildPlaces, searchPlaces } from './places.ts'
 import { buildTripPath } from './tripPath.ts'
-import { departureSettings, idParam, passengerSearch, routePreviewRequest } from './validate.ts'
-import { driverProfileView, driverTripView, passengerProfileView, passengerRequestView, supplyView, tagsView } from './views.ts'
-import { activeTripOf, initialWorld, latestTripOf, requireRequest, type World } from './world.ts'
+import { departureSettings, idParam, locationBody, requestSubmission, routePreviewRequest, supplyQuery } from './validate.ts'
+import {
+  driverProfileView,
+  driverTripView,
+  passengerProfileView,
+  passengerRequestView,
+  supplyView,
+  tagsView,
+  tripDefaultsView,
+  tripView,
+} from './views.ts'
+import { activeTripOf, findTrip, initialWorld, latestActivityOf, latestTripOf, requireRequest, type World } from './world.ts'
 
 export interface MockRequest {
   method: string
@@ -114,6 +127,57 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
     },
     { method: 'GET', pattern: '/api/driver/profile', access: 'driver', run: ({ user }) => ok(driverProfileView(world, lookups, user.id)) },
     { method: 'GET', pattern: '/api/passenger/profile', access: 'passenger', run: ({ user }) => ok(passengerProfileView(world, lookups, user.id)) },
+    {
+      method: 'POST',
+      pattern: '/api/driver/trips',
+      access: 'driver',
+      run: ({ user, body }) => {
+        world = depart(world, lookups, user.id, departureSettings(body, lookups), now())
+        return created(tripView(lookups, activeTripOf(world, user.id)!))
+      },
+    },
+    {
+      method: 'GET',
+      pattern: '/api/driver/trips/current',
+      access: 'driver',
+      run: ({ user }) => {
+        const trip = activeTripOf(world, user.id)
+        if (!trip) throw new MockError(404, 'not_found', '目前沒有進行中的行程')
+        return ok({ ...tripView(lookups, trip), passed_pickup: driverTripView(world, lookups, trip, now()).passed_pickup })
+      },
+    },
+    { method: 'GET', pattern: '/api/driver/trips/defaults', access: 'driver', run: ({ user }) => ok(tripDefaultsView(latestTripOf(world, user.id))) },
+    {
+      method: 'GET',
+      pattern: '/api/trips/:',
+      access: 'any',
+      run: ({ params }) => {
+        const trip = findTrip(world, idParam(params[0], '行程'))
+        if (!trip) throw new MockError(404, 'not_found', '找不到這個行程')
+        return ok(tripView(lookups, trip))
+      },
+    },
+    {
+      method: 'POST',
+      pattern: '/api/activities',
+      access: 'any',
+      run: ({ user, role }) => {
+        world = declareActivity(world, user.id, role, now())
+        const a = latestActivityOf(world, user.id)!
+        return created({ id: a.id, role: a.role, trip_id: a.tripId, created_at: new Date(a.createdAtMs).toISOString() })
+      },
+    },
+    {
+      method: 'POST',
+      pattern: '/api/location',
+      access: 'any',
+      run: ({ user, body }) => {
+        world = reportLocation(world, user.id, locationBody(body), now())
+        const a = latestActivityOf(world, user.id)!
+        const r = world.lastReports[a.id]
+        return created({ id: r.id, activity_id: a.id, trip_id: a.tripId, lat: r.lat, lng: r.lng, reported_at: new Date(r.atMs).toISOString() })
+      },
+    },
 
     // ---- Proposed: shared
     { method: 'GET', pattern: '/api/places', access: 'any', run: ({ query }) => ok(searchPlaces(places, query.get('q') ?? '')) },
@@ -125,7 +189,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       access: 'driver',
       run: ({ user }) => {
         const trip = latestTripOf(world, user.id)
-        return ok({ trip: trip ? driverTripView(world, lookups, trip) : null })
+        return ok({ trip: trip ? driverTripView(world, lookups, trip, now()) : null })
       },
     },
     {
@@ -137,16 +201,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
         return ok(buildTripPath(lookups, lookups.pickupById.get(req.pickup_point_id)!, req.destination).route)
       },
     },
-    {
-      method: 'POST',
-      pattern: '/api/driver/trips',
-      access: 'driver',
-      run: ({ user, body }) => {
-        world = depart(world, lookups, user.id, departureSettings(body, lookups), now())
-        return created({ trip: driverTripView(world, lookups, activeTripOf(world, user.id)!) })
-      },
-    },
-    ...(['accept', 'decline', 'complete'] as const).map(
+    ...(['accept', 'decline', 'board', 'complete'] as const).map(
       (action): Endpoint => ({
         method: 'POST',
         pattern: `/api/driver/requests/:/${action}`,
@@ -155,26 +210,27 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
           const id = idParam(params[0], '請求')
           if (action === 'accept') world = accept(world, user.id, id)
           if (action === 'decline') world = decline(world, lookups, user.id, id, now())
+          if (action === 'board') world = driverBoardRide(world, user.id, id)
           if (action === 'complete') world = driverCompleteRide(world, user.id, id)
           const trip = latestTripOf(world, user.id)
-          return ok({ trip: trip ? driverTripView(world, lookups, trip) : null })
+          return ok({ trip: trip ? driverTripView(world, lookups, trip, now()) : null })
         },
       }),
     ),
 
     // ---- Proposed: passenger
     {
-      method: 'POST',
+      method: 'GET',
       pattern: '/api/passenger/supply',
       access: 'passenger',
-      run: ({ user, body }) => ok(supplyView(world, lookups, user.id, passengerSearch(body, lookups), now())),
+      run: ({ user, query }) => ok(supplyView(world, lookups, user.id, supplyQuery(query, lookups), now())),
     },
     {
       method: 'POST',
       pattern: '/api/passenger/requests',
       access: 'passenger',
       run: ({ user, body }) => {
-        world = submitRequest(world, lookups, user.id, passengerSearch(body, lookups), now())
+        world = submitRequest(world, lookups, user.id, requestSubmission(body, lookups), now())
         return created({ request: passengerRequestView(world, lookups, world.requests.at(-1)!, now()) })
       },
     },
@@ -187,7 +243,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
         return ok({ request: request ? passengerRequestView(world, lookups, request, now()) : null })
       },
     },
-    ...(['cancel', 'complete'] as const).map(
+    ...(['cancel', 'board', 'complete'] as const).map(
       (action): Endpoint => ({
         method: 'POST',
         pattern: `/api/passenger/requests/:/${action}`,
@@ -195,7 +251,9 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
         run: ({ user, params }) => {
           const request = requireRequest(world, idParam(params[0], '請求'))
           if (request.passengerId !== user.id) throw new MockError(404, 'not_found', '找不到這個請求')
-          world = action === 'cancel' ? cancelRequest(world, lookups, request, now()) : completeRide(world, request)
+          if (action === 'cancel') world = cancelRequest(world, lookups, request, now())
+          if (action === 'board') world = boardRide(world, request)
+          if (action === 'complete') world = completeRide(world, request)
           return ok({ request: passengerRequestView(world, lookups, requireRequest(world, request.id), now()) })
         },
       }),

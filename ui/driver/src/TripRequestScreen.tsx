@@ -15,7 +15,7 @@ interface TripRequestScreenProps {
  * biggest target, at the bottom where the thumb is; decline is smaller, below it (UD-05).
  */
 export function TripRequestScreen({ trip, request, busy, offline, onAccept, onDecline }: TripRequestScreenProps) {
-  const onBoard = trip.passengers.map((p) => p.dropoff.name)
+  const others = trip.passengers.map((p) => p.dropoff.name)
   return (
     <main className="flex h-full flex-col bg-signal px-6 pt-(--safe-top) pb-(--safe-bottom) text-ink">
       <h1 className="mt-6 text-[32px]/tight font-bold">有乘客要搭車</h1>
@@ -35,7 +35,7 @@ export function TripRequestScreen({ trip, request, busy, offline, onAccept, onDe
         </div>
       </dl>
 
-      {onBoard.length > 0 && <p className="mt-8 text-xl font-semibold">車上乘客在 {onBoard.join('、')} 下車</p>}
+      {others.length > 0 && <p className="mt-8 text-xl font-semibold">其他乘客在 {others.join('、')} 下車</p>}
       {offline && <ConnectionNote />}
 
       <div className="mt-auto flex flex-col gap-5 pb-4">

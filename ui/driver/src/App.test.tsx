@@ -1,21 +1,29 @@
-import type { DriverTrip, DriverTripResponse } from '@carpool/shared'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import type { DriverTrip, DriverTripResponse, TripDefaults } from '@carpool/shared'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { POLL_INTERVAL_MS } from './config'
 
 const PICKUP = { id: 1, name: '松山車站', lat: 25.0498, lng: 121.5782, radius_m: 80 }
 const DESTINATION = { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }
-const ROUTE = { polyline: '', distance_m: 4400, duration_s: 1200, stops: [{ id: 9, stop_id: 1116, name: '陽光街', lat: 0, lng: 0 }], simulated: true }
+const ROUTE = { polyline: '', distance_m: 4400, duration_s: 1200, simulated: true, bus_stops: [{ id: 9, stop_id: 1116, name: '陽光街', lat: 0, lng: 0 }] }
+const LAST_DEPARTURE: TripDefaults = { pickup_point_id: 1, destination: DESTINATION, capacity: 3, auto_accept: false, tag_filters: [] }
+const NEVER_DEPARTED: TripDefaults = { pickup_point_id: null, destination: null, capacity: null, auto_accept: false, tag_filters: [] }
 
 function trip(change: Partial<DriverTrip>): DriverTrip {
   return {
     id: 4,
+    driver_id: 6,
     status: 'completed',
     pickup_point: PICKUP,
     destination: DESTINATION,
     capacity: 3,
+    seats_held: 0,
+    seats_confirmed: 0,
+    seats_available: 3,
     auto_accept: false,
+    settings_locked: true,
+    passed_pickup: false,
     tag_filters: [],
     route: ROUTE,
     started_at: '2026-10-23T08:00:00Z',
@@ -23,28 +31,34 @@ function trip(change: Partial<DriverTrip>): DriverTrip {
     pending_request: null,
     passengers: [],
     completed_count: 0,
-    simulated: false,
     ...change,
   }
 }
 
 /** Answers like the backend; `tripResponses` are served in order for GET /driver/trip, the last one repeats. */
-function fakeBackend(tripResponses: DriverTripResponse[]) {
+function fakeBackend(tripResponses: DriverTripResponse[], { defaults = LAST_DEPARTURE, departStatus = 201 } = {}) {
   const calls: { method: string; path: string; body: unknown }[] = []
   let index = 0
   const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
     const path = url.replace('/api', '')
     const method = init.method ?? 'GET'
     calls.push({ method, path, body: init.body ? JSON.parse(String(init.body)) : undefined })
-    const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
+    const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
     if (path === '/driver/trip') return reply(tripResponses[Math.min(index++, tripResponses.length - 1)])
+    if (path === '/driver/trips/defaults') return reply(defaults)
     if (path === '/pickup-points') return reply([PICKUP])
     if (path === '/tags') return reply([{ id: 1, name: '不抽菸', issuer: 'self', selected: false }])
     if (path === '/driver/profile') return reply({ usual_pickup_point: null, usual_destination: null, capacity: null })
     if (path === '/driver/route-preview') return reply(ROUTE)
     if (path.startsWith('/places')) return reply([DESTINATION])
-    if (method === 'POST' && path === '/driver/trips') return reply({ trip: trip({ id: 5, status: 'active', ended_at: null }) })
-    if (method === 'POST' && path.endsWith('/accept')) return reply({ trip: trip({ id: 5, status: 'active', passengers: [{ request_id: 7, dropoff: DESTINATION }] }) })
+    if (method === 'POST' && path === '/driver/trips') {
+      if (departStatus === 409) return reply({ error: { code: 'already_active', message: '駕駛已有進行中的行程' } }, 409)
+      const { ended_at: _, pending_request: __, passengers: ___, completed_count: ____, ...view } = trip({ id: 5, status: 'active' })
+      return reply(view, 201)
+    }
+    const onBoard = (boarded: boolean) => reply({ trip: trip({ id: 5, status: 'active', passengers: [{ request_id: 7, dropoff: DESTINATION, boarded }] }) })
+    if (method === 'POST' && path.endsWith('/accept')) return onBoard(false)
+    if (method === 'POST' && path.endsWith('/board')) return onBoard(true)
     return new Response('{}', { status: 404 })
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -65,7 +79,8 @@ describe('driver App', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
 
     expect(await screen.findByRole('heading', { name: /目前沒有/ })).toBeInTheDocument()
@@ -79,7 +94,7 @@ describe('driver App', () => {
   })
 
   it('cannot depart the first time until a destination is chosen', async () => {
-    fakeBackend([{ trip: null }])
+    fakeBackend([{ trip: null }], { defaults: NEVER_DEPARTED })
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: '第一次出發' })).toBeInTheDocument()
@@ -96,9 +111,25 @@ describe('driver App', () => {
     expect(screen.queryByText(/地圖/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '確認' }))
 
-    const onBoard = await screen.findByRole('region', { name: '車上乘客' })
-    expect(within(onBoard).getByRole('button', { name: '瑞光路 513 巷的乘客已下車' })).toBeInTheDocument()
-    expect(calls.some((c) => c.path === '/driver/requests/7/accept')).toBe(true)
+    const passengers = await screen.findByRole('region', { name: '乘客' })
+    fireEvent.click(within(passengers).getByRole('button', { name: '瑞光路 513 巷的乘客已上車' }))
+    expect(await within(passengers).findByRole('button', { name: '瑞光路 513 巷的乘客已下車' })).toBeInTheDocument()
+    expect(calls.map((c) => c.path)).toEqual(expect.arrayContaining(['/driver/requests/7/accept', '/driver/requests/7/board']))
+  })
+
+  it('shows the running trip when it was already started elsewhere (409 already_active)', async () => {
+    fakeBackend([{ trip: trip({}) }, { trip: trip({ id: 5, status: 'active' }) }], { departStatus: 409 })
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    expect(await screen.findByRole('heading', { name: /目前沒有/ })).toBeInTheDocument()
+  })
+
+  it('has no debug mode without ?debug=1 (DD-14)', async () => {
+    fakeBackend([{ trip: null }], { defaults: NEVER_DEPARTED })
+    render(<App />)
+    await screen.findByRole('heading', { name: '第一次出發' })
+    expect(screen.queryByRole('button', { name: '除錯' })).not.toBeInTheDocument()
   })
 
   it('shows the arrival screen when the running trip ends by itself (UD-16)', async () => {

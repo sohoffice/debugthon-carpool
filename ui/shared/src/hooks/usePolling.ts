@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 export interface PollingState<T> {
   data: T | undefined
@@ -13,20 +13,33 @@ export interface Polling<T> extends PollingState<T> {
   mutate: (data: T) => void
 }
 
+function subscribeVisibility(onChange: () => void) {
+  document.addEventListener('visibilitychange', onChange)
+  return () => document.removeEventListener('visibilitychange', onChange)
+}
+
+/** False while the tab is in the background; polling then waits, and catches up on return. */
+function usePageVisible(): boolean {
+  return useSyncExternalStore(subscribeVisibility, () => document.visibilityState !== 'hidden')
+}
+
 /**
  * Calls `fetcher` now and every `intervalMs` (DD-03: clients poll, no push).
  * Keeps the last good data when a poll fails, so the screen does not flicker.
+ * Pauses while the page is hidden and polls at once when it is shown again.
  * Pass `enabled: false` to pause.
  */
 export function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, enabled = true): Polling<T> {
   const [state, setState] = useState<PollingState<T>>({ data: undefined, error: undefined })
+  const visible = usePageVisible()
+  const active = enabled && visible
   const fetcherRef = useRef(fetcher)
   fetcherRef.current = fetcher
   // Bumped by mutate(); a poll started under an older generation is dropped.
   const generation = useRef(0)
 
   useEffect(() => {
-    if (!enabled) return
+    if (!active) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -50,7 +63,7 @@ export function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, ena
       cancelled = true
       clearTimeout(timer)
     }
-  }, [intervalMs, enabled])
+  }, [intervalMs, active])
 
   const mutate = useCallback((data: T) => {
     generation.current += 1

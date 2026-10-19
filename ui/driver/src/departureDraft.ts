@@ -1,4 +1,4 @@
-import type { DepartureSettings, DriverProfile, DriverTrip, Place, TagFilter } from '@carpool/shared'
+import type { DepartureSettings, DriverProfile, Place, TagFilter, TripDefaults } from '@carpool/shared'
 import { CAPACITY_RANGE } from './config'
 
 export interface DepartureDraft {
@@ -9,15 +9,20 @@ export interface DepartureDraft {
   tagFilters: TagFilter[]
 }
 
-/** Prefill from the last trip, else from the habitual profile, else empty (REQ-016, UD-02). */
-export function draftFrom(lastTrip: DriverTrip | null, profile: DriverProfile | null): DepartureDraft {
-  if (lastTrip) {
+/** True when the driver departed before, so the last settings can be reused (REQ-016). */
+export function hasDefaults(defaults: TripDefaults | null): defaults is TripDefaults & { pickup_point_id: number; destination: Place } {
+  return defaults !== null && defaults.pickup_point_id !== null && defaults.destination !== null
+}
+
+/** Prefill from the last departure, else from the habitual profile, else empty (REQ-016, UD-02). */
+export function draftFrom(defaults: TripDefaults | null, profile: DriverProfile | null): DepartureDraft {
+  if (hasDefaults(defaults)) {
     return {
-      pickupPointId: lastTrip.pickup_point.id,
-      destination: lastTrip.destination,
-      capacity: lastTrip.capacity,
-      autoAccept: lastTrip.auto_accept,
-      tagFilters: lastTrip.tag_filters,
+      pickupPointId: defaults.pickup_point_id,
+      destination: defaults.destination,
+      capacity: defaults.capacity ?? CAPACITY_RANGE.fallback,
+      autoAccept: defaults.auto_accept,
+      tagFilters: defaults.tag_filters.map(({ tag_id, intent }) => ({ tag_id, intent })),
     }
   }
   return {

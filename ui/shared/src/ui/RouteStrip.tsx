@@ -37,3 +37,22 @@ export function RouteStrip({ items, label = '今天的路線' }: { items: RouteS
     </ol>
   )
 }
+
+/** Grey route strip shown while loading, instead of a blank space (8.6). */
+export function RouteStripSkeleton({ rows = 4, tone = 'light' }: { rows?: number; tone?: 'light' | 'dark' }) {
+  const fill = tone === 'light' ? 'bg-rule' : 'bg-white/20'
+  return (
+    <div aria-hidden className="motion-safe:animate-pulse">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="relative flex h-10 items-center gap-4">
+          <span className="relative flex w-5 shrink-0 items-center justify-center self-stretch">
+            {i > 0 && <span className={`absolute top-0 bottom-1/2 w-[5px] ${fill}`} />}
+            {i < rows - 1 && <span className={`absolute top-1/2 bottom-0 w-[5px] ${fill}`} />}
+            <span className={`relative rounded-full ${fill} ${i === 0 || i === rows - 1 ? 'size-5' : 'size-3'}`} />
+          </span>
+          <span className={`h-4 rounded-full ${fill}`} style={{ width: `${[56, 40, 48, 64][i % 4]}%` }} />
+        </div>
+      ))}
+    </div>
+  )
+}

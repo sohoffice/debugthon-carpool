@@ -1,4 +1,4 @@
-import { createApiClient, getAccountFromUrl } from '@carpool/shared'
+import { createApiClient, getAccountFromUrl, isDebugMode } from '@carpool/shared'
 
 // Default demo account; switch with ?account=<name>. driver4 and driver5 are driven from this UI;
 // driver1-3 run simulated trips (docs/ui-design.md UD-14).
@@ -13,3 +13,6 @@ export const CAPACITY_RANGE = { min: 1, max: 6, fallback: 3 }
 
 export const account = getAccountFromUrl(DEFAULT_ACCOUNT)
 export const api = createApiClient('driver', account)
+
+/** `?debug=1`: account switch and simulator (DD-14). */
+export const DEBUG = isDebugMode()

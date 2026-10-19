@@ -30,6 +30,8 @@ export function loadStaticData(): StaticData {
     schema: read('backend/migrations/20261018122058_create_schema.sql'),
     users: read('backend/migrations/20261018123407_seed_test_users.sql'),
     reference: read('backend/migrations/20261018140000_seed_reference_data.sql'),
+    activities: read('backend/migrations/20261019130000_activities_and_vehicles.sql'),
+    passMargin: read('backend/migrations/20261019150000_pass_margin_setting.sql'),
   })
 
   const csvStops = new Map<number, CsvStop>()

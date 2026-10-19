@@ -3,27 +3,26 @@ import {
   Button,
   ChipSelect,
   ErrorNote,
-  MapView,
-  PlaceMarker,
-  RoutePolyline,
+  PlaceSearch,
+  RouteMap,
   RouteStrip,
+  RouteStripSkeleton,
   SimulatedBadge,
   routeStripItems,
   summarizeFilters,
   TagFilterEditor,
   useMyTags,
   type DriverProfile,
-  type DriverTrip,
-  type DriverTripResponse,
   type PickupPoint,
   type Route,
+  type TripDefaults,
+  type TripView,
 } from '@carpool/shared'
 import { useEffect, useState } from 'react'
 import { AccountTag } from './AccountTag'
 import { CapacityStepper } from './CapacityStepper'
 import { api } from './config'
-import { draftFrom, toSettings, type DepartureDraft } from './departureDraft'
-import { DestinationEditor } from './DestinationEditor'
+import { draftFrom, hasDefaults, toSettings, type DepartureDraft } from './departureDraft'
 import { PickupEditor } from './PickupEditor'
 import { SettingLine, SettingRow } from './SettingRow'
 import { Switch } from './Switch'
@@ -31,18 +30,27 @@ import { Switch } from './Switch'
 type Section = 'pickup' | 'destination' | 'filters' | 'tags'
 
 interface DepartureScreenProps {
-  /** The latest (finished) trip, whose settings are reused; null if the driver never departed. */
-  lastTrip: DriverTrip | null
-  onDeparted: (response: DriverTripResponse) => void
+  onDeparted: (trip: TripView) => void
+  /** Another departure is already running (409 already_active): show it. */
+  onAlreadyActive: () => void
+}
+
+/** Last departure's settings, else the habitual profile (REQ-016); null when neither exists. */
+async function loadDraft(): Promise<DepartureDraft | null> {
+  const defaults = await api.get<TripDefaults>('/driver/trips/defaults').catch(() => null)
+  if (hasDefaults(defaults)) return draftFrom(defaults, null)
+  const profile = await api.get<DriverProfile>('/driver/profile').catch(() => null)
+  return profile?.usual_destination ? draftFrom(null, profile) : null
 }
 
 /** 6.1: confirm today's settings and go. One tap when nothing changed (REQ-017). */
-export function DepartureScreen({ lastTrip, onDeparted }: DepartureScreenProps) {
+export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreenProps) {
   const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([])
-  const [draft, setDraft] = useState<DepartureDraft>(() => draftFrom(lastTrip, null))
-  const [firstTime, setFirstTime] = useState(lastTrip === null)
-  const [open, setOpen] = useState<Section[]>(lastTrip === null ? ['pickup', 'destination'] : [])
-  const [route, setRoute] = useState<Route | null>(lastTrip?.route ?? null)
+  const [draft, setDraft] = useState<DepartureDraft>(() => draftFrom(null, null))
+  const [loaded, setLoaded] = useState(false)
+  const [firstTime, setFirstTime] = useState(false)
+  const [open, setOpen] = useState<Section[]>([])
+  const [route, setRoute] = useState<Route | null>(null)
   const [routeFailed, setRouteFailed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
@@ -50,19 +58,13 @@ export function DepartureScreen({ lastTrip, onDeparted }: DepartureScreenProps) 
 
   useEffect(() => {
     api.get<PickupPoint[]>('/pickup-points').then(setPickupPoints, () => setError('讀不到上車點清單，請重新整理。'))
-    if (lastTrip) return
-    // Never departed: fall back to the habitual profile, if any.
-    api.get<DriverProfile>('/driver/profile').then(
-      (profile) => {
-        if (!profile.usual_destination) return
-        setDraft(draftFrom(null, profile))
-        setFirstTime(false)
-        setOpen([])
-      },
-      () => undefined,
-    )
-    // Runs once per screen: App remounts it (key) when the last trip changes, not on every poll.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadDraft().then((prefill) => {
+      if (prefill) setDraft(prefill)
+      // Never departed: pickup point and destination start open (6.1).
+      setFirstTime(prefill === null)
+      setOpen(prefill === null ? ['pickup', 'destination'] : [])
+      setLoaded(true)
+    })
   }, [])
 
   const { pickupPointId, destination } = draft
@@ -90,23 +92,20 @@ export function DepartureScreen({ lastTrip, onDeparted }: DepartureScreenProps) 
     setSubmitting(true)
     setError(undefined)
     try {
-      onDeparted(await api.post<DriverTripResponse>('/driver/trips', settings))
+      onDeparted(await api.post<TripView>('/driver/trips', settings))
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'already_active') return onAlreadyActive()
       setError(err instanceof ApiError && err.status < 500 ? err.message : '沒有出發成功，請再按一次。')
       setSubmitting(false)
     }
   }
 
-  const strip = pickup && destination && route ? routeStripItems(pickup.name, route.stops, destination.name) : null
+  const strip = pickup && destination && route ? routeStripItems(pickup.name, route.bus_stops, destination.name) : null
 
   return (
     <div className="relative h-full bg-white">
       <div className="absolute inset-x-0 top-0 h-[44%]">
-        <MapView>
-          {route && <RoutePolyline encodedPath={route.polyline} />}
-          {pickup && <PlaceMarker kind="pickup" position={pickup} title={pickup.name} />}
-          {destination && <PlaceMarker kind="destination" position={destination} title={destination.name} />}
-        </MapView>
+        <RouteMap pickup={pickup} destination={destination} route={route} padding={{ top: 72, right: 40, bottom: 56, left: 40 }} />
       </div>
       <AccountTag />
 
@@ -117,7 +116,9 @@ export function DepartureScreen({ lastTrip, onDeparted }: DepartureScreenProps) 
           <p className="mt-1 text-lg text-ink-soft">{firstTime ? '選好上車點和目的地就能出發，下次會自動帶入。' : '設定沿用上次。沒問題就出發。'}</p>
 
           <div className="mt-6">
-            {strip ? (
+            {!loaded || (strip === null && settings !== null && !routeFailed) ? (
+              <RouteStripSkeleton />
+            ) : strip ? (
               <>
                 <RouteStrip items={strip.items} />
                 <p className="mt-3 flex items-center gap-2 pl-9 text-sm text-ink-soft">
@@ -139,7 +140,7 @@ export function DepartureScreen({ lastTrip, onDeparted }: DepartureScreenProps) 
               />
             </SettingRow>
             <SettingRow label="目的地" value={destination?.name ?? '未填'} open={open.includes('destination')} onToggle={() => toggle('destination')}>
-              <DestinationEditor value={destination} onChange={(place) => (update({ destination: place }), close('destination'))} />
+              <PlaceSearch api={api} value={destination} onChange={(place) => (update({ destination: place }), close('destination'))} />
             </SettingRow>
             <SettingLine label="可載人數">
               <CapacityStepper value={draft.capacity} onChange={(capacity) => update({ capacity })} />
@@ -175,7 +176,7 @@ export function DepartureScreen({ lastTrip, onDeparted }: DepartureScreenProps) 
             <ErrorNote>{error}</ErrorNote>
           </div>
         )}
-        <Button className="h-16 w-full text-xl" disabled={!settings || submitting} onClick={depart}>
+        <Button className="h-16 w-full text-xl" disabled={!loaded || !settings || submitting} onClick={depart}>
           {submitting ? '出發中…' : '我出發了'}
         </Button>
       </div>

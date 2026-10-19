@@ -1,6 +1,7 @@
-import { ApiError, PhoneShell, usePolling, type DriverTripResponse, type StatusBarTone } from '@carpool/shared'
+import { ApiError, PhoneShell, usePolling, type DriverTripResponse, type StatusBarTone, type TripView } from '@carpool/shared'
 import { useEffect, useState } from 'react'
-import { api, POLL_INTERVAL_MS } from './config'
+import { api, DEBUG, POLL_INTERVAL_MS } from './config'
+import { DriverDebugMode } from './DriverDebugMode'
 import { DepartureScreen } from './DepartureScreen'
 import { LoadingScreen } from './LoadingScreen'
 import { TripEndedScreen } from './TripEndedScreen'
@@ -8,6 +9,11 @@ import { TripIdleScreen } from './TripIdleScreen'
 import { TripRequestScreen } from './TripRequestScreen'
 
 const fetchTrip = () => api.get<DriverTripResponse>('/driver/trip')
+
+/** A trip that just started has no requests or passengers yet. */
+const justDeparted = (trip: TripView): DriverTripResponse => ({
+  trip: { ...trip, ended_at: null, pending_request: null, passengers: [], completed_count: 0 },
+})
 
 export function App() {
   const polling = usePolling(fetchTrip, POLL_INTERVAL_MS)
@@ -57,17 +63,32 @@ export function App() {
       />
     )
   } else if (trip?.status === 'active') {
-    screen = <TripIdleScreen trip={trip} busy={busy} offline={offline} onDropOff={(id) => act(`/driver/requests/${id}/complete`)} />
+    screen = (
+      <TripIdleScreen
+        trip={trip}
+        busy={busy}
+        offline={offline}
+        onBoarded={(id) => act(`/driver/requests/${id}/board`)}
+        onDropOff={(id) => act(`/driver/requests/${id}/complete`)}
+      />
+    )
   } else if (trip && trip.id === endedId) {
     screen = <TripEndedScreen trip={trip} onDone={() => setEndedId(null)} />
   } else {
     tone = 'dark'
-    screen = <DepartureScreen key={trip?.id ?? 'none'} lastTrip={trip} onDeparted={polling.mutate} />
+    screen = (
+      <DepartureScreen
+        key={trip?.id ?? 'none'}
+        onDeparted={(started) => polling.mutate(justDeparted(started))}
+        onAlreadyActive={() => fetchTrip().then(polling.mutate, () => undefined)}
+      />
+    )
   }
 
   return (
     <PhoneShell roleLabel="駕駛" tone={tone}>
       {screen}
+      {DEBUG && <DriverDebugMode />}
     </PhoneShell>
   )
 }

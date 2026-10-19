@@ -11,7 +11,7 @@ import type {
 import { ARRIVAL_RADIUS_M, PASSENGER_PROFILES, PREVIOUS_TRIPS, SIMULATED_START_ETA_S, SPEED_MPS } from './config.ts'
 import { mustGet, type Lookups } from './context.ts'
 import { MockError } from './errors.ts'
-import type { Path } from './geo.ts'
+import type { LatLng, Path } from './geo.ts'
 import { buildTripPath } from './tripPath.ts'
 
 export interface Trip {
@@ -53,6 +53,8 @@ export interface RideRequest {
   passengerId: number
   pickupPointId: number
   search: PassengerSearch
+  /** Where the passenger was when sending it; the submit distance is checked against it (DD-25). */
+  location: LatLng
   status: RequestStatus
   candidates: Candidate[]
   /** The candidate currently assigned (waiting, confirmed or completed). */
@@ -76,14 +78,35 @@ export interface PassengerProfileState {
   acceptedStopIds: number[]
 }
 
+/** A user taking part today; location reports go to the user's latest one (DD-25). */
+export interface MockActivity {
+  id: number
+  userId: number
+  role: 'driver' | 'passenger'
+  tripId: number | null
+  createdAtMs: number
+}
+
+export interface MockReport {
+  id: number
+  lat: number
+  lng: number
+  atMs: number
+}
+
 /** All mock state. Replaced, never mutated: every operation returns a new World. */
 export interface World {
   scenario: MockScenario
   clockOffsetMs: number
   nextTripId: number
   nextRequestId: number
+  nextActivityId: number
+  nextReportId: number
   trips: Trip[]
   requests: RideRequest[]
+  activities: MockActivity[]
+  /** Only the last report per activity is kept; car movement is computed from time, not reports. */
+  lastReports: Record<number, MockReport>
   /** `${userId}:${tagId}` */
   userTags: string[]
   driverProfiles: Record<number, DriverProfileState>
@@ -97,9 +120,10 @@ export function alongAt(trip: Trip, now: number): number {
   return Math.min(trip.startAlong + (Math.max(end - trip.startedAtMs, 0) / 1000) * SPEED_MPS, trip.path.length)
 }
 
-/** Passed = entered and left the pickup area (DD-06). */
-export function passedPickup(trip: Trip, now: number, radiusM: number): boolean {
-  return alongAt(trip, now) > trip.pickupAlong + radiusM
+/** Passed = entered the pickup area and left it beyond the leave margin (DD-06). */
+export function passedPickup(trip: Trip, now: number, lookups: Lookups): boolean {
+  const pickup = mustGet(lookups.pickupById, trip.pickupPointId, 'pickup point')
+  return alongAt(trip, now) > trip.pickupAlong + pickup.radius_m + (lookups.settings.pass_margin ?? 0)
 }
 
 export function etaToPickupS(trip: Trip, now: number): number {
@@ -163,7 +187,18 @@ export function addTrip(world: World, lookups: Lookups, spec: NewTrip, now: numb
     completedCount: 0,
     simulated: spec.simulated,
   }
-  return { ...world, nextTripId: world.nextTripId + 1, trips: [...world.trips, trip] }
+  // Departing is the driver taking part today (DD-25).
+  const withTrip = { ...world, nextTripId: world.nextTripId + 1, trips: [...world.trips, trip] }
+  return addActivity(withTrip, spec.driverId, 'driver', trip.id, now)
+}
+
+export function addActivity(world: World, userId: number, role: 'driver' | 'passenger', tripId: number | null, now: number): World {
+  const activity: MockActivity = { id: world.nextActivityId, userId, role, tripId, createdAtMs: now }
+  return { ...world, nextActivityId: world.nextActivityId + 1, activities: [...world.activities, activity] }
+}
+
+export function latestActivityOf(world: World, userId: number): MockActivity | undefined {
+  return world.activities.filter((a) => a.userId === userId).at(-1)
 }
 
 /** The state after reset (UD-18): accounts, tags and simulated trips kept; everything else cleared. */
@@ -178,8 +213,12 @@ export function initialWorld(lookups: Lookups, scenario: MockScenario, now: numb
     clockOffsetMs: 0,
     nextTripId: 1,
     nextRequestId: 1,
+    nextActivityId: 1,
+    nextReportId: 1,
     trips: [],
     requests: [],
+    activities: [],
+    lastReports: {},
     userTags: seed.userTags.map((ut) => `${user(ut.username).id}:${tag(ut.tag).id}`),
     driverProfiles: {},
     passengerProfiles: Object.fromEntries(

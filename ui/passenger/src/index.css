@@ -1,2 +1,70 @@
 @import 'tailwindcss';
 @import '@carpool/shared/theme.css';
+
+/* Passenger motion (docs/ui-design.md 8.4). All of it stops with "reduce motion". */
+@layer components {
+  /* Waiting for the driver: a route-colour light running along the line. */
+  .waiting-light {
+    animation: waiting-light 1.6s ease-in-out infinite;
+  }
+
+  /* UD-10: the route strip is drawn from the pickup down to the passenger's stop... */
+  .route-draw {
+    animation: route-draw 0.6s ease-out both;
+  }
+
+  /* ...then the minutes and the plate fade in. */
+  .after-route-draw {
+    animation: fade-in 0.4s ease-out 0.6s both;
+  }
+
+  /* UD-12: the simulated notification slides down from the top. */
+  .notification-in {
+    animation: notification-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .waiting-light,
+    .route-draw,
+    .after-route-draw,
+    .notification-in {
+      animation: none;
+    }
+  }
+}
+
+@keyframes waiting-light {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+@keyframes route-draw {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes notification-in {
+  from {
+    transform: translateY(-120%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

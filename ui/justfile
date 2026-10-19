@@ -13,7 +13,11 @@ driver:
 passenger:
     cd "{{source_directory()}}" && npm run dev:passenger
 
-# Start the mock backend and both UIs against it (development, UD-14)
+# Start the showcase page on :5170 (UD-18); it embeds the driver and passenger UIs
+showcase:
+    cd "{{source_directory()}}" && npm run dev:showcase
+
+# Start the mock backend, both UIs and the showcase page against it (development, UD-14)
 dev-mock:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -22,9 +26,10 @@ dev-mock:
     npm run mock &
     API_PROXY_TARGET={{mock_url}} npm run dev:driver &
     API_PROXY_TARGET={{mock_url}} npm run dev:passenger &
+    API_PROXY_TARGET={{mock_url}} npm run dev:showcase &
     wait
 
-# Start both UIs against the Go backend on :8080 (start it with `just backend up`)
+# Start both UIs and the showcase page against the Go backend on :8080 (start it with `just backend up`)
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -32,13 +37,14 @@ dev:
     trap 'kill 0' EXIT
     API_PROXY_TARGET={{backend_url}} npm run dev:driver &
     API_PROXY_TARGET={{backend_url}} npm run dev:passenger &
+    API_PROXY_TARGET={{backend_url}} npm run dev:showcase &
     wait
 
 # Start only the mock backend on :8081
 mock:
     cd "{{source_directory()}}" && npm run mock
 
-# Switch the mock scenario and reset: normal, reassign, no_cars, too_far
+# Switch the mock scenario and reset: normal, reassign, no_cars
 mock-scenario name:
     @curl -sf -X POST -H 'Content-Type: application/json' -d '{"scenario":"{{name}}"}' {{mock_url}}/api/_mock/scenario && echo
 

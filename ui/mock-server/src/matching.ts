@@ -1,6 +1,6 @@
 import type { PassengerSearch, TagFilter } from '../../shared/src/api/types.ts'
 import { SPEED_MPS, WALK_SPEED_MPS } from './config.ts'
-import { mustGet, type Lookups } from './context.ts'
+import type { Lookups } from './context.ts'
 import { distanceM } from './geo.ts'
 import { etaToPickupS, passedPickup, seatsFree, type Candidate, type Trip, type World } from './world.ts'
 
@@ -20,8 +20,7 @@ function required(filters: TagFilter[]): number[] {
 
 /** Can this trip still take a new passenger at its pickup point? */
 export function tripOpen(trip: Trip, lookups: Lookups, now: number): boolean {
-  const pickup = mustGet(lookups.pickupById, trip.pickupPointId, 'pickup point')
-  return trip.status === 'active' && !passedPickup(trip, now, pickup.radius_m) && seatsFree(trip) > 0
+  return trip.status === 'active' && !passedPickup(trip, now, lookups) && seatsFree(trip) > 0
 }
 
 /**
@@ -65,7 +64,7 @@ export function matchTrips(world: World, lookups: Lookups, passengerId: number, 
 
 function nearestAcceptedStop(trip: Trip, search: PassengerSearch) {
   const accepted = new Set(search.accepted_stop_ids)
-  const stops = trip.route.stops.filter((b) => accepted.has(b.id))
+  const stops = trip.route.bus_stops.filter((b) => accepted.has(b.id))
   if (stops.length === 0) return null
   const best = stops.reduce((a, b) => (distanceM(a, search.destination) <= distanceM(b, search.destination) ? a : b))
   return { place: { name: best.name, lat: best.lat, lng: best.lng }, busStopId: best.id }

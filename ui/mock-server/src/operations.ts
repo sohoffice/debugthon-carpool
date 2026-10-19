@@ -1,16 +1,18 @@
-import type { DepartureSettings, PassengerSearch } from '../../shared/src/api/types.ts'
+import type { DepartureSettings, LatLngBody, RequestSubmission } from '../../shared/src/api/types.ts'
 import { findAlternatives } from './alternatives.ts'
-import { HUMAN_START_ETA_S, PASSENGER_OFFSET_M, REASSIGN_TIMEOUT_S } from './config.ts'
+import { HUMAN_START_ETA_S, REASSIGN_TIMEOUT_S } from './config.ts'
 import { mustGet, type Lookups } from './context.ts'
 import { MockError } from './errors.ts'
-import { distanceM, type LatLng } from './geo.ts'
+import { distanceM } from './geo.ts'
 import { matchTrips, tripOpen } from './matching.ts'
 import {
   activeTripOf,
+  addActivity,
   addTrip,
   arrivedAtDestination,
   assignedTripId,
   findTrip,
+  latestActivityOf,
   moveSeat,
   passedPickup,
   requireRequest,
@@ -19,21 +21,6 @@ import {
   type RideRequest,
   type World,
 } from './world.ts'
-
-// ---------------------------------------------------------------- passenger position
-
-/** The simulator keeps each demo passenger at 松山車站, or 420 m away in the too_far scenario. */
-export function passengerPosition(world: World, lookups: Lookups): LatLng {
-  const songshan = mustGet(lookups.pickupByName, '松山車站', 'pickup point')
-  const offsetM = world.scenario === 'too_far' ? PASSENGER_OFFSET_M.far : PASSENGER_OFFSET_M.near
-  return { lat: songshan.lat + offsetM / 111195, lng: songshan.lng }
-}
-
-export function nearestPickup(world: World, lookups: Lookups) {
-  const position = passengerPosition(world, lookups)
-  const [nearest] = [...lookups.pickupById.values()].sort((a, b) => distanceM(a, position) - distanceM(b, position))
-  return { pickup: nearest, distanceM: Math.round(distanceM(nearest, position)) }
-}
 
 // ---------------------------------------------------------------- assignment (DD-12, REQ-050)
 
@@ -61,13 +48,21 @@ function assignFrom(world: World, lookups: Lookups, requestId: number, from: num
   const trip = findTrip(world, request.candidates[index].tripId)!
   const status = trip.autoAccept ? 'confirmed' : 'waiting_driver'
   const held = moveSeat(world, trip.id, null, trip.autoAccept ? 'confirmed' : 'held')
-  return updateRequest(held, requestId, (r) => ({
+  const linked = trip.autoAccept ? linkActivity(held, request.passengerId, trip.id) : held
+  return updateRequest(linked, requestId, (r) => ({
     ...r,
     status,
     candidateIndex: index,
     reassigned: r.reassigned || from > 0,
     deadlineMs: trip.autoAccept ? null : now + confirmTimeoutMs(world, lookups),
   }))
+}
+
+/** A confirmed passenger's latest activity joins the trip (DD-25). */
+function linkActivity(world: World, passengerId: number, tripId: number): World {
+  const activity = latestActivityOf(world, passengerId)
+  if (!activity || activity.role !== 'passenger') return world
+  return { ...world, activities: world.activities.map((a) => (a.id === activity.id ? { ...a, tripId } : a)) }
 }
 
 /** Declined, timed out, or the car is gone: release the hold and try the next car. */
@@ -106,11 +101,10 @@ function finishRide(world: World, request: RideRequest): World {
 export function tick(world: World, lookups: Lookups, now: number): World {
   const afterTrips = world.trips.reduce((w, trip) => {
     if (trip.status !== 'active') return w
-    const pickup = mustGet(lookups.pickupById, trip.pickupPointId, 'pickup point')
-    const riders = w.requests.filter((r) => assignedTripId(r) === trip.id && (r.status === 'confirmed' || r.status === 'waiting_driver'))
+    const riders = w.requests.filter((r) => assignedTripId(r) === trip.id && isOpen(r))
     if (arrivedAtDestination(trip, now)) return endTrip(w, lookups, trip.id, now)
     // A simulated car with nobody on board starts over once past the pickup, so the supply stays alive.
-    if (trip.simulated && riders.length === 0 && passedPickup(trip, now, pickup.radius_m)) return respawn(w, lookups, trip.id, now)
+    if (trip.simulated && riders.length === 0 && passedPickup(trip, now, lookups)) return respawn(w, lookups, trip.id, now)
     return w
   }, world)
 
@@ -126,7 +120,7 @@ function endTrip(world: World, lookups: Lookups, tripId: number, now: number): W
   const ended = updateTrip(world, tripId, (t) => ({ ...t, status: 'completed', endedAtMs: now }))
   const onTrip = ended.requests.filter((r) => assignedTripId(r) === tripId)
   const settled = onTrip.reduce((w, r) => {
-    if (r.status === 'confirmed') return finishRide(w, r)
+    if (r.status === 'confirmed' || r.status === 'boarded') return finishRide(w, r)
     if (r.status === 'waiting_driver') return reassign(w, lookups, r, now)
     return w
   }, ended)
@@ -158,7 +152,7 @@ function respawn(world: World, lookups: Lookups, tripId: number, now: number): W
 // ---------------------------------------------------------------- driver actions
 
 export function depart(world: World, lookups: Lookups, driverId: number, settings: DepartureSettings, now: number): World {
-  if (activeTripOf(world, driverId)) throw new MockError(409, 'trip_active', '已經有進行中的行程')
+  if (activeTripOf(world, driverId)) throw new MockError(409, 'already_active', '駕駛已有進行中的行程')
   return addTrip(
     world,
     lookups,
@@ -187,7 +181,7 @@ function driverRequest(world: World, driverId: number, requestId: number): RideR
 export function accept(world: World, driverId: number, requestId: number): World {
   const request = driverRequest(world, driverId, requestId)
   if (request.status !== 'waiting_driver') throw new MockError(409, 'request_not_pending', '這個請求已經不需要回應')
-  const moved = moveSeat(world, assignedTripId(request)!, 'held', 'confirmed')
+  const moved = linkActivity(moveSeat(world, assignedTripId(request)!, 'held', 'confirmed'), request.passengerId, assignedTripId(request)!)
   return updateRequest(moved, requestId, (r) => ({ ...r, status: 'confirmed', deadlineMs: null }))
 }
 
@@ -197,11 +191,22 @@ export function decline(world: World, lookups: Lookups, driverId: number, reques
   return reassign(world, lookups, request, now)
 }
 
-/** Either side can end a ride; the first one wins, the second is a no-op (DD-23). */
+/** Either side can mark boarding; the first one wins, the second is a no-op (DD-27). */
+export function boardRide(world: World, request: RideRequest): World {
+  if (request.status === 'boarded') return world
+  if (request.status !== 'confirmed') throw new MockError(409, 'request_not_confirmed', '這個請求還沒有確認')
+  return updateRequest(world, request.id, (r) => ({ ...r, status: 'boarded' }))
+}
+
+/** Either side can end a ride, boarded or not; the first one wins, the second is a no-op (DD-23). */
 export function completeRide(world: World, request: RideRequest): World {
   if (request.status === 'completed') return world
-  if (request.status !== 'confirmed') throw new MockError(409, 'request_not_confirmed', '這個請求還沒有確認')
+  if (request.status !== 'confirmed' && request.status !== 'boarded') throw new MockError(409, 'request_not_confirmed', '這個請求還沒有確認')
   return finishRide(world, request)
+}
+
+export function driverBoardRide(world: World, driverId: number, requestId: number): World {
+  return boardRide(world, driverRequest(world, driverId, requestId))
 }
 
 export function driverCompleteRide(world: World, driverId: number, requestId: number): World {
@@ -210,20 +215,26 @@ export function driverCompleteRide(world: World, driverId: number, requestId: nu
 
 // ---------------------------------------------------------------- passenger actions
 
+const isOpen = (r: RideRequest) => r.status === 'waiting_driver' || r.status === 'confirmed' || r.status === 'boarded'
+
 export function openRequestOf(world: World, passengerId: number): RideRequest | undefined {
-  return world.requests.find((r) => r.passengerId === passengerId && (r.status === 'waiting_driver' || r.status === 'confirmed'))
+  return world.requests.find((r) => r.passengerId === passengerId && isOpen(r))
 }
 
 /** Decides at once: rejected, no_match, waiting_driver or confirmed (REQ-034, REQ-036). */
-export function submitRequest(world: World, lookups: Lookups, passengerId: number, search: PassengerSearch, now: number): World {
+export function submitRequest(world: World, lookups: Lookups, passengerId: number, submission: RequestSubmission, now: number): World {
   if (openRequestOf(world, passengerId)) throw new MockError(409, 'request_active', '已經有進行中的請求')
-  const { pickup, distanceM: distance } = nearestPickup(world, lookups)
+  const pickup = mustGet(lookups.pickupById, submission.pickup_point_id, 'pickup point')
+  const { location, pickup_point_id: _, ...search } = submission
+  // The distance is checked against the position sent with the request, not the reports (DD-25).
+  const distance = Math.round(distanceM(pickup, location))
   const tooFar = distance > lookups.settings.submit_distance
   const request: RideRequest = {
     id: world.nextRequestId,
     passengerId,
     pickupPointId: pickup.id,
     search,
+    location,
     status: 'rejected',
     candidates: tooFar ? [] : matchTrips(world, lookups, passengerId, pickup.id, search, now),
     candidateIndex: 0,
@@ -240,15 +251,36 @@ export function submitRequest(world: World, lookups: Lookups, passengerId: numbe
 export function canCancel(world: World, lookups: Lookups, request: RideRequest, now: number): boolean {
   if (request.status === 'waiting_driver') return true
   if (request.status !== 'confirmed') return false
-  const trip = findTrip(world, assignedTripId(request)!)!
-  return !passedPickup(trip, now, mustGet(lookups.pickupById, trip.pickupPointId, 'pickup point').radius_m)
+  return !passedPickup(findTrip(world, assignedTripId(request)!)!, now, lookups)
 }
 
 /** Before boarding only; the seat is released (UD-17). */
 export function cancelRequest(world: World, lookups: Lookups, request: RideRequest, now: number): World {
+  if (request.status === 'boarded') throw new MockError(409, 'cannot_cancel', '上車後不能取消請求')
   if (request.status !== 'waiting_driver' && request.status !== 'confirmed') throw new MockError(409, 'request_closed', '這個請求已經結束')
   if (!canCancel(world, lookups, request, now)) throw new MockError(409, 'cannot_cancel', '上車後不能取消請求')
   const tripId = assignedTripId(request)!
   const released = moveSeat(world, tripId, request.status === 'confirmed' ? 'confirmed' : 'held', null)
   return updateRequest(released, request.id, (r) => ({ ...r, status: 'cancelled', deadlineMs: null }))
+}
+
+// ---------------------------------------------------------------- participation and positions (DD-25, DD-08)
+
+/** POST /api/activities: a driver's is linked to the running trip, a passenger's to nothing yet. */
+export function declareActivity(world: World, userId: number, role: 'driver' | 'passenger', now: number): World {
+  if (role === 'passenger') return addActivity(world, userId, role, null, now)
+  const trip = activeTripOf(world, userId)
+  if (!trip) throw new MockError(409, 'no_active_trip', '駕駛目前沒有進行中的行程')
+  return addActivity(world, userId, role, trip.id, now)
+}
+
+/**
+ * POST /api/location. Stored under the caller's latest activity, refused without one. The mock's
+ * cars keep moving by time, so a driver's report does not move the car (10.2).
+ */
+export function reportLocation(world: World, userId: number, position: LatLngBody, now: number): World {
+  const activity = latestActivityOf(world, userId)
+  if (!activity) throw new MockError(409, 'no_activity', '請先表示今天要參與，再回報位置')
+  const report = { id: world.nextReportId, lat: position.lat, lng: position.lng, atMs: now }
+  return { ...world, nextReportId: world.nextReportId + 1, lastReports: { ...world.lastReports, [activity.id]: report } }
 }

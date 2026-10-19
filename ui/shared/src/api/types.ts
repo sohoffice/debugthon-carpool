@@ -24,6 +24,11 @@ export interface Place {
   lng: number
 }
 
+export interface LatLngBody {
+  lat: number
+  lng: number
+}
+
 /** GET /api/pickup-points */
 export interface PickupPoint {
   id: number
@@ -64,8 +69,6 @@ export interface PassengerProfile {
   accepted_stops: BusStop[]
 }
 
-// ---------------------------------------------------------------- Proposed: shared
-
 export type TagIntent = 'required' | 'preferred'
 
 /** A tag filter with its intent (REQ-013). Tags without a filter are simply absent. */
@@ -80,18 +83,13 @@ export interface Route {
   polyline: string
   distance_m: number
   duration_s: number
-  /** Bus stops along the route, in travel order. */
-  stops: BusStop[]
   /** True when the route is estimated rather than from a routing service (REQ-063). */
   simulated: boolean
+  /** Bus stops along the route, in travel order. */
+  bus_stops: BusStop[]
 }
 
-/** GET /api/places?q=… — destinations inside the park, for the address field. */
-export type PlaceSearchResult = Place[]
-
-// ---------------------------------------------------------------- Proposed: driver
-
-/** Body of POST /api/driver/trips ("我出發了") and POST /api/driver/route-preview. */
+/** Body of POST /api/driver/trips ("我出發了"). */
 export interface DepartureSettings {
   pickup_point_id: number
   destination: Place
@@ -100,7 +98,82 @@ export interface DepartureSettings {
   tag_filters: TagFilter[]
 }
 
-/** Body of POST /api/driver/route-preview; returns Route. */
+export type TripStatus = 'active' | 'completed'
+
+/**
+ * A trip as the Go backend returns it: POST /api/driver/trips (201), GET /api/driver/trips/current
+ * (404 not_found when none is running) and GET /api/trips/:id. A second departure while one runs
+ * is 409 already_active.
+ */
+export interface TripView {
+  id: number
+  driver_id: number
+  status: TripStatus
+  pickup_point: PickupPoint
+  destination: Place
+  capacity: number
+  seats_held: number
+  seats_confirmed: number
+  seats_available: number
+  auto_accept: boolean
+  settings_locked: boolean
+  passed_pickup: boolean
+  tag_filters: (TagFilter & { name?: string })[]
+  /** Null only for a simulated trip whose route is not built yet. */
+  route: Route | null
+  started_at: string | null
+}
+
+/** GET /api/driver/trips/defaults — the last departure's settings; all empty if never departed (REQ-016). */
+export interface TripDefaults {
+  pickup_point_id: number | null
+  destination: Place | null
+  capacity: number | null
+  auto_accept: boolean
+  tag_filters: TagFilter[]
+}
+
+/**
+ * POST /api/activities (201): the caller takes part today (DD-25). A driver's is linked to the
+ * running trip (409 no_active_trip without one); a passenger's when a request is confirmed.
+ */
+export interface Activity {
+  id: number
+  role: 'driver' | 'passenger'
+  trip_id: number | null
+  created_at: string
+}
+
+/**
+ * POST /api/location { lat, lng } (201), the single position API (DD-08). Stored under the
+ * caller's latest activity; 409 no_activity before the first one.
+ */
+export interface LocationReport {
+  id: number
+  activity_id: number
+  trip_id: number | null
+  lat: number
+  lng: number
+  reported_at: string
+  /** Only on a driver's report that belongs to a trip. */
+  passed_pickup?: boolean
+}
+
+/** The driver's car (vehicles table), shown to the passenger once confirmed (REQ-052). */
+export interface Vehicle {
+  plate: string
+  /** Colour and model, e.g. 白色 Toyota Altis. */
+  description: string
+}
+
+// ---------------------------------------------------------------- Proposed: shared
+
+/** GET /api/places?q=… — destinations inside the park, for the address field. */
+export type PlaceSearchResult = Place[]
+
+// ---------------------------------------------------------------- Proposed: driver
+
+/** Body of POST /api/driver/route-preview; returns Route (422 destination_outside_park). */
 export interface RoutePreviewRequest {
   pickup_point_id: number
   destination: Place
@@ -117,32 +190,22 @@ export interface DriverPendingRequest {
 export interface DriverPassenger {
   request_id: number
   dropoff: Place
+  /** Marked by either side (DD-27, REQ-068). */
+  boarded: boolean
 }
 
-export type TripStatus = 'active' | 'completed'
-
-export interface DriverTrip {
-  id: number
-  status: TripStatus
-  pickup_point: PickupPoint
-  destination: Place
-  capacity: number
-  auto_accept: boolean
-  tag_filters: TagFilter[]
-  route: Route
-  started_at: string
+/** The Go trip plus what the driver polls for while driving (DD-04). */
+export interface DriverTrip extends TripView {
   ended_at: string | null
   pending_request: DriverPendingRequest | null
   passengers: DriverPassenger[]
   /** Rides finished on this trip ("今天載了 2 位乘客"). */
   completed_count: number
-  simulated: boolean
 }
 
 /**
  * GET /api/driver/trip — the latest trip, active or completed; null if the driver never departed.
- * Also returned by POST /api/driver/trips and the request actions below.
- * The last trip's settings prefill the departure screen (REQ-016).
+ * Polled while driving; also returned by the request actions below.
  */
 export interface DriverTripResponse {
   trip: DriverTrip | null
@@ -150,15 +213,26 @@ export interface DriverTripResponse {
 
 // POST /api/driver/requests/:id/accept   → DriverTripResponse (409 request_not_pending when it timed out or was cancelled)
 // POST /api/driver/requests/:id/decline  → DriverTripResponse
+// POST /api/driver/requests/:id/board    → DriverTripResponse ("已上車", DD-27; no error if already boarded)
 // POST /api/driver/requests/:id/complete → DriverTripResponse ("已下車": end a passenger's ride, DD-23)
 
 // ---------------------------------------------------------------- Proposed: passenger
 
-/** Body of POST /api/passenger/supply and POST /api/passenger/requests. */
+/** What the passenger is looking for: destination, acceptable stops and filters. */
 export interface PassengerSearch {
   destination: Place
   accepted_stop_ids: number[]
   tag_filters: TagFilter[]
+}
+
+/**
+ * Query of GET /api/passenger/supply (REQ-029, T11): pickup_point_id, destination_name,
+ * destination_lat, destination_lng, accepted_stop_ids (comma separated), required_tag_ids and
+ * preferred_tag_ids (comma separated, may be empty). 400 when the pickup point, destination or
+ * stops are missing.
+ */
+export interface SupplyQuery extends PassengerSearch {
+  pickup_point_id: number
 }
 
 /** One approaching vehicle on the timeline. Not selectable (REQ-031). */
@@ -169,37 +243,26 @@ export interface SupplyVehicle {
   simulated: boolean
 }
 
-export interface SupplyCard {
+/** GET /api/passenger/supply — the chosen pickup point's card and timeline, polled while browsing (REQ-029, REQ-030). */
+export interface Supply {
   pickup_point: PickupPoint
+  wait_limit_min: number
+  /** How close to the pickup point a request may be sent (REQ-034). */
+  submit_distance_m: number
   vehicle_count: number
   fastest_eta_s: number | null
   seats: number
   /** Within the wait limit, nearest first. */
   vehicles: SupplyVehicle[]
-}
-
-/** POST /api/passenger/supply — polled while browsing (REQ-029, REQ-030). */
-export interface Supply {
-  wait_limit_min: number
-  submit_distance_m: number
-  /** Where the passenger is, from the simulator's position reports. */
-  location: {
-    nearest_pickup_point_id: number
-    distance_m: number
-    within_submit_distance: boolean
-  }
-  /** The nearest pickup point first (UD-07), then the others. */
-  cards: SupplyCard[]
   simulated: boolean
 }
 
-export type RequestStatus = 'rejected' | 'waiting_driver' | 'no_match' | 'confirmed' | 'completed' | 'cancelled'
-
-export interface Vehicle {
-  plate: string
-  color: string
-  model: string
+/** Body of POST /api/passenger/requests: the search, where to board and where the passenger is now (DD-25). */
+export interface RequestSubmission extends SupplyQuery {
+  location: LatLngBody
 }
+
+export type RequestStatus = 'rejected' | 'waiting_driver' | 'no_match' | 'confirmed' | 'boarded' | 'completed' | 'cancelled'
 
 export interface VehiclePosition {
   lat: number
@@ -212,11 +275,12 @@ export interface VehiclePosition {
 /** The assigned car, once the driver confirmed. */
 export interface Ride {
   vehicle: Vehicle
-  /** Seconds until the car reaches the pickup point; null once it has passed. */
+  /** Seconds until the car reaches the pickup point; null once it has passed or the passenger boarded. */
   eta_s: number | null
   /** Where the passenger gets off: a bus stop on the route, or the driver's destination. */
   dropoff: Place & { bus_stop_id: number | null }
   route: Route
+  /** Only while confirmed: the car on its way to the pickup point (UD-15). */
   position: VehiclePosition | null
   passed_pickup: boolean
   simulated: boolean
@@ -236,7 +300,7 @@ export interface PassengerRequest {
   /** The car does not match all preferred tags (REQ-047). */
   relaxed: boolean
   reject_reason: { code: 'too_far'; message: string; distance_m: number } | null
-  /** Set when confirmed or completed. */
+  /** Set when confirmed, boarded or completed. */
   ride: Ride | null
   /** Set when no_match (REQ-051). */
   alternatives: Alternative[]
@@ -255,13 +319,14 @@ export interface PassengerRequestResponse {
 }
 
 // POST /api/passenger/requests/:id/cancel   → PassengerRequestResponse (409 cannot_cancel after boarding)
-// POST /api/passenger/requests/:id/complete → PassengerRequestResponse ("我已下車，結束共乘")
+// POST /api/passenger/requests/:id/board    → PassengerRequestResponse ("我已上車", DD-27; no error if already boarded)
+// POST /api/passenger/requests/:id/complete → PassengerRequestResponse ("我已下車，結束共乘"; no error if already done)
 
 // ---------------------------------------------------------------- Demo control
 
 // POST /api/demo/reset → 204. No token: called by the showcase page (UD-18). Both backends.
 
-export type MockScenario = 'normal' | 'reassign' | 'no_cars' | 'too_far'
+export type MockScenario = 'normal' | 'reassign' | 'no_cars'
 
 /** GET /api/_mock; POST /api/_mock/scenario { scenario } also resets. Mock backend only. */
 export interface MockStatus {

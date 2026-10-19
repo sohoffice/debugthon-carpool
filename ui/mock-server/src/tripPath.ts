@@ -42,8 +42,8 @@ export function buildTripPath(lookups: Lookups, pickup: PickupPoint, destination
       polyline: encodePolyline(routePoints),
       distance_m: Math.round(routePath.length),
       duration_s: Math.round(routePath.length / SPEED_MPS),
-      stops: kept.flatMap((w) => (w.stop ? [w.stop] : [])),
       simulated: true,
+      bus_stops: kept.flatMap((w) => (w.stop ? [w.stop] : [])),
     },
   }
 }

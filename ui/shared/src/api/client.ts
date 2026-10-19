@@ -2,7 +2,7 @@ export type Role = 'driver' | 'passenger'
 
 export class ApiError extends Error {
   readonly status: number
-  /** Backend error code, e.g. `too_far`; empty when the body was not the API error shape. */
+  /** Backend error code, e.g. `already_active`; empty when the body was not the API error shape. */
   readonly code: string
 
   constructor(status: number, message: string, code = '') {

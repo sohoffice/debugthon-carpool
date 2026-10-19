@@ -50,6 +50,25 @@ describe('usePolling', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
+  it('pauses while the page is hidden and polls at once when it is shown again', async () => {
+    let hidden = false
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+    const setHidden = (value: boolean) => act(() => ((hidden = value), document.dispatchEvent(new Event('visibilitychange'))))
+    const fetcher = vi.fn(async () => 1)
+    renderHook(() => usePolling(fetcher, INTERVAL))
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    setHidden(true)
+    await act(() => vi.advanceTimersByTimeAsync(INTERVAL * 5))
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    setHidden(false)
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    vi.restoreAllMocks()
+  })
+
   it('mutate shows new data at once and drops a poll that was already in flight', async () => {
     let resolveSlow: (v: string) => void = () => {}
     const fetcher = vi

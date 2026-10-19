@@ -1,4 +1,4 @@
-import type { BusStop, PickupPoint } from '../../../shared/src/api/types.ts'
+import type { BusStop, PickupPoint, Vehicle } from '../../../shared/src/api/types.ts'
 import { valuesAfter } from './sql.ts'
 
 export interface SeedUser {
@@ -29,6 +29,8 @@ export interface Seed {
   tags: SeedTag[]
   userTags: { username: string; tag: string }[]
   simulatedTrips: SeedTrip[]
+  /** By driver username. */
+  vehicles: Record<string, Vehicle>
   settings: Record<string, number>
 }
 
@@ -36,6 +38,8 @@ export interface SeedSql {
   schema: string
   users: string
   reference: string
+  activities: string
+  passMargin: string
 }
 
 /**
@@ -79,8 +83,16 @@ export function parseSeed(sql: SeedSql): Seed {
     destination: { name: String(name), lat: Number(lat), lng: Number(lng) },
     capacity: Number(capacity),
   }))
-  const settings = Object.fromEntries(
-    valuesAfter(sql.schema, 'INSERT INTO system_settings', ';').map(([key, value]) => [String(key), Number(value)]),
+  const vehicles = Object.fromEntries(
+    valuesAfter(sql.activities, 'INSERT INTO vehicles', ') v (').map(([username, plate, description]) => [
+      String(username),
+      { plate: String(plate), description: String(description) },
+    ]),
   )
-  return { users, pickupPoints, busStops, tags, userTags, simulatedTrips, settings }
+  const settings = Object.fromEntries(
+    [...valuesAfter(sql.schema, 'INSERT INTO system_settings', ';'), ...valuesAfter(sql.passMargin, 'INSERT INTO system_settings', ';')].map(
+      ([key, value]) => [String(key), Number(value)],
+    ),
+  )
+  return { users, pickupPoints, busStops, tags, userTags, simulatedTrips, vehicles, settings }
 }
