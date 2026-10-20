@@ -48,7 +48,7 @@
 | 出發確認（預先帶入、一次操作出發、自動接受、地圖與路線圖） | ✅ 已完成 | 預先帶入改用 Go 的 `GET /api/driver/trips/defaults`；出發用 Go 的 `POST /api/driver/trips` |
 | 行程中：沒有請求／有請求（變黃） | ✅ 已完成 | |
 | 標記乘客已上車（DD-27） | ✅ 已完成 | 每位乘客一次一個按鈕：「已上車」→「已下車」（UD-20） |
-| 行程結束 | ⚠️ 只有示範後端 | 抵達目的地自動結束（UD-16）；`main` 的後端沒有，需求與設計也沒有，待架構師或後端審查 |
+| 行程結束 | ⚠️ 只有示範後端 | 抵達目的地自動結束（UD-16）；後端規則提案為 REQ-070、DD-30（PR #29），實作在 [#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31) |
 
 驗收條件：
 
@@ -119,11 +119,11 @@
 
 - **後端以 `main` 為準**：`feat/ui` 原本自己寫的臨時後端（請求流程、地點搜尋、路線預覽、Demo 重設、行程自動結束）已在合併 `main` 時全部刪除，舊程式在 commit `8e27438` 可以找到。介面用到、但 `main` 還沒有的 API：
   - T13 的範圍：`GET /api/driver/trip`、`GET /api/passenger/request` 與確認、婉拒、上車、結束共乘。
-  - 沒有工作單、`design.md` 也沒有：`GET /api/places`（地點搜尋）、`POST /api/driver/route-preview`（路線預覽）、`POST /api/demo/reset`（Demo 重設）、行程抵達目的地自動結束（UD-16）。要交給架構師決定要不要做、放在哪張工作單。
+  - 已提案寫進需求與設計（[PR #29](https://github.com/sohoffice/debugthon-carpool/pull/29)），並開了工作單：地點搜尋與路線預覽（DD-28、DD-21，[#30 T20](https://github.com/sohoffice/debugthon-carpool/issues/30)）、Demo 重設（DD-29，[#17 T17](https://github.com/sohoffice/debugthon-carpool/issues/17)）、行程抵達目的地自動結束（REQ-070、DD-30，[#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31)）。
 - **介面程式要跟上 `main`**：見 #16 的待辦（供給查詢、送出請求、拿掉距離檢查、替代方案與取消）。改完前，接 Go 後端時乘客介面不能用。
 - **接 Go 後端時的分配順序**：Go 依感受成本排序，通常是最近的模擬車先拿到請求；要讓台上的駕駛收到請求，見 ui-design 8.8。
 - **建議**：
   1. API 格式以 `main` 的後端為準：後端格式變了，`ui/shared/src/api/types.ts` 與示範後端跟著改，不回頭改後端。
-  2. 請架構師決定地點搜尋、路線預覽、Demo 重設與行程自動結束要不要做、由哪張工作單負責。
+  2. PR #29 合併後，T20、T21、T17 依新的設計實作；介面的格式到時以後端為準。
   3. Demo 劇本（#18）決定接 Go 後端時怎麼讓台上的駕駛收到請求。
   4. 地圖樣式（ui-oi-17）已決定：採用路網樣式，雲端樣式不再調整；捷運線與路線色接近的問題由介面替行程路線加白色外框處理。
