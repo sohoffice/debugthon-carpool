@@ -29,6 +29,7 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * def stop = response[0]
     * def inPark = { name: '瑞光路 內科大樓 A', lat: 25.0768, lng: 121.5738 }
     * def parkCheck = function(token, p) { return karate.http(baseUrl + '/api/park/check').header('Authorization', 'Bearer ' + token).params({ lat: p.lat, lng: p.lng }).get().body }
+    * def previewRoute = function(token, p) { return karate.http(baseUrl + '/api/driver/route-preview').header('Authorization', 'Bearer ' + token).post({ pickup_point_id: pickup.id, destination: { lat: p.lat, lng: p.lng } }) }
     * def doGet = function(token, path) { return karate.call('classpath:carpool/api/act-get.feature', { token: token, path: path }) }
     * def doPost = function(token, path) { return karate.call('classpath:carpool/api/act-post.feature', { token: token, path: path }) }
 
@@ -37,11 +38,19 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match parkCheck('driver:driver4', inPark) == { inside: true }
     * match parkCheck(pt, inPark) == { inside: true }
 
+    # 0b. DD-21: the driver previews the route to that destination before departing; nothing is created
+    * def preview = previewRoute('driver:driver4', inPark)
+    * match preview.status == 200
+    * match preview.body.route == { polyline: '#string', distance_m: '#number', duration_s: '#number', simulated: '#boolean', bus_stops: '#array' }
+    * def previewed = preview.body.route
+
     # 1. REQ-015: the driver departs (auto_accept off, so the driver must confirm) and reports a position
     * def tripId = karate.call('classpath:carpool/api/supply-car.feature', { user: driver, pickup: pickup, northM: 500, tagIds: [tagId], body: { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: false, tag_filters: [] } }).tripId
     * def trip = doGet(dt, 'api/driver/trips/current')
     * match trip.responseStatus == 200
     * match trip.response contains { id: '#(tripId)', status: 'active', capacity: 3, auto_accept: false }
+    # DD-21: the departure keeps the route that was previewed
+    * match trip.response.route == previewed
 
     # 2. REQ-029: the passenger sees the approaching car, with all seats free
     * def supply = function() { return karate.http(baseUrl + '/api/passenger/supply').header('Authorization', 'Bearer ' + pt).params({ pickup_point_id: pickup.id, dest_lat: inPark.lat, dest_lng: inPark.lng, stop_ids: stop.id, required_tags: tagId }).get().body }
