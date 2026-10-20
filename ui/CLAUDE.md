@@ -86,6 +86,7 @@ ui/
 - 不測：樣式、Tailwind class、地圖繪製、snapshot、簡單的元件。
 - mock `fetch` 或 `api` 物件，不要 mock React 內部。測試環境沒有 Maps 金鑰，所以地圖會顯示提示文字。
 - 每個 app 保留一個 smoke test（`App.test.tsx`），確認整體接線正常。
+- 端對端測試用 Playwright，放在 `e2e/*.spec.ts`，以 `just ui e2e` 執行。只測跨駕駛與乘客兩個介面的完整流程（快樂路徑、無車可配），畫面細節留給 Vitest 測。
 
 ## 日後新增儀表板
 

@@ -6,6 +6,7 @@
     "passenger/src",
     "showcase/src",
     "mock-server/src",
+    "e2e",
     "*.ts"
   ]
 }
