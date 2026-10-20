@@ -97,6 +97,42 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match status.response contains { status: 'waiting_driver', trip_id: '#(second)', reassigned_count: 1 }
     * match doGet(driverToken('slow'), 'api/trips/' + first).response contains { seats_held: 0 }
 
+  Scenario: the confirmed status shows the car's position and heading until boarding
+    * def tripId = car('track', 500, true)
+    * def req = submit()
+    * match req.status == 'confirmed'
+    * def d = driverToken('track')
+    * def at = function(northM, eastM) { return karate.call('classpath:carpool/api/post-location.feature', { token: d, lat: pickup.lat + northM * 0.000009, lng: pickup.lng + eastM * 0.00001 }) }
+    # DD-31: one report is a position without a heading; the ETA is marked simulated (REQ-063)
+    * def one = doGet(pt, 'api/passenger/requests/' + req.id).response
+    * match one contains { passed_pickup: false, eta_s: '#number', eta_simulated: true }
+    * match one.vehicle_position == { lat: '#(pickup.lat + 500 * 0.000009)', lng: '#(pickup.lng)', heading_deg: null, reported_at: '#string' }
+    # moving north: heading close to 0 degrees
+    * at(800, 0)
+    * def north = doGet(pt, 'api/passenger/requests/' + req.id).response
+    * match north.vehicle_position.lat == pickup.lat + 800 * 0.000009
+    * match north.vehicle_position.heading_deg == '#number? _ >= 0 && _ < 1'
+    # moving east: 90; reporting the same place again keeps it
+    * at(800, 300)
+    * match doGet(pt, 'api/passenger/requests/' + req.id).response.vehicle_position.heading_deg == '#number? _ > 89 && _ < 91'
+    * at(800, 300)
+    * match doGet(pt, 'api/passenger/requests/' + req.id).response.vehicle_position.heading_deg == '#number? _ > 89 && _ < 91'
+    # boarding takes the position away
+    * match doPost(pt, 'api/passenger/requests/' + req.id + '/board').responseStatus == 200
+    * match doGet(pt, 'api/passenger/requests/' + req.id).response contains { status: 'boarded', vehicle_position: null, passed_pickup: null, eta_simulated: null }
+
+  Scenario: a car that drove past the pickup has no ETA and the status says so
+    * def tripId = car('past', 500, true)
+    * def req = submit()
+    * match req.status == 'confirmed'
+    * def d = driverToken('past')
+    * def at = function(northM) { return karate.call('classpath:carpool/api/post-location.feature', { token: d, lat: pickup.lat + northM * 0.000009, lng: pickup.lng }) }
+    * at(0)
+    * at(-(pickup.radius_m + 100))
+    * def status = doGet(pt, 'api/passenger/requests/' + req.id).response
+    * match status contains { status: 'confirmed', passed_pickup: true, eta_s: null, eta_simulated: null }
+    * match status.vehicle_position.lat == pickup.lat - (pickup.radius_m + 100) * 0.000009
+
   Scenario Outline: boarding is marked once, by <first> first, and the later side gets the same answer
     * def tripId = car('board', 500, true)
     * def req = submit()
@@ -182,6 +218,8 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match doGet('', 'api/passenger/requests/current').responseStatus == 401
     * match doGet(d, 'api/passenger/requests/current').responseStatus == 403
     * match doGet('passenger:' + other, 'api/passenger/requests/' + req.id).responseStatus == 404
+    * match doGet('', 'api/passenger/requests/' + req.id).responseStatus == 401
+    * match doGet(d, 'api/passenger/requests/' + req.id).responseStatus == 403
     * match doGet(pt, 'api/passenger/requests/999999999').responseStatus == 404
     # nothing of the above changed the request
     * match doGet(pt, 'api/passenger/requests/' + req.id).response.status == 'waiting_driver'

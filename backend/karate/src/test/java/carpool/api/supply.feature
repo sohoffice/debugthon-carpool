@@ -42,9 +42,12 @@ Feature: supply query (GET /api/passenger/supply)
     * match response.destination contains { lat: '#(inPark.lat)', lng: '#(inPark.lng)' }
     * match response.accepted_stop_ids == [#(stop.id)]
     * match response.timeline_range_s == '#number'
-    * match response.card == { count: '#number', fastest_eta_s: '#number', seats_remaining: '#number' }
+    * match response.card == { count: '#number', fastest_eta_s: '#number', fastest_eta_simulated: '#boolean', seats_remaining: '#number' }
     * def mine = response.cars.filter(function(c) { return c.trip_id == tripId })
-    * match mine == [{ trip_id: '#(tripId)', eta_s: '#number', seats_available: 3 }]
+    * match mine == [{ trip_id: '#(tripId)', eta_s: '#number', eta_simulated: '#boolean', seats_available: 3 }]
+    # REQ-063, DD-09: the route is the simulated fallback until a real source is wired in
+    * match mine[0].eta_simulated == true
+    * match response.card.fastest_eta_simulated == response.cars[0].eta_simulated
     * assert mine[0].eta_s <= response.timeline_range_s
     # the card agrees with the list, which is ordered soonest first
     * match response.card.count == response.cars.length

@@ -19,13 +19,15 @@ import (
 type supplyCar struct {
 	TripID         int64 `json:"trip_id"`
 	ETAS           int   `json:"eta_s"`
+	ETASimulated   bool  `json:"eta_simulated"`
 	SeatsAvailable int   `json:"seats_available"`
 }
 
 type supplyCard struct {
-	Count          int  `json:"count"`
-	FastestETAS    *int `json:"fastest_eta_s"`
-	SeatsRemaining int  `json:"seats_remaining"`
+	Count            int   `json:"count"`
+	FastestETAS      *int  `json:"fastest_eta_s"`
+	FastestSimulated *bool `json:"fastest_eta_simulated"` // null without a car (REQ-063)
+	SeatsRemaining   int   `json:"seats_remaining"`
 }
 
 type supplyView struct {
@@ -165,7 +167,7 @@ func (s *Server) getSupply(c *gin.Context) {
 		if !eligible(params, req, t) { // the one screening shared with matching (DD-10)
 			continue
 		}
-		view.Cars = append(view.Cars, supplyCar{TripID: t.ID, ETAS: *t.ETASeconds,
+		view.Cars = append(view.Cars, supplyCar{TripID: t.ID, ETAS: *t.ETASeconds, ETASimulated: t.ETASimulated,
 			SeatsAvailable: t.Capacity - t.SeatsHeld - t.SeatsConfirmed})
 	}
 	sort.SliceStable(view.Cars, func(i, j int) bool { return view.Cars[i].ETAS < view.Cars[j].ETAS })
@@ -175,6 +177,7 @@ func (s *Server) getSupply(c *gin.Context) {
 	}
 	if len(view.Cars) > 0 {
 		view.Card.FastestETAS = &view.Cars[0].ETAS
+		view.Card.FastestSimulated = &view.Cars[0].ETASimulated
 	}
 	c.JSON(http.StatusOK, view)
 }
@@ -333,6 +336,7 @@ func (s *Server) fillMatchTrip(ctx context.Context, t *matchTrip, driverID int64
 	}
 	if eta != nil {
 		t.ETASeconds = &eta.DurationS
+		t.ETASimulated = eta.Simulated
 	}
 	return nil
 }

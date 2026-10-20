@@ -13,13 +13,16 @@ import (
 
 type statusResp struct {
 	requestResp
-	BoardedAt       *time.Time   `json:"boarded_at"`
-	CompletedAt     *time.Time   `json:"completed_at"`
-	ReassignedCount int          `json:"reassigned_count"`
-	PickupPoint     *pickupPoint `json:"pickup_point"`
-	Vehicle         *vehicleView `json:"vehicle"`
-	ETAS            *int         `json:"eta_s"`
-	Trip            *tripView    `json:"trip"`
+	BoardedAt       *time.Time       `json:"boarded_at"`
+	CompletedAt     *time.Time       `json:"completed_at"`
+	ReassignedCount int              `json:"reassigned_count"`
+	PickupPoint     *pickupPoint     `json:"pickup_point"`
+	Vehicle         *vehicleView     `json:"vehicle"`
+	ETAS            *int             `json:"eta_s"`
+	ETASimulated    *bool            `json:"eta_simulated"`
+	VehiclePosition *vehiclePosition `json:"vehicle_position"`
+	PassedPickup    *bool            `json:"passed_pickup"`
+	Trip            *tripView        `json:"trip"`
 }
 
 type driverListResp struct {
@@ -441,6 +444,9 @@ func TestPassengerStatusByPhase(t *testing.T) {
 	r := e.submit(t, e.near(), nil)
 
 	waiting := e.status(t, r.ID)
+	if waiting.VehiclePosition != nil || waiting.PassedPickup != nil || waiting.ETASimulated != nil {
+		t.Errorf("waiting carries position %v, passed %v, simulated %v, want none (DD-31)", waiting.VehiclePosition, waiting.PassedPickup, waiting.ETASimulated)
+	}
 	if waiting.Status != reqWaitingDriver || waiting.PickupPoint != nil || waiting.Vehicle != nil || waiting.ETAS != nil || waiting.Trip != nil {
 		t.Errorf("waiting = %+v, want no pickup, vehicle, ETA or route yet", waiting)
 	}
@@ -471,6 +477,9 @@ func TestPassengerStatusByPhase(t *testing.T) {
 	boarded := e.status(t, r.ID)
 	if boarded.Status != reqBoarded || boarded.BoardedAt == nil {
 		t.Fatalf("boarded = %+v", boarded)
+	}
+	if boarded.VehiclePosition != nil || boarded.PassedPickup != nil || boarded.ETASimulated != nil {
+		t.Errorf("boarded still carries position %v, passed %v, simulated %v (DD-31)", boarded.VehiclePosition, boarded.PassedPickup, boarded.ETASimulated)
 	}
 	if boarded.PickupPoint != nil || boarded.Vehicle != nil || boarded.ETAS != nil || boarded.Trip != nil {
 		t.Errorf("boarded still carries pickup %v, vehicle %v, eta %v, trip %v", boarded.PickupPoint, boarded.Vehicle, boarded.ETAS, boarded.Trip)
@@ -772,4 +781,157 @@ func TestAnswerRacingTheTimeoutResolvesToOneOutcome(t *testing.T) {
 	default:
 		t.Errorf("status = %s, want confirmed or no_match", status)
 	}
+}
+
+// confirmedOn submits a request and has the trip's driver accept it, returning the request id and
+// the driver's token.
+func (e *supplyEnv) confirmedOn(t *testing.T, tripID int64) (int64, string) {
+	t.Helper()
+	driver := e.driverToken(t, tripID)
+	r := e.submit(t, e.near(), nil)
+	e.answer(t, "accept", r.ID, driver, http.StatusOK)
+	return r.ID, driver
+}
+
+func eastOf(p latLng, eastM float64) latLng { return latLng{p.Lat, p.Lng + eastM*0.00001} }
+
+// REQ-052, DD-31: the confirmed status carries the car's latest position, and a heading computed
+// from the latest two reports at different positions (north 0, clockwise).
+func TestStatusCarriesPositionAndHeading(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{northM: 1000})
+	id, driver := e.confirmedOn(t, trip)
+
+	// One report: the position is known, the heading is not.
+	one := e.status(t, id)
+	start := offsetM(e.pickup, 1000)
+	if p := one.VehiclePosition; p == nil || p.Lat != start.Lat || p.Lng != start.Lng || p.HeadingDeg != nil || p.ReportedAt.IsZero() {
+		t.Fatalf("after one report position = %+v, want %v with no heading", p, start)
+	}
+	if one.PassedPickup == nil || *one.PassedPickup {
+		t.Errorf("passed_pickup = %v, want false", one.PassedPickup)
+	}
+
+	// Moving north: the heading is ~0 (or ~360 is wrong, [0, 360) only).
+	north := offsetM(e.pickup, 1500)
+	report(t, e.tx, driver, north)
+	p := e.status(t, id).VehiclePosition
+	if p == nil || p.Lat != north.Lat || p.HeadingDeg == nil || *p.HeadingDeg > 1 {
+		t.Fatalf("moving north position = %+v, want the new position with heading ~0", p)
+	}
+
+	// Moving east, then south: 90 and 180.
+	east := eastOf(north, 500)
+	report(t, e.tx, driver, east)
+	if h := e.status(t, id).VehiclePosition.HeadingDeg; h == nil || *h < 89 || *h > 91 {
+		t.Errorf("moving east heading = %v, want ~90", h)
+	}
+	south := offsetM(east, -500)
+	report(t, e.tx, driver, south)
+	if h := e.status(t, id).VehiclePosition.HeadingDeg; h == nil || *h < 179 || *h > 181 {
+		t.Errorf("moving south heading = %v, want ~180", h)
+	}
+	west := eastOf(south, -500)
+	report(t, e.tx, driver, west)
+	if h := e.status(t, id).VehiclePosition.HeadingDeg; h == nil || *h < 269 || *h > 271 {
+		t.Errorf("moving west heading = %v, want ~270", h)
+	}
+
+	// Standing still keeps the last heading: the older report at the same position does not count.
+	report(t, e.tx, driver, west)
+	p = e.status(t, id).VehiclePosition
+	if p == nil || p.HeadingDeg == nil || *p.HeadingDeg < 269 || *p.HeadingDeg > 271 {
+		t.Errorf("after standing still position = %+v, want the heading kept at ~270", p)
+	}
+}
+
+// DD-31: reports at one single position never give a heading.
+func TestStatusHeadingNeedsTwoDifferentPositions(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{northM: 1000})
+	id, driver := e.confirmedOn(t, trip)
+	report(t, e.tx, driver, offsetM(e.pickup, 1000))
+	report(t, e.tx, driver, offsetM(e.pickup, 1000))
+	if p := e.status(t, id).VehiclePosition; p == nil || p.HeadingDeg != nil {
+		t.Errorf("position = %+v, want a position without heading", p)
+	}
+}
+
+// DD-31: no report yet means no position and not passed; only the trip's driver counts.
+func TestStatusWithoutReports(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{noReport: true})
+	// A car nobody has heard from is never matched (REQ-041), so the confirmed request is written directly.
+	var id int64
+	if err := e.tx.QueryRow(context.Background(), `
+		INSERT INTO ride_requests (passenger_id, pickup_point_id, destination_name, destination_lat, destination_lng, status, trip_id, confirmed_at, submitted_lat, submitted_lng)
+		VALUES ($1, $2, '測試目的地', $3, $4, 'confirmed', $5, now(), $6, $7) RETURNING id`,
+		e.userID, e.pickupID, e.dest.Lat, e.dest.Lng, trip, e.pickup.Lat, e.pickup.Lng).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	_, other := newUser(t, e.tx, rolePassenger)
+	declare(t, e.tx, other)
+	report(t, e.tx, other, offsetM(e.pickup, 100)) // not the driver's
+	st := e.status(t, id)
+	if st.VehiclePosition != nil || st.ETAS != nil || st.ETASimulated != nil {
+		t.Errorf("position %v, eta %v, simulated %v, want none before the first report", st.VehiclePosition, st.ETAS, st.ETASimulated)
+	}
+	if st.PassedPickup == nil || *st.PassedPickup {
+		t.Errorf("passed_pickup = %v, want false", st.PassedPickup)
+	}
+}
+
+// DD-31, DD-06: once the car has passed the pickup the ETA is gone and the status says so.
+func TestStatusAfterThePickupIsPassed(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{northM: 1000})
+	id, driver := e.confirmedOn(t, trip)
+	before := e.status(t, id)
+	if before.ETAS == nil || before.PassedPickup == nil || *before.PassedPickup {
+		t.Fatalf("fixture: before passing eta %v passed %v, want an ETA and not passed", before.ETAS, before.PassedPickup)
+	}
+
+	report(t, e.tx, driver, e.pickup)
+	gone := offsetM(e.pickup, -(e.radiusM + 100))
+	report(t, e.tx, driver, gone)
+	st := e.status(t, id)
+	if st.ETAS != nil || st.ETASimulated != nil {
+		t.Errorf("eta %v simulated %v, want none after passing", st.ETAS, st.ETASimulated)
+	}
+	if st.PassedPickup == nil || !*st.PassedPickup {
+		t.Errorf("passed_pickup = %v, want true", st.PassedPickup)
+	}
+	if st.VehiclePosition == nil || st.VehiclePosition.Lat != gone.Lat {
+		t.Errorf("position = %+v, want the latest position still shown", st.VehiclePosition)
+	}
+}
+
+// REQ-063, DD-09: status and supply ETAs say whether the route is the simulated fallback.
+func TestETAsAreMarkedSimulated(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{northM: 1000})
+	id, _ := e.confirmedOn(t, trip)
+	if st := e.status(t, id); st.ETAS == nil || st.ETASimulated == nil || !*st.ETASimulated {
+		t.Errorf("status eta %v simulated %v, want an ETA marked simulated (fallback route)", st.ETAS, st.ETASimulated)
+	}
+
+	sup := e.supply(t, nil)
+	if len(sup.Cars) != 1 || !sup.Cars[0].ETASimulated || sup.Card.FastestSimulated == nil || !*sup.Card.FastestSimulated {
+		t.Errorf("supply = %+v, want the car and the fastest ETA marked simulated", sup)
+	}
+
+	// A real provider: the same views say not simulated.
+	real := &Server{db: e.tx, routes: realRoutes{}}
+	vtrip := e.addTrip(t, tripSpec{northM: 1200})
+	eta, err := real.vehicleETA(context.Background(), vtrip)
+	if err != nil || eta == nil || eta.Simulated {
+		t.Fatalf("real-route eta = %+v, %v; want an ETA not marked simulated", eta, err)
+	}
+}
+
+// realRoutes is a RouteProvider that is not the simulated fallback.
+type realRoutes struct{}
+
+func (realRoutes) Route(_ context.Context, from, to latLng) (Route, error) {
+	return Route{DurationS: int(distanceM(from, to) / 10), Simulated: false}, nil
 }

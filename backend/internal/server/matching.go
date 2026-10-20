@@ -76,6 +76,7 @@ type matchTrip struct {
 	Filters        []tagFilter // the driver's tag filters
 	Tags           []int64     // the tags the driver carries
 	ETASeconds     *int        // seconds to the pickup point; nil when there is no ETA (T06A)
+	ETASimulated   bool        // the ETA comes from the simulated route fallback (REQ-063, DD-09)
 }
 
 // eligible reports whether the trip passes every hard condition for the request.

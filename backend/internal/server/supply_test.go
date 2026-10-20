@@ -16,13 +16,15 @@ type supplyResp struct {
 	StopIDs        []int64     `json:"accepted_stop_ids"`
 	TimelineRangeS int         `json:"timeline_range_s"`
 	Card           struct {
-		Count          int  `json:"count"`
-		FastestETAS    *int `json:"fastest_eta_s"`
-		SeatsRemaining int  `json:"seats_remaining"`
+		Count            int   `json:"count"`
+		FastestETAS      *int  `json:"fastest_eta_s"`
+		FastestSimulated *bool `json:"fastest_eta_simulated"`
+		SeatsRemaining   int   `json:"seats_remaining"`
 	} `json:"card"`
 	Cars []struct {
 		TripID         int64 `json:"trip_id"`
 		ETAS           int   `json:"eta_s"`
+		ETASimulated   bool  `json:"eta_simulated"`
 		SeatsAvailable int   `json:"seats_available"`
 	} `json:"cars"`
 }
