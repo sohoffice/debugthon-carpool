@@ -29,7 +29,6 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * def stop = response[0]
     * def inPark = { name: '瑞光路 內科大樓 A', lat: 25.0768, lng: 121.5738 }
     * def parkCheck = function(token, p) { return karate.http(baseUrl + '/api/park/check').header('Authorization', 'Bearer ' + token).params({ lat: p.lat, lng: p.lng }).get().body }
-    * def previewRoute = function(token, p) { return karate.http(baseUrl + '/api/driver/route-preview').header('Authorization', 'Bearer ' + token).post({ pickup_point_id: pickup.id, destination: { lat: p.lat, lng: p.lng } }) }
     * def doGet = function(token, path) { return karate.call('classpath:carpool/api/act-get.feature', { token: token, path: path }) }
     * def doPost = function(token, path) { return karate.call('classpath:carpool/api/act-post.feature', { token: token, path: path }) }
 
@@ -39,10 +38,15 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match parkCheck(pt, inPark) == { inside: true }
 
     # 0b. DD-21: the driver previews the route to that destination before departing; nothing is created
-    * def preview = previewRoute('driver:driver4', inPark)
-    * match preview.status == 200
-    * match preview.body.route == { polyline: '#string', distance_m: '#number', duration_s: '#number', simulated: '#boolean', bus_stops: '#array' }
-    * def previewed = preview.body.route
+    * configure headers = { Authorization: 'Bearer driver:driver4' }
+    * url baseUrl
+    * path 'api', 'driver', 'route-preview'
+    * request { pickup_point_id: '#(pickup.id)', destination: { lat: '#(inPark.lat)', lng: '#(inPark.lng)' } }
+    * method post
+    * status 200
+    * match response.route == { polyline: '#string', distance_m: '#number', duration_s: '#number', simulated: '#boolean', bus_stops: '#array' }
+    * def previewed = response.route
+    * configure headers = { Authorization: '#("Bearer " + pt)' }
 
     # 1. REQ-015: the driver departs (auto_accept off, so the driver must confirm) and reports a position
     * def tripId = karate.call('classpath:carpool/api/supply-car.feature', { user: driver, pickup: pickup, northM: 500, tagIds: [tagId], body: { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: false, tag_filters: [] } }).tripId
