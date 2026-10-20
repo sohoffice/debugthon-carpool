@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -39,6 +41,12 @@ func (straightRoute) Route(_ context.Context, from, to latLng) (Route, error) {
 	}, nil
 }
 
+// DriveTime is the same estimate as Route, without building the route (DD-09).
+func (s straightRoute) DriveTime(ctx context.Context, from, to latLng) (Travel, error) {
+	r, _ := s.Route(ctx, from, to)
+	return Travel{DurationS: r.DurationS, Simulated: true}, nil
+}
+
 // encodePolyline implements Google's Encoded Polyline Algorithm Format (precision 5).
 func encodePolyline(points []latLng) string {
 	var b strings.Builder
@@ -62,6 +70,41 @@ func encodePolylineValue(b *strings.Builder, v int) {
 		v >>= 5
 	}
 	b.WriteByte(byte(v + 63))
+}
+
+// decodePolyline reverses encodePolyline, so a real route's stops can be found along it (DD-21).
+func decodePolyline(s string) ([]latLng, error) {
+	var points []latLng
+	var lat, lng int
+	for i := 0; i < len(s); {
+		var delta [2]int
+		for k := range delta {
+			v, shift := 0, 0
+			for {
+				if i >= len(s) {
+					return nil, errors.New("polyline: truncated")
+				}
+				b := int(s[i]) - 63
+				i++
+				if b < 0 || b > 63 || shift > 30 {
+					return nil, fmt.Errorf("polyline: invalid byte at %d", i-1)
+				}
+				v |= (b & 0x1f) << shift
+				shift += 5
+				if b < 0x20 {
+					break
+				}
+			}
+			if v&1 != 0 {
+				delta[k] = ^(v >> 1)
+			} else {
+				delta[k] = v >> 1
+			}
+		}
+		lat, lng = lat+delta[0], lng+delta[1]
+		points = append(points, latLng{float64(lat) / 1e5, float64(lng) / 1e5})
+	}
+	return points, nil
 }
 
 type stopPos struct {
