@@ -736,6 +736,9 @@ func (f *raceFixture) cleanup() {
 		if _, err := tx.Exec(ctx, `UPDATE trips SET status = 'completed', ended_at = now() WHERE id = $1`, f.trip); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `DELETE FROM service_records WHERE passenger_id = ANY($1)`, passengers); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM ride_requests WHERE passenger_id = ANY($1)`, passengers); err != nil { // candidates and filters cascade
 			return err
 		}

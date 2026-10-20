@@ -119,9 +119,19 @@
 | GET | `/api/trips/:id` | 任一 | 行程與其路線、沿途公車站；SQL 預先建立、尚無路線的行程在第一次讀取時補建並保存（DD-21） |
 | GET | `/api/passenger/supply` | 乘客 | 供給查詢（T11）：指定上車點的相關車輛。查詢參數 `pickup_point_id`（必填）、`dest_lat`＋`dest_lng`（選填 `dest_name`）、`stop_ids`（`bus_stops.id`，逗號分隔）、`required_tags`／`preferred_tags`（標籤 id，逗號分隔）；目的地與公車站沒帶時用乘客的常用資料（REQ-025）。回 `200`：`card`（`count`、`fastest_eta_s`、`seats_remaining`）、`cars`（`trip_id`、`eta_s`、`seats_available`，ETA 由近到遠）、`timeline_range_s`（等待上限，秒）與實際採用的 `destination`、`accepted_stop_ids`。篩選沿用媒合引擎的資格篩選，不排序、不提供選車。上車點缺漏回 `400 invalid_request`、不存在回 `400 invalid_pickup_point`、沒有目的地回 `400 destination_required`、沒有公車站回 `400 stops_required`、公車站或標籤不在清單回 `400 invalid_stop`／`invalid_tag`、參數格式錯誤回 `400 invalid_request` |
 | POST | `/api/passenger/requests` | 乘客 | 送出搭車請求（T12）：`pickup_point_id`、`location{lat,lng}`（乘客目前位置，必填）、選填 `destination{name,lat,lng}`、`stop_ids`、`tag_filters[{tag_id,intent}]`；目的地與公車站沒帶時用乘客的常用資料。一律回 `201` 與請求的當下結果：`status` 為 `rejected`（位置離上車點超過送出請求距離，`reason: too_far` 與 `message`）、`no_match`（`message` 為「目前沒有可搭的車」）、`waiting_driver`（已分配排序第一且還有座位的車並暫留座位，`trip_id`、`dropoff_bus_stop_id`、`response_deadline_at`），或 `confirmed`（該行程啟用自動接受，座位正式佔用，乘客最新的參與主檔關聯到該行程）。`relaxed` 表示分配的車未符合全部建議標籤。請求與位置（`submitted_lat`、`submitted_lng`）一律保存。位置缺漏回 `400 invalid_location`，其餘參數錯誤同供給查詢（`invalid_pickup_point`、`destination_required`、`stops_required`、`invalid_stop`、`invalid_tag`、`invalid_request`）。駕駛回應、逾時與改配、查詢請求狀態屬 T13 |
+| GET | `/api/driver/requests` | 駕駛 | 駕駛進行中行程的請求（T13，REQ-049、REQ-066）：`trip_id`（沒有進行中的行程為 `null`，兩個清單為空）、`pending`（等待回應的請求：`id`、`passenger_name`、`pickup_point`、`dropoff{bus_stop_id,name,lat,lng}`——`bus_stop_id` 為 `null` 表示行程目的地、`relaxed`、`response_deadline_at`）與 `passengers`（已確認或已上車的乘客，同樣含 `dropoff`，`boarded` 標示是否已上車） |
+| POST | `/api/driver/requests/:id/accept` | 駕駛 | 確認請求：暫留的座位轉為正式佔用，乘客最新的參與主檔關聯到該行程（DD-25）。回 `200` 與請求；請求不是這位駕駛行程的回 `404 not_found`，已不在等待回應（已回應、已逾時改配）回 `409 not_waiting` |
+| POST | `/api/driver/requests/:id/decline` | 駕駛 | 婉拒請求：釋放座位並改配給排序中下一台還有座位的車（該車自動接受則直接確認），沒有車可配為 `no_match`。錯誤同 `accept` |
+| POST | `/api/driver/requests/:id/board` | 駕駛 | 標記乘客已上車（DD-27）。回 `200` 與請求；乘客已先標記則直接回已上車的請求（`boarded_at` 為先到者的時間），座位計數不變。請求不是已確認或已上車回 `409 invalid_state`，不是這位駕駛行程的回 `404 not_found` |
+| POST | `/api/driver/requests/:id/complete` | 駕駛 | 替乘客結束共乘（REQ-067、DD-23），已確認或已上車皆可：釋放座位、建立服務紀錄，並在同一個交易中依該駕駛與乘客累積的服務紀錄重新計算常用資料（DD-19：各欄位取最常出現的值，次數相同取最近一趟；乘客平常抵達時間取完成時間（台北時間）的中位數，可接受的下車公車站為實際用過的公車站）。已完成則直接回已完成的請求。錯誤同 `board` |
+| GET | `/api/passenger/requests/current` | 乘客 | 乘客尚未結束（等待駕駛、已確認、已上車）的請求狀態，沒有則回 `{"request": null}`；乘客介面開啟時帶出（REQ-069） |
+| GET | `/api/passenger/requests/:id` | 乘客 | 請求狀態（輪詢用，REQ-052、REQ-053）：送出請求的欄位加上 `boarded_at`、`completed_at`、`reassigned_count`（婉拒或逾時而改配的次數）。已確認時另含 `pickup_point`、`vehicle{plate,description}`、`eta_s`（尚無駕駛位置為 `null`）與 `trip`（含路線與沿途公車站）；等待、已上車與之後這四項皆為 `null`。`no_match` 帶 `reason`、`message`。不是自己的請求回 `404 not_found` |
+| POST | `/api/passenger/requests/:id/board` | 乘客 | 乘客標記自己已上車，行為同駕駛的 `board` |
+| POST | `/api/passenger/requests/:id/complete` | 乘客 | 乘客結束自己的共乘（主要方式），行為同駕駛的 `complete` |
 
 - 除 `/api/ping` 外都需要 `Authorization: Bearer <角色>:<帳號>`：格式錯誤或帳號不存在回 `401`，帳號沒有該角色或角色不能使用該 API 回 `403`。
 - 行程路線目前由模擬的直線備援產生（`route.simulated` 為 `true`，距離為直線 × 1.3、時速 20 公里，DD-09）；T07 的真實來源完成後換進 `RouteProvider` 即可。園區範圍由後端啟動時載入 `backend/config/park/boundary.geojson`，可用環境變數 `PARK_BOUNDARY` 指定其他路徑。
+- 請求逾時（DD-13）：每筆等待中的請求以 `response_deadline_at` 為唯一的計時依據，時限來自 `system_settings.driver_confirm_timeout`（每次分配時讀取）。後端啟動時起一個背景掃描（每秒一次，`server.RunTimeoutSweeper`），把已逾時的請求改配；服務重啟後第一次掃描就會處理停機期間逾時的請求。確認、婉拒、逾時、上車與結束都先鎖定請求列再用條件式狀態轉換，同時發生時只有一方生效，後到的得到先到者的結果。
 - 座位計算（暫留、正式佔用、釋放，`internal/server/seats.go`）是供請求流程使用的內部介面，沒有 HTTP API。
 - 錯誤一律回 `{"error":{"code":"...","message":"..."}}`。
 - 系統設定（`system_settings`）只供後端元件透過 `internal/settings` 讀取，每次都查資料庫，改 SQL 後不需重啟即可生效；沒有對外 API（DD-20）。
@@ -137,6 +147,7 @@
 - 測試資料的原則：**有 REST API 可寫入就用 API**（例如以 `PUT`／`DELETE /api/me/tags/:id` 選擇與取消標籤，並在情境結束前還原）；**只有沒有 API 可用時才用 SQL**（目前是帳號與常用資料，見 DD-19），寫在 `profiles.feature`，由 `Db.java` 以 `carpool` 角色寫入。
 - SQL 建立的帳號名稱帶 `karate-` 前綴與隨機後綴；每個情境結束時由 `cleanup.feature` 刪除（常用資料隨帳號連動刪除），因此情境可平行執行，也不會留下資料。新增這類情境時沿用同一做法。
 - **新增或修改 API 的任務，一律要同時補上 Karate 情境**，覆蓋成功、被拒絕與未帶 token 的情況。
+- 請求流程（`request-flow.feature`）同樣在最後一個上車點建立車輛，但標籤不夠每個情境各用一個，所以每個情境以 SQL 建立專屬標籤（標籤沒有 API）並在情境結束時刪除。逾時情境以 SQL 把期限改到過去（沒有 API 可以撥動時鐘），再等背景掃描改配。
 - 請求（`requests.feature`）在最後一個上車點（大巨蛋）建立車輛，並讓每個情境各用一個專屬標籤隔離自己的車（乘客要求該標籤，只有該情境的車帶有），因此情境可平行執行；送出過請求的乘客帳號會留在資料庫（`ride_requests` 參照 `users`），行程由 `cleanup-tracking.feature` 結束。
 - 位置回報（`location.feature`）是例外：`location_reports` 只新增（DD-06），觸發器擋下 `DELETE`，且回報掛在 `activities` 之下、`activities.user_id` 的外鍵不連動刪除，所以表示過參與的帳號無法被刪除。做法：每個情境各用一個全新的 `karate-track-` 帳號（可平行、斷言精確）；目前沒有行程 API，進行中的行程以 SQL 建立；情境結束時由 `cleanup-tracking.feature` 將該帳號的行程設為 `completed`，並刪除從未表示過參與的帳號。表示過參與的 `karate-track-` 帳號會留在資料庫，不影響其他測試與供給查詢。
 - 行程（`trips.feature`）同理：出發會建立參與主檔，所以每個情境各用一個全新的 `karate-trip-` 駕駛帳號，結束時由 `cleanup-tracking.feature` 結束其行程；帳號本身會留在資料庫。
