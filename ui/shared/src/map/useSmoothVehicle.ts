@@ -21,7 +21,7 @@ export function useSmoothVehicle(target: VehiclePosition | null, pollIntervalMs:
   const last = useRef<{ position: LatLng; at: number } | null>(null)
   shownRef.current = shown
 
-  const key = target ? `${target.lat},${target.lng},${target.heading},${target.reported_at}` : ''
+  const key = target ? `${target.lat},${target.lng},${target.heading_deg},${target.reported_at}` : ''
   useEffect(() => {
     if (!target) {
       setShown(null)
@@ -34,8 +34,8 @@ export function useSmoothVehicle(target: VehiclePosition | null, pollIntervalMs:
     const from = shownRef.current
     last.current = { position: to, at: now }
 
-    const rotationNow = from?.rotation ?? target.heading ?? 0
-    const heading = nextHeading(target.heading, ((rotationNow % 360) + 360) % 360)
+    const rotationNow = from?.rotation ?? target.heading_deg ?? 0
+    const heading = nextHeading(target.heading_deg, ((rotationNow % 360) + 360) % 360)
     const rotation = rotationNow + shortestTurn(rotationNow, heading)
 
     const missedPolls = previous ? Math.floor((now - previous.at) / pollIntervalMs) - 1 : 0

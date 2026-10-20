@@ -18,9 +18,9 @@ import {
   submitRequest,
   tick,
 } from './operations.ts'
-import { buildPlaces, searchPlaces } from './places.ts'
+import { insidePark } from './park.ts'
 import { buildTripPath } from './tripPath.ts'
-import { departureSettings, idParam, locationBody, requestSubmission, routePreviewRequest, supplyQuery } from './validate.ts'
+import { departureSettings, idParam, locationBody, parkCheckQuery, requestSubmission, routePreviewRequest, supplyQuery } from './validate.ts'
 import {
   driverProfileView,
   driverRequestsView,
@@ -78,7 +78,6 @@ const errorBody = (code: string, message: string) => ({ error: { code, message }
  */
 export function createMockApi(data: StaticData, clock: () => number = Date.now) {
   const lookups = buildLookups(data)
-  const places = buildPlaces(lookups)
   let world: World = initialWorld(lookups, 'normal', clock())
   const now = () => clock() + world.clockOffsetMs
 
@@ -265,15 +264,15 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       }),
     ),
 
-    // ---- T20 (DD-32, DD-21): /api/places stands in for Google Places, which the real UI calls from the browser; the Go backend only has /api/park/check and /api/driver/route-preview
-    { method: 'GET', pattern: '/api/places', access: 'any', run: ({ query }) => ok(searchPlaces(places, query.get('q') ?? '')) },
+    // ---- T20 (DD-32, DD-21): places are searched with Google Places in the browser; the backend only checks them
+    { method: 'GET', pattern: '/api/park/check', access: 'any', run: ({ query }) => ok({ inside: insidePark(lookups, parkCheckQuery(query)) }) },
     {
       method: 'POST',
       pattern: '/api/driver/route-preview',
       access: 'driver',
       run: ({ body }) => {
         const req = routePreviewRequest(body, lookups)
-        return ok(buildTripPath(lookups, lookups.pickupById.get(req.pickup_point_id)!, req.destination).route)
+        return ok({ route: buildTripPath(lookups, lookups.pickupById.get(req.pickup_point_id)!, req.destination).route })
       },
     },
 

@@ -4,6 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { POLL_INTERVAL_MS } from './config'
 
+// Google Places is never called in tests (DD-32): one place in the park and one outside for any query.
+vi.mock('../../shared/src/map/usePlaceSearch', () => {
+  const found = [
+    { id: 'in', name: '瑞光路 513 巷', detail: '內湖區', resolve: async () => ({ name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }) },
+    { id: 'out', name: '台北 101', detail: '信義區', resolve: async () => ({ name: '台北 101', lat: 25.0339, lng: 121.5645 }) },
+  ]
+  const searcher = { suggest: async () => found }
+  return { usePlaceSearch: () => searcher }
+})
+
 const SONGSHAN = { id: 1, name: '松山車站', lat: 25.049806, lng: 121.578206, radius_m: 80 }
 const WTC = { id: 2, name: '台北世貿中心', lat: 25.03315, lng: 121.5619, radius_m: 80 }
 const DESTINATION = { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }
@@ -31,14 +41,15 @@ const TRIP: TripView = {
   started_at: '2026-10-24T00:08:00Z',
 }
 
-function supply(pickup = SONGSHAN): Supply {
+/** Three cars; only the second one's ETA is simulated unless `simulated` says which (REQ-063). */
+function supply(pickup = SONGSHAN, simulated = [false, true, false]): Supply {
   return {
     pickup_point: pickup,
     destination: DESTINATION,
     accepted_stop_ids: [STOP.id],
-    card: { count: 3, fastest_eta_s: 170, seats_remaining: 6 },
+    card: { count: 3, fastest_eta_s: 170, fastest_eta_simulated: simulated[0], seats_remaining: 6 },
     timeline_range_s: 600,
-    cars: [170, 350, 520].map((eta_s, i) => ({ trip_id: i + 1, eta_s, seats_available: 2 })),
+    cars: [170, 350, 520].map((eta_s, i) => ({ trip_id: i + 1, eta_s, eta_simulated: simulated[i], seats_available: 2 })),
   }
 }
 
@@ -64,17 +75,33 @@ function request(change: Partial<RequestStatusView>): RequestStatusView {
     pickup_point: null,
     vehicle: null,
     eta_s: null,
+    eta_simulated: null,
     trip: null,
+    vehicle_position: null,
+    passed_pickup: null,
     ...change,
   }
 }
 
-const CONFIRMED = request({ status: 'confirmed', pickup_point: SONGSHAN, vehicle: VEHICLE, eta_s: 170, trip: TRIP })
+const CONFIRMED = request({
+  status: 'confirmed',
+  pickup_point: SONGSHAN,
+  vehicle: VEHICLE,
+  eta_s: 170,
+  eta_simulated: false,
+  trip: TRIP,
+  vehicle_position: { lat: 25.046, lng: 121.578, heading_deg: 5.2, reported_at: '2026-10-24T00:12:30Z' },
+  passed_pickup: false,
+})
 const BOARDED = request({ status: 'boarded' })
 const COMPLETED = request({ status: 'completed' })
 
 interface Backend {
   profile?: PassengerProfile
+  /** Which cars' ETAs are simulated, in ETA order. */
+  simulated?: boolean[]
+  /** Answer POST /passenger/requests with 400 destination_outside_park. */
+  outsidePark?: boolean
   /** Served in order for GET /passenger/requests/current; the last one repeats. */
   current?: (RequestStatusView | null)[]
   /** Served in order for GET /passenger/requests/7; the last one repeats. An action moves on to its own. */
@@ -82,7 +109,7 @@ interface Backend {
   actions?: Record<string, RequestStatusView>
 }
 
-function fakeBackend({ profile = PROFILE, current = [null], statuses = [request({})], actions = {} }: Backend) {
+function fakeBackend({ profile = PROFILE, simulated, outsidePark = false, current = [null], statuses = [request({})], actions = {} }: Backend) {
   const calls: { method: string; path: string; body: unknown }[] = []
   let currentIndex = 0
   let statusIndex = 0
@@ -102,11 +129,13 @@ function fakeBackend({ profile = PROFILE, current = [null], statuses = [request(
       if (pathname === '/passenger/requests/current') return reply({ request: current[Math.min(currentIndex++, current.length - 1)] })
       if (pathname === '/passenger/requests/7') return reply(acted ?? statuses[Math.min(statusIndex++, statuses.length - 1)])
       if (pathname === '/trips/4') return reply(TRIP)
-      if (pathname === '/passenger/supply') return reply(supply(new URLSearchParams(path.split('?')[1]).get('pickup_point_id') === '2' ? WTC : SONGSHAN))
-      if (pathname === '/places') return reply([DESTINATION])
+      if (pathname === '/passenger/supply') return reply(supply(new URLSearchParams(path.split('?')[1]).get('pickup_point_id') === '2' ? WTC : SONGSHAN, simulated))
+      // Like the backend's park boundary: north of the pickup points.
+      if (pathname === '/park/check') return reply({ inside: Number(new URLSearchParams(path.split('?')[1]).get('lat')) > 25.05 })
       if (method === 'POST' && pathname === '/activities') return reply({ id: 1, role: 'passenger', trip_id: null, created_at: '' }, 201)
       if (method === 'POST' && pathname === '/location') return reply({}, 201)
       if (method === 'POST' && pathname === '/passenger/requests') {
+        if (outsidePark) return reply({ error: { code: 'destination_outside_park', message: '最終目的地必須在內湖科學園區內' } }, 400)
         const { reassigned_count: _, pickup_point: __, vehicle: ___, eta_s: ____, trip: _____, ...view } = statuses[0]
         return reply(view, 201)
       }
@@ -142,7 +171,7 @@ describe('passenger App', () => {
 
     expect(await screen.findByText('到 瑞光路 513 巷')).toBeInTheDocument()
     expect(await screen.findByText('3 台車接近中')).toBeInTheDocument()
-    expect(screen.getByText('接近中的車：3、6、9 分鐘後到')).toBeInTheDocument()
+    expect(screen.getByText('接近中的車：3、6（估算）、9 分鐘後到')).toBeInTheDocument()
     expect(screen.getByText('空位 6')).toBeInTheDocument()
     // T11 query: destination, stops and filters (types.ts Supply).
     expect(calls.find((c) => c.path.startsWith('/passenger/supply'))?.path).toMatch(/pickup_point_id=1&dest_name=.+&dest_lat=25.0765&dest_lng=121.5742&stop_ids=9&required_tags=&preferred_tags=$/)
@@ -189,6 +218,42 @@ describe('passenger App', () => {
     expect(await screen.findByRole('heading', { name: '共乘完成' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '回到首頁' }))
     expect(await screen.findByRole('button', { name: '今天我要搭' })).toBeInTheDocument()
+  })
+
+  it('marks only simulated ETAs on the board (REQ-063)', async () => {
+    fakeBackend({ simulated: [true, false, false] })
+    render(<App />)
+    const heading = await screen.findByRole('heading', { name: /最快/ })
+    expect(heading).toHaveTextContent('估算')
+    expect(screen.getByText('接近中的車：3（估算）、6、9 分鐘後到')).toBeInTheDocument()
+  })
+
+  it('a real fastest ETA is not marked (REQ-063)', async () => {
+    fakeBackend({ simulated: [false, false, false] })
+    render(<App />)
+    const heading = await screen.findByRole('heading', { name: /最快/ })
+    expect(heading).not.toHaveTextContent('估算')
+    expect(screen.getByText('接近中的車：3、6、9 分鐘後到')).toBeInTheDocument()
+  })
+
+  it('confirmed: a simulated ETA is marked, and a car past the pickup says it is there (REQ-063, DD-31)', async () => {
+    const simulated = { ...CONFIRMED, eta_simulated: true }
+    const passed = { ...CONFIRMED, eta_s: null, eta_simulated: null, passed_pickup: true }
+    fakeBackend({ current: [simulated], statuses: [simulated, passed] })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: /分鐘後到/ })).toHaveTextContent('估算')
+    await nextPoll()
+    expect(await screen.findByRole('heading', { name: '車已到上車點' })).toBeInTheDocument()
+  })
+
+  it('a destination outside the park is refused with a short message and no request (REQ-001)', async () => {
+    const calls = fakeBackend({ outsidePark: true })
+    render(<App />)
+    await sendRequest()
+    expect(await screen.findByText('目的地不在內湖科學園區內，請先修改目的地。')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '送出搭車請求' })).toBeInTheDocument()
+    // The status of a created request is never asked for.
+    expect(calls.some((c) => c.path === '/passenger/requests/7')).toBe(false)
   })
 
   it('no car: says so at once, without alternatives (REQ-036; REQ-051 not in the PoC)', async () => {
@@ -275,10 +340,23 @@ describe('passenger App', () => {
 
     expect(await screen.findByRole('heading', { name: '要去內科哪裡？' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '查看接近的車' })).toBeDisabled()
-    fireEvent.click(await screen.findByRole('button', { name: DESTINATION.name }))
+    fireEvent.change(screen.getByRole('searchbox', { name: '目的地地址' }), { target: { value: '瑞光' } })
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(DESTINATION.name) }))
     fireEvent.click(await screen.findByRole('button', { name: STOP.name }))
     fireEvent.click(screen.getByRole('button', { name: '查看接近的車' }))
     expect(await screen.findByText('到 瑞光路 513 巷')).toBeInTheDocument()
+  })
+
+  it('a destination outside the park is flagged at once and not taken (DD-32, REQ-001)', async () => {
+    fakeBackend({ profile: NO_PROFILE })
+    render(<App />)
+    await screen.findByRole('heading', { name: '要去內科哪裡？' })
+    fireEvent.change(screen.getByRole('searchbox', { name: '目的地地址' }), { target: { value: '101' } })
+    fireEvent.click(await screen.findByRole('button', { name: /台北 101/ }))
+
+    expect(await screen.findByText('台北 101不在內湖科學園區內，請換一個地點。')).toBeInTheDocument()
+    expect(screen.getByText('先填目的地，這裡會列出附近的公車站。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看接近的車' })).toBeDisabled()
   })
 
   it('remembers the filters in this browser for next time (7.1)', async () => {

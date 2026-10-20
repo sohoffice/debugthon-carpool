@@ -32,6 +32,12 @@ function Arrival({ request }: { request: ConfirmedScreenProps['request'] }) {
     <h1 className="flex items-end gap-3">
       <span className="font-board text-board-sm font-semibold tabular-nums">{minutesOf(request.eta_s)}</span>
       <span className="pb-2 text-xl font-semibold">分鐘後到</span>
+      {/* REQ-063: the ETA came from the simulated route fallback (DD-09). */}
+      {request.eta_simulated && (
+        <span className="pb-2">
+          <SimulatedBadge label="估算" />
+        </span>
+      )}
     </h1>
   )
 }
@@ -52,8 +58,8 @@ export function ConfirmedScreen({ request, celebrate, busy, onBoarded }: Confirm
           // The sheet starts at 34% and covers the map's lower part; keep the route above it.
           padding={{ top: 56, right: 48, bottom: 112, left: 48 }}
         >
-          {/* The car's position comes with T22 (DD-31); until then only the mock backend sends it. */}
-          <VehicleMarker position={request.vehicle_position ?? null} pollIntervalMs={POLL_INTERVAL_MS} title={vehicle.plate} />
+          {/* Turned to the backend's heading; gone once the car has passed the pickup point (DD-31). */}
+          {!request.passed_pickup && <VehicleMarker position={request.vehicle_position} pollIntervalMs={POLL_INTERVAL_MS} title={vehicle.plate} />}
         </RouteMap>
       </div>
 

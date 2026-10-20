@@ -18,6 +18,17 @@ vi.mock('@vis.gl/react-google-maps', () => ({
   useMap: () => null,
 }))
 vi.mock('../../shared/src/map/config', async (importOriginal) => ({ ...(await importOriginal<object>()), MAPS_API_KEY: 'test-key' }))
+// Google Places is never called in tests (DD-32): a fake that finds one place in the park and one
+// outside, or nothing at all when Places is down.
+const places = vi.hoisted(() => {
+  const found = [
+    { id: 'in', name: '瑞光路 513 巷', detail: '內湖區', resolve: async () => ({ name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }) },
+    { id: 'out', name: '台北 101', detail: '信義區', resolve: async () => ({ name: '台北 101', lat: 25.0339, lng: 121.5645 }) },
+  ]
+  const searcher = { suggest: async () => found }
+  return { available: true, searcher }
+})
+vi.mock('../../shared/src/map/usePlaceSearch', () => ({ usePlaceSearch: () => (places.available ? places.searcher : null) }))
 
 const PICKUP = { id: 1, name: '松山車站', lat: 25.0498, lng: 121.5782, radius_m: 80 }
 const PICKUP_POINTS = [
@@ -72,7 +83,7 @@ function request(change: Partial<DriverRequestItem>): DriverRequestItem {
  * Answers like the Go backend. `polls` are served in order for GET /driver/requests, the last one
  * repeats; accept and board move the request like the backend does.
  */
-function fakeBackend(polls: DriverRequests[], { defaults = LAST_DEPARTURE, departStatus = 201 } = {}) {
+function fakeBackend(polls: DriverRequests[], { defaults = LAST_DEPARTURE, departStatus = 201, route = ROUTE } = {}) {
   const calls: { method: string; path: string; body: unknown }[] = []
   let index = 0
   let state: DriverRequests | null = null
@@ -93,10 +104,12 @@ function fakeBackend(polls: DriverRequests[], { defaults = LAST_DEPARTURE, depar
       return new Response(null, { status: 204 })
     }
     if (path === '/driver/profile') return reply({ usual_pickup_point: null, usual_destination: null, capacity: null })
-    if (path === '/driver/route-preview') return reply(ROUTE)
-    if (path.startsWith('/places')) return reply([DESTINATION])
+    // Like the backend's park boundary: north of the pickup points.
+    if (path.startsWith('/park/check')) return reply({ inside: Number(new URLSearchParams(path.split('?')[1]).get('lat')) > 25.05 })
+    if (path === '/driver/route-preview') return reply({ route })
     if (method === 'POST' && path === '/driver/trips') {
       if (departStatus === 409) return reply({ error: { code: 'already_active', message: '駕駛已有進行中的行程' } }, 409)
+      if (departStatus === 400) return reply({ error: { code: 'destination_outside_park', message: '目的地必須在內湖科學園區內' } }, 400)
       return reply(trip({}), 201)
     }
     if (method === 'POST' && path === '/driver/requests/7/accept') {
@@ -121,6 +134,7 @@ describe('driver App', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+    places.available = true
   })
 
   it('prefills the last trip, so one tap departs with the same settings (REQ-016, REQ-017)', async () => {
@@ -175,6 +189,67 @@ describe('driver App', () => {
     expect(screen.getByRole('button', { name: '我出發了' })).toBeDisabled()
     // The empty route strip says what is still to choose (8.6).
     expect(within(screen.getByRole('list', { name: '今天的路線' })).getByText('選目的地')).toBeInTheDocument()
+  })
+
+  it('searches a destination with Places, previews its route and departs to it (DD-32, DD-21)', async () => {
+    const calls = fakeBackend([NO_TRIP], { defaults: NEVER_DEPARTED })
+    render(<App />)
+    await screen.findByRole('heading', { name: '第一次出發' })
+    fireEvent.click(await screen.findByRole('radio', { name: '松山車站' }))
+    fireEvent.change(screen.getByRole('searchbox', { name: '目的地地址' }), { target: { value: '瑞光' } })
+    fireEvent.click(await screen.findByRole('button', { name: /瑞光路 513 巷/ }))
+
+    // The preview takes a position only and answers { route } (T20).
+    await waitFor(() => expect(calls.find((c) => c.path === '/driver/route-preview')?.body).toEqual({ pickup_point_id: 1, destination: { lat: 25.0765, lng: 121.5742 } }))
+    expect(await within(screen.getByRole('list', { name: '今天的路線' })).findByText('陽光街')).toBeInTheDocument()
+    expect(screen.getByText('路線為估算')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/driver/trips')?.body).toMatchObject({ destination: { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 } })
+  })
+
+  it('a place outside the park is flagged at once and not taken (DD-32, REQ-001)', async () => {
+    const calls = fakeBackend([NO_TRIP], { defaults: NEVER_DEPARTED })
+    render(<App />)
+    await screen.findByRole('heading', { name: '第一次出發' })
+    fireEvent.change(screen.getByRole('searchbox', { name: '目的地地址' }), { target: { value: '101' } })
+    fireEvent.click(await screen.findByRole('button', { name: /台北 101/ }))
+
+    expect(await screen.findByText('台北 101不在內湖科學園區內，請換一個地點。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /目的地\s*未填/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '我出發了' })).toBeDisabled()
+    expect(calls.some((c) => c.path === '/driver/route-preview')).toBe(false)
+  })
+
+  it('a departure refused for a destination outside the park says so (REQ-001)', async () => {
+    fakeBackend([NO_TRIP], { departStatus: 400 })
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    expect(await screen.findByText('目的地不在內湖科學園區內，請換一個目的地。')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
+  })
+
+  it('without Places, the prefilled destination still departs (DD-32)', async () => {
+    places.available = false
+    const calls = fakeBackend([NO_TRIP])
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /目的地\s*瑞光路 513 巷/ }))
+    fireEvent.change(screen.getByRole('searchbox', { name: '目的地地址' }), { target: { value: '瑞光' } })
+    expect(await screen.findByText('目前無法搜尋地點，可以沿用已帶入的目的地。')).toBeInTheDocument()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    expect(await screen.findByRole('heading', { name: /目前沒有/ })).toBeInTheDocument()
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/driver/trips')?.body).toMatchObject({ destination: DESTINATION })
+  })
+
+  it('marks the preview as an estimate only when the route is simulated (REQ-063)', async () => {
+    fakeBackend([NO_TRIP], { route: { ...ROUTE, simulated: false } })
+    render(<App />)
+    expect(await within(await screen.findByRole('list', { name: '今天的路線' })).findByText('陽光街')).toBeInTheDocument()
+    expect(screen.queryByText('路線為估算')).not.toBeInTheDocument()
   })
 
   it('a request turns the screen into the request view; confirming goes back to waiting', async () => {

@@ -115,7 +115,8 @@ export function App() {
       setSheetOpen(false)
       setView({ kind: 'request', request, fresh: true })
     } catch (err) {
-      setSubmitError(err instanceof ApiError && err.status < 500 ? err.message : '沒有送出成功，請再按一次。')
+      if (err instanceof ApiError && err.code === 'destination_outside_park') setSubmitError('目的地不在內湖科學園區內，請先修改目的地。')
+      else setSubmitError(err instanceof ApiError && err.status < 500 ? err.message : '沒有送出成功，請再按一次。')
     } finally {
       setSubmitting(false)
     }

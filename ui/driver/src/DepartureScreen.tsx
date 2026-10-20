@@ -15,6 +15,7 @@ import {
   type DriverProfile,
   type PickupPoint,
   type Route,
+  type RoutePreview,
   type TripDefaults,
   type TripView,
 } from '@carpool/shared'
@@ -29,6 +30,10 @@ import { SettingLine, SettingRow } from './SettingRow'
 import { Switch } from './Switch'
 
 type Section = 'pickup' | 'destination' | 'filters' | 'tags'
+
+/** The backend refuses a destination outside the park on preview and departure (REQ-001, DD-32). */
+const OUTSIDE_PARK = '目的地不在內湖科學園區內，請換一個目的地。'
+const isOutsidePark = (err: unknown) => err instanceof ApiError && err.code === 'destination_outside_park'
 
 interface DepartureScreenProps {
   onDeparted: (trip: TripView) => void
@@ -52,7 +57,8 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
   const [firstTime, setFirstTime] = useState(false)
   const [open, setOpen] = useState<Section[]>([])
   const [route, setRoute] = useState<Route | null>(null)
-  const [routeFailed, setRouteFailed] = useState(false)
+  /** Why there is no preview: null while it loads or when there is one. */
+  const [routeError, setRouteError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const myTags = useMyTags(api)
@@ -70,11 +76,14 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
 
   const { pickupPointId, destination } = draft
   useEffect(() => {
-    if (pickupPointId === null || destination === null) return setRoute(null)
+    setRoute(null)
+    setRouteError(null)
+    if (pickupPointId === null || destination === null) return
     let cancelled = false
-    api.post<Route>('/driver/route-preview', { pickup_point_id: pickupPointId, destination }).then(
-      (r) => !cancelled && (setRoute(r), setRouteFailed(false)),
-      () => !cancelled && setRouteFailed(true),
+    const body = { pickup_point_id: pickupPointId, destination: { lat: destination.lat, lng: destination.lng } }
+    api.post<RoutePreview>('/driver/route-preview', body).then(
+      (preview) => !cancelled && setRoute(preview.route),
+      (err) => !cancelled && setRouteError(isOutsidePark(err) ? OUTSIDE_PARK : '路線畫不出來，還是可以出發。'),
     )
     return () => {
       cancelled = true
@@ -96,7 +105,8 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
       onDeparted(await api.post<TripView>('/driver/trips', settings))
     } catch (err) {
       if (err instanceof ApiError && err.code === 'already_active') return onAlreadyActive()
-      setError(err instanceof ApiError && err.status < 500 ? err.message : '沒有出發成功，請再按一次。')
+      if (isOutsidePark(err)) setError(OUTSIDE_PARK)
+      else setError(err instanceof ApiError && err.status < 500 ? err.message : '沒有出發成功，請再按一次。')
       setSubmitting(false)
     }
   }
@@ -123,18 +133,20 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
           <p className="mt-1 text-lg text-ink-soft">{firstTime ? '選好上車點和目的地就能出發，下次會自動帶入。' : '設定沿用上次。沒問題就出發。'}</p>
 
           <div className="mt-6">
-            {!loaded || (strip === null && settings !== null && !routeFailed) ? (
+            {!loaded || (strip === null && settings !== null && routeError === null) ? (
               <RouteStripSkeleton />
             ) : strip ? (
               <>
                 <RouteStrip items={strip.items} />
-                <p className="mt-3 flex items-center gap-2 pl-9 text-sm text-ink-soft">
-                  <SimulatedBadge label="路線為估算" />
-                  {strip.hidden > 0 && <span>沿途共 {strip.items.length - 2 + strip.hidden} 個公車站</span>}
-                </p>
+                {(route?.simulated || strip.hidden > 0) && (
+                  <p className="mt-3 flex items-center gap-2 pl-9 text-sm text-ink-soft">
+                    {route?.simulated && <SimulatedBadge label="路線為估算" />}
+                    {strip.hidden > 0 && <span>沿途共 {strip.items.length - 2 + strip.hidden} 個公車站</span>}
+                  </p>
+                )}
               </>
-            ) : routeFailed ? (
-              <p className="text-base text-ink-soft">路線畫不出來，還是可以出發。</p>
+            ) : routeError ? (
+              <p className="text-base text-ink-soft">{routeError}</p>
             ) : (
               <RoutePlaceholder pickupName={pickup?.name} destinationName={destination?.name} />
             )}
