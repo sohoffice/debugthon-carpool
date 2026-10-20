@@ -25,12 +25,14 @@ type Server struct {
 	db     DB
 	park   *park.Boundary
 	routes RouteProvider
+	walks  WalkProvider
 }
 
 // Deps are the collaborators that are not the database.
 type Deps struct {
 	Park   *park.Boundary // 內湖科學園區 boundary, for checking destinations
 	Routes RouteProvider  // plans the pickup -> destination route; nil means the simulated straight line
+	Walks  WalkProvider   // estimates the walk from a drop-off to the destination; nil means the simulated straight line
 }
 
 // NewRouter builds the HTTP router with all API routes registered.
@@ -38,6 +40,10 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	s := &Server{db: db, park: deps.Park, routes: deps.Routes}
 	if s.routes == nil {
 		s.routes = straightRoute{}
+	}
+	s.walks = deps.Walks
+	if s.walks == nil {
+		s.walks = straightWalk{}
 	}
 
 	r := gin.New()
@@ -72,6 +78,7 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	passenger := authed.Group("/passenger", requireRole(rolePassenger))
 	passenger.GET("/profile", s.getPassengerProfile)
 	passenger.GET("/supply", s.getSupply)
+	passenger.POST("/requests", s.submitRequest)
 
 	return r
 }
