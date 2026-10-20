@@ -27,7 +27,8 @@ Feature: role-restricted APIs
 
   Scenario: passenger profile for a passenger
     * path 'api', 'passenger', 'profile'
-    * header Authorization = 'Bearer passenger:passenger1'
+    # passenger2: passenger1 starts with the Demo profile (DD-19, see seeded.feature)
+    * header Authorization = 'Bearer passenger:passenger2'
     * method get
     * status 200
     * match response contains { usual_arrival_time: '#null', usual_destination: '#null', accepted_stops: '#[]' }

@@ -190,7 +190,13 @@
 - 標籤：6 個使用者自選標籤（`issuer = 'self'`）。
 - 模擬行程：`driver1`～`driver3` 皆從松山車站出發、座位 3／4／2、自動接受，狀態為進行中（`active`、設定已鎖定、`started_at = now()`）；`driver4`、`driver5` 無行程，供真人從駕駛介面操作。`driver3` 帶有「不抽菸」「安靜通勤」標籤，`driver2` 帶有「可載行李」。
 - 車輛與位置回報主檔：由遷移 `backend/migrations/20261019130000_activities_and_vehicles.sql` 建立 `vehicles`、`activities` 兩張表。`driver1`～`driver5` 各有 1 輛車（車牌與描述為暫定的範例資料，可自行修改）；3 筆模擬行程的駕駛各有 1 筆關聯到該行程的主檔，讓模擬器可直接回報位置。乘客的主檔在乘客呼叫 `POST /api/activities` 時才建立。
-- Demo 乘客（尚未建立為資料，請求時輸入）：`passenger1` 在松山車站，最終目的地約 (25.0765, 121.5742)（瑞光路），可接受的公車站為「瑞光港墘路口」（`stop_id` 1013）與「港墘路」（`stop_id` 1106）。`driver1`、`driver3` 的目的地在其 200 m 內（完全相符），`driver2` 的目的地在基湖路，只能靠沿途公車站相符；取捨結果須待 T07／T08 提供路線與位置後才能驗證。
+- Demo 預先帶入的資料（DD-19）由遷移 `backend/migrations/20261020120000_seed_demo_habitual_data.sql` 建立：`passenger1` 的常用目的地瑞光路 513 巷（25.0765, 121.5742）與可接受的公車站「瑞光港墘路口」（`stop_id` 1013）、「港墘路」（`stop_id` 1106），平常抵達時間不寫入；`driver4` 一趟已結束的行程（松山車站 → 瑞光路 513 巷，可載 3 人、不自動接受、「不抽菸」為建議標籤，非模擬行程，沒有服務紀錄與常用資料）。`passenger2`、`driver5` 不寫入，用來展示第一次使用。這些值在帳號第一次完成共乘時被重新計算的結果取代；手動跑過 Demo 後想還原請用 `just backend db-reset`。
+- 取捨 Demo 腳本：乘客用 `passenger1`（松山車站出發，目的地瑞光路 513 巷，可接受瑞光港墘路口與港墘路），建議標籤選「不抽菸」。`driver1`、`driver3` 的目的地在 200 m 內，不必步行；`driver3` 帶有「不抽菸」但只有 2 個座位；`driver2` 的路線經過瑞光港墘路口（遷移 `20261020120100_seed_driver2_via_accepted_stop.sql` 將其目的地移到該站之後），要下車走路。預設參數下（等待 ×2、步行 ×1.5、標籤加分上限 4 分鐘、等待上限 10 分鐘），結果取決於各車的等待時間，由 `internal/server/seed_demo_test.go` 的 `TestSeedShowsWaitWalkTagTradeoff` 驗證：
+  - 三車等待相同：選了建議標籤 → `driver3` 第一；沒選 → `driver1` 第一；`driver2` 都排最後。
+  - `driver3` 多等 3 分鐘：標籤加分（4 分鐘）抵不過多出的等待（6 分鐘），`driver1` 勝出。
+  - `driver2` 只等 1 分鐘、其他車等 8 分鐘：短等待勝過步行，`driver2` 勝出；把步行加重 `walk_weight` 調高（例如 6，以 SQL 修改系統設定，DD-20）則回到 `driver3`。
+  - `driver3` 等待超過 10 分鐘：直接排除，不論標籤。
+  模擬行程沒有種子位置，等待時間要由駕駛介面的模擬器（`?debug=1`）回報位置來調整。
 - 重建：遷移已套用的資料庫要改種子時，用 `just backend db-reset`。Down 只在剛種子的資料庫可用，跑過 Demo 後（位置紀錄、請求都會參照這些資料）請改用 `db-reset`。
 - 系統設定預設值在建立結構的遷移中（`system_settings`）。
 - 離開緩衝 `pass_margin`（預設 25 m）由遷移 `backend/migrations/20261019150000_pass_margin_setting.sql` 加入：車輛進入上車點範圍（`radius_m`）後，要離上車點超過「`radius_m` ＋ `pass_margin`」才算已經過，避免定位誤差在範圍邊緣造成誤判（DD-06）。每次回報都會重新讀取，改 SQL 後立即生效；設為 0 即為單一門檻。
