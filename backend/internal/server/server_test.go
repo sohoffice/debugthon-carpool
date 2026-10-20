@@ -115,6 +115,8 @@ func TestProfiles(t *testing.T) {
 	seed(`SELECT id, name FROM bus_stops ORDER BY id LIMIT 1`, &stopID, &stopName)
 	mustExec(t, tx, `INSERT INTO driver_profiles (user_id, usual_pickup_point_id, usual_destination_name, usual_destination_lat, usual_destination_lng, capacity)
 		SELECT id, $1, 'Home', 24.9, 121.4, 3 FROM users WHERE username = 'driver1'`, pickupID)
+	// passenger1 starts with the Demo profile (DD-19); replace it with this test's data.
+	mustExec(t, tx, `DELETE FROM passenger_profiles WHERE user_id = (SELECT id FROM users WHERE username = 'passenger1')`)
 	mustExec(t, tx, `INSERT INTO passenger_profiles (user_id, usual_arrival_time, usual_destination_name, usual_destination_lat, usual_destination_lng)
 		SELECT id, '09:30', 'Office', 25.2, 121.7 FROM users WHERE username = 'passenger1'`)
 	mustExec(t, tx, `INSERT INTO passenger_accepted_stops (user_id, bus_stop_id) SELECT id, $1 FROM users WHERE username = 'passenger1'`, stopID)
