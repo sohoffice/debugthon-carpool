@@ -28,10 +28,15 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * method get
     * def stop = response[0]
     * def inPark = { name: '瑞光路 內科大樓 A', lat: 25.0768, lng: 121.5738 }
+    * def parkCheck = function(token, p) { return karate.http(baseUrl + '/api/park/check').header('Authorization', 'Bearer ' + token).params({ lat: p.lat, lng: p.lng }).get().body }
     * def doGet = function(token, path) { return karate.call('classpath:carpool/api/act-get.feature', { token: token, path: path }) }
     * def doPost = function(token, path) { return karate.call('classpath:carpool/api/act-post.feature', { token: token, path: path }) }
 
   Scenario: a ride goes from departure to completion
+    # 0. REQ-001, DD-32: the driver and the passenger each check the destination they picked (from Google Places in the UI) is in the park
+    * match parkCheck('driver:driver4', inPark) == { inside: true }
+    * match parkCheck(pt, inPark) == { inside: true }
+
     # 1. REQ-015: the driver departs (auto_accept off, so the driver must confirm) and reports a position
     * def tripId = karate.call('classpath:carpool/api/supply-car.feature', { user: driver, pickup: pickup, northM: 500, tagIds: [tagId], body: { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: false, tag_filters: [] } }).tripId
     * def trip = doGet(dt, 'api/driver/trips/current')
