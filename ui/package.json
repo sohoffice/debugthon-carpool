@@ -5,15 +5,18 @@
   "workspaces": [
     "shared",
     "driver",
-    "passenger"
+    "passenger",
+    "showcase"
   ],
   "scripts": {
     "dev:driver": "npm run dev -w driver",
     "dev:passenger": "npm run dev -w passenger",
-    "build": "npm run build -w driver -w passenger",
+    "build": "npm run build -w driver -w passenger -w showcase",
     "typecheck": "tsc -p .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "mock": "node mock-server/src/main.ts",
+    "dev:showcase": "npm run dev -w showcase"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

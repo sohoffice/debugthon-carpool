@@ -1,19 +1,186 @@
-import { MapView } from '@carpool/shared'
-import { account } from './config'
+import {
+  ApiError,
+  PhoneShell,
+  useMyTags,
+  type BusStop,
+  type CurrentRequest,
+  type PassengerProfile,
+  type PassengerSearch,
+  type PickupPoint,
+  type RequestStatusView,
+  type RequestView,
+  type TagFilter,
+} from '@carpool/shared'
+import { useCallback, useEffect, useState } from 'react'
+import { api, DEBUG } from './config'
+import { DestinationScreen } from './DestinationScreen'
+import { LoadingScreen } from './LoadingScreen'
+import { PassengerDebugMode } from './PassengerDebugMode'
+import { useCurrentPosition } from './position'
+import { RequestFlow } from './RequestFlow'
+import { loadFilters, saveFilters } from './savedFilters'
+import { nearestPickup, searchFromProfile } from './search'
+import { SubmitSheet } from './SubmitSheet'
+import { SupplyScreen } from './SupplyScreen'
+
+type View =
+  /** `missing`: the backend answered 404, so it does not have this API yet (not a connection problem). */
+  | { kind: 'loading'; failed: boolean; missing?: string }
+  | { kind: 'setup' }
+  | { kind: 'supply'; notice: string | null }
+  | { kind: 'request'; request: RequestStatusView; fresh: boolean }
+
+const fetchCurrent = () => api.get<CurrentRequest>('/passenger/requests/current')
 
 export function App() {
+  const [view, setView] = useState<View>({ kind: 'loading', failed: false })
+  const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([])
+  const [busStops, setBusStops] = useState<BusStop[]>([])
+  const [search, setSearch] = useState<PassengerSearch | null>(null)
+  const [chosenPickupId, setChosenPickupId] = useState<number | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [reporting, setReporting] = useState(false)
+  const myTags = useMyTags(api)
+  const { presetId, setPresetId, position } = useCurrentPosition(pickupPoints)
+
+  useEffect(() => {
+    let cancelled = false
+    async function boot() {
+      try {
+        const [points, stops, profile, current] = await Promise.all([
+          api.get<PickupPoint[]>('/pickup-points'),
+          api.get<BusStop[]>('/bus-stops'),
+          api.get<PassengerProfile>('/passenger/profile'),
+          fetchCurrent(),
+        ])
+        if (cancelled) return
+        const fromProfile = searchFromProfile(profile)
+        const habitual = fromProfile && { ...fromProfile, tag_filters: loadFilters() }
+        setPickupPoints(points)
+        setBusStops(stops)
+        setSearch(habitual)
+        // An open request comes back after a reload, with no way to send another (REQ-069); habitual data skips the setup (5, REQ-025).
+        if (current.request) setView({ kind: 'request', request: current.request, fresh: false })
+        else setView(habitual ? { kind: 'supply', notice: null } : { kind: 'setup' })
+      } catch (err) {
+        const missing = err instanceof ApiError && err.status === 404 ? err.message : undefined
+        if (!cancelled) setView({ kind: 'loading', failed: true, missing })
+        setTimeout(() => !cancelled && boot(), 3000)
+      }
+    }
+    boot()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Whatever filters the passenger last used come back next time (7.1).
+  const filters = search?.tag_filters
+  useEffect(() => {
+    if (filters) saveFilters(filters)
+  }, [filters])
+
+  // Moving the passenger (debug mode) picks the nearest pickup point again.
+  useEffect(() => setChosenPickupId(null), [presetId])
+  const pickup = pickupPoints.find((p) => p.id === chosenPickupId) ?? nearestPickup(pickupPoints, position)
+
+  /** "送出請求": take part first and wait, then send with the position and report it too (DD-25). */
+  async function submit(filters: TagFilter[]) {
+    if (!search || !pickup || !position) return
+    const next = { ...search, tag_filters: filters }
+    setSearch(next)
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      // The backend takes a second request; the UI does not send one while another is open (REQ-069).
+      const { request: open } = await fetchCurrent()
+      if (open) {
+        setSheetOpen(false)
+        setView({ kind: 'request', request: open, fresh: false })
+        return
+      }
+      await api.post('/activities')
+      api.post('/location', position).catch(() => undefined)
+      const sent = await api.post<RequestView>('/passenger/requests', {
+        pickup_point_id: pickup.id,
+        location: position,
+        destination: next.destination,
+        stop_ids: next.accepted_stop_ids,
+        tag_filters: next.tag_filters,
+      })
+      // The answer is already decided (REQ-036); the status view adds the car and trip.
+      const request = await api.get<RequestStatusView>(`/passenger/requests/${sent.id}`)
+      setSheetOpen(false)
+      setView({ kind: 'request', request, fresh: true })
+    } catch (err) {
+      setSubmitError(err instanceof ApiError && err.status < 500 ? err.message : '沒有送出成功，請再按一次。')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const backToSupply = useCallback((notice: string | null) => (setReporting(false), setView({ kind: 'supply', notice })), [])
+
+  let screen
+  if (view.kind === 'loading') {
+    screen = <LoadingScreen failed={view.failed} missing={view.missing} />
+  } else if (view.kind === 'request') {
+    // Before the search checks: an open request comes back even without habitual data.
+    screen = (
+      <RequestFlow
+        key={view.request.id}
+        initial={view.request}
+        fresh={view.fresh}
+        position={position}
+        pickupPoints={pickupPoints}
+        busStops={busStops}
+        onBack={backToSupply}
+        onOpenChange={setReporting}
+      />
+    )
+  } else if (view.kind === 'setup' || search === null || pickup === null) {
+    screen = (
+      <DestinationScreen
+        initial={search}
+        busStops={busStops}
+        myTags={myTags}
+        onDone={(s) => (setSearch(s), setView({ kind: 'supply', notice: null }))}
+      />
+    )
+  } else {
+    screen = (
+      <>
+        <SupplyScreen
+          search={search}
+          pickupPoints={pickupPoints}
+          pickup={pickup}
+          position={position}
+          busStops={busStops}
+          notice={view.notice}
+          onPickPickup={setChosenPickupId}
+          onEdit={() => setView({ kind: 'setup' })}
+          onRide={() => (setSubmitError(null), setSheetOpen(true))}
+        />
+        {sheetOpen && (
+          <SubmitSheet
+            tags={myTags.tags ?? []}
+            filters={search.tag_filters}
+            submitting={submitting}
+            error={submitError}
+            onSubmit={submit}
+            onClose={() => setSheetOpen(false)}
+          />
+        )}
+      </>
+    )
+  }
+
   return (
-    <div className="flex h-dvh flex-col bg-gray-50 text-gray-900">
-      <header className="flex items-center justify-between bg-brand px-4 py-3 text-white">
-        <h1 className="text-lg font-bold">內科順路共乘 · 乘客</h1>
-        <span className="text-sm opacity-80">{account}</span>
-      </header>
-      <main className="relative flex-1">
-        <MapView />
-      </main>
-      <section className="border-t border-gray-200 bg-white p-4">
-        <p className="text-sm text-gray-500">目的地與供給（待實作）</p>
-      </section>
-    </div>
+    <PhoneShell roleLabel="乘客" tone="dark">
+      {screen}
+      {DEBUG && <PassengerDebugMode presetId={presetId} position={position} reporting={reporting} onPreset={setPresetId} />}
+    </PhoneShell>
   )
 }

@@ -10,3 +10,6 @@ export const MAPS_MAP_ID: string = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'D
 /** Fits the three pickup points (Songshan, World Trade Center, Taipei Dome) and Neihu Science Park. */
 export const DEFAULT_CENTER: LatLng = { lat: 25.0615, lng: 121.5705 }
 export const DEFAULT_ZOOM = 13
+
+/** Map drawing colours, the same as the brand tokens in theme.css (8.1); the Maps API needs literal values. */
+export const MAP_COLORS = { brand: '#0a7a68', white: '#ffffff', ink: '#1a242c' }

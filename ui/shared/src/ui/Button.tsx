@@ -1,23 +1,22 @@
 import type { ButtonHTMLAttributes } from 'react'
 
-type Variant = 'primary' | 'secondary' | 'danger'
+type Variant = 'primary' | 'secondary'
 
 const VARIANT_CLASS: Record<Variant, string> = {
-  primary: 'bg-brand text-white active:bg-brand-dark',
-  secondary: 'bg-white text-gray-900 ring-1 ring-gray-300 active:bg-gray-100',
-  danger: 'bg-danger text-white active:opacity-90',
+  primary: 'bg-brand text-white active:bg-brand-dark disabled:bg-rule disabled:text-ink-soft',
+  secondary: 'bg-white text-ink ring-1 ring-inset ring-rule active:bg-paper disabled:text-ink-soft',
 }
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
 }
 
-/** Large touch target by default (mobile-first; drivers tap it while stopped). */
+/** 56px minimum height, 16px corners (docs/ui-design.md 8.3). */
 export function Button({ variant = 'primary', className = '', type = 'button', ...rest }: ButtonProps) {
   return (
     <button
       type={type}
-      className={`min-h-12 rounded-xl px-5 text-base font-semibold disabled:opacity-50 ${VARIANT_CLASS[variant]} ${className}`}
+      className={`min-h-14 rounded-control px-5 text-lg font-semibold ${VARIANT_CLASS[variant]} ${className}`}
       {...rest}
     />
   )

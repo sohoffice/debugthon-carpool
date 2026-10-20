@@ -1,4 +1,11 @@
-/** Marks simulated data on screen (REQ-063: real vs simulated must be visible). */
+/**
+ * Marks simulated or estimated data (REQ-063). A dashed purple outline means "estimated, not
+ * measured", the same everywhere (docs/ui-design.md P5, 8.3).
+ */
 export function SimulatedBadge({ label = '模擬' }: { label?: string }) {
-  return <span className="rounded bg-simulated/15 px-1.5 py-0.5 text-xs font-medium text-simulated">{label}</span>
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-[4px] border border-dashed border-simulated px-1.5 text-sm/[1.5] font-medium whitespace-nowrap text-simulated">
+      {label}
+    </span>
+  )
 }

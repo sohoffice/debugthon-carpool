@@ -1,0 +1,46 @@
+import { Button, ErrorNote, TagFilterEditor, type Tag, type TagFilter } from '@carpool/shared'
+import { useState } from 'react'
+
+interface SubmitSheetProps {
+  tags: Tag[]
+  filters: TagFilter[]
+  submitting: boolean
+  error: string | null
+  onSubmit: (filters: TagFilter[]) => void
+  onClose: () => void
+}
+
+/** 7.3: filters can still be changed before sending (REQ-035); one more step against pocket taps (UD-08). */
+export function SubmitSheet({ tags, filters, submitting, error, onSubmit, onClose }: SubmitSheetProps) {
+  const [value, setValue] = useState(filters)
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col justify-end">
+      <button type="button" aria-label="關閉" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-ink/45" />
+      <section
+        role="dialog"
+        aria-label="送出搭車請求"
+        className="relative max-h-[86%] overflow-y-auto rounded-t-sheet bg-white px-6 pt-7 pb-[calc(var(--safe-bottom)+12px)]"
+      >
+        <h2 className="text-[28px]/tight font-bold">送出搭車請求</h2>
+        <p className="mt-1 text-lg text-ink-soft">平台會替你分配一台最快能送你到的車。</p>
+        <h3 className="mt-6 text-base font-semibold text-ink-soft">篩選駕駛</h3>
+        <div className="mt-1">
+          <TagFilterEditor tags={tags} value={value} onChange={setValue} />
+        </div>
+        {error && (
+          <div className="mt-4">
+            <ErrorNote>{error}</ErrorNote>
+          </div>
+        )}
+        <div className="mt-6 flex flex-col gap-3">
+          <Button className="h-16 text-xl" disabled={submitting} onClick={() => onSubmit(value)}>
+            {submitting ? '送出中…' : '送出請求'}
+          </Button>
+          <Button variant="secondary" disabled={submitting} onClick={onClose}>
+            先不要
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}

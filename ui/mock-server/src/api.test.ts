@@ -1,0 +1,218 @@
+// @vitest-environment node
+import { beforeEach, describe, expect, it } from 'vitest'
+import type { CurrentRequest, DriverRequests, RequestStatusView, RequestView, Supply, TripDefaults, TripView } from '../../shared/src/api/types.ts'
+import { createMockApi } from './api.ts'
+import { loadStaticData } from './data/load.ts'
+
+const data = loadStaticData()
+const DRIVER = 'Bearer driver:driver4'
+const PASSENGER = 'Bearer passenger:passenger1'
+const SONGSHAN = { lat: 25.049806, lng: 121.578206 }
+/** Metres north of 松山車站, like the passenger debug mode presets (DD-26). */
+const near = (m: number) => ({ lat: SONGSHAN.lat + m / 111195, lng: SONGSHAN.lng })
+const SEARCH = {
+  pickup_point_id: 1,
+  destination: { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 },
+  stop_ids: [9, 23],
+  tag_filters: [],
+}
+const SUBMIT = { ...SEARCH, location: near(25) }
+const SUPPLY = `/api/passenger/supply?pickup_point_id=1&dest_name=${encodeURIComponent('瑞光路 513 巷')}&dest_lat=25.0765&dest_lng=121.5742&stop_ids=9,23&required_tags=&preferred_tags=`
+const DEPARTURE = { pickup_point_id: 1, destination: SEARCH.destination, capacity: 3, auto_accept: false, tag_filters: [] }
+
+let api: ReturnType<typeof createMockApi>
+let clock = 0
+
+function call(method: string, path: string, authorization?: string, body?: unknown) {
+  const [pathname, qs] = path.split('?')
+  return api.handle({ method, path: pathname, query: new URLSearchParams(qs), authorization, body })
+}
+const json = <T,>(method: string, path: string, authorization?: string, body?: unknown) => call(method, path, authorization, body).body as T
+const advance = (seconds: number) => call('POST', '/api/_mock/advance', undefined, { seconds })
+const scenario = (name: string) => call('POST', '/api/_mock/scenario', undefined, { scenario: name })
+const statusOf = (id: number) => json<RequestStatusView>('GET', `/api/passenger/requests/${id}`, PASSENGER)
+const current = () => json<CurrentRequest>('GET', '/api/passenger/requests/current', PASSENGER).request
+const driverRequests = () => json<DriverRequests>('GET', '/api/driver/requests', DRIVER)
+const submit = (body: unknown = SUBMIT) => json<RequestView>('POST', '/api/passenger/requests', PASSENGER, body)
+
+beforeEach(() => {
+  clock = Date.parse('2026-10-24T08:12:00+08:00')
+  api = createMockApi(data, () => clock)
+})
+
+describe('existing endpoints match the Go backend', () => {
+  it('identifies the caller like DD-18', () => {
+    expect(call('GET', '/api/me', 'Bearer driver:driver1')).toEqual({
+      status: 200,
+      body: { username: 'driver1', display_name: '駕駛 鐵雄', role: 'driver', roles: ['driver'], simulated: true },
+    })
+    expect(call('GET', '/api/me').status).toBe(401)
+    expect(call('GET', '/api/me', 'Bearer driver:nobody').status).toBe(401)
+    expect(call('GET', '/api/me', 'Bearer driver:passenger1')).toMatchObject({ status: 403, body: { error: { code: 'forbidden' } } })
+    expect(call('GET', '/api/driver/profile', PASSENGER).status).toBe(403)
+    expect(call('GET', '/api/nope', PASSENGER)).toMatchObject({ status: 404, body: { error: { code: 'not_found' } } })
+    expect(call('PUT', '/api/driver/profile', DRIVER)).toMatchObject({ status: 405, body: { error: { code: 'method_not_allowed' } } })
+  })
+
+  it('serves the seeded reference data with the same ids', () => {
+    expect(json<unknown[]>('GET', '/api/pickup-points', PASSENGER)[0]).toEqual({ id: 1, name: '松山車站', lat: 25.049806, lng: 121.578206, radius_m: 80 })
+    expect(json<unknown[]>('GET', '/api/bus-stops', PASSENGER)).toHaveLength(97)
+    expect(json<unknown[]>('GET', '/api/tags', PASSENGER)[0]).toEqual({ id: 1, name: '不抽菸', issuer: 'self', selected: false })
+  })
+
+  it('selects and deselects tags', () => {
+    expect(call('PUT', '/api/me/tags/2', PASSENGER).status).toBe(204)
+    expect(json<{ id: number; selected: boolean }[]>('GET', '/api/tags', PASSENGER)[1].selected).toBe(true)
+    expect(call('DELETE', '/api/me/tags/2', PASSENGER).status).toBe(204)
+    expect(call('PUT', '/api/me/tags/abc', PASSENGER).status).toBe(400)
+    expect(call('PUT', '/api/me/tags/99999999', PASSENGER).status).toBe(404)
+  })
+})
+
+describe('trips, activities and positions match the Go backend', () => {
+  it('departs with the Go trip shape, once at a time, and prefills from the last departure', () => {
+    const departed = call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    expect(departed.status).toBe(201)
+    const trip = departed.body as TripView
+    expect(trip).toMatchObject({ status: 'active', capacity: 3, seats_available: 3, settings_locked: true, pickup_point: { name: '松山車站' } })
+    expect(trip.route?.bus_stops.length).toBeGreaterThan(0)
+    expect(call('POST', '/api/driver/trips', DRIVER, DEPARTURE)).toMatchObject({ status: 409, body: { error: { code: 'already_active' } } })
+    expect(json<TripView>('GET', '/api/driver/trips/current', DRIVER).id).toBe(trip.id)
+    expect(call('GET', '/api/driver/trips/current', 'Bearer driver:driver5').status).toBe(404)
+    expect(json<TripDefaults>('GET', '/api/driver/trips/defaults', 'Bearer driver:driver5')).toEqual({
+      pickup_point_id: null,
+      destination: null,
+      capacity: null,
+      auto_accept: false,
+      tag_filters: [],
+    })
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, destination: { name: '台北101', lat: 25.0339, lng: 121.5645 } })).toMatchObject({
+      status: 400,
+      body: { error: { code: 'destination_outside_park' } },
+    })
+  })
+
+  it('accepts positions only after taking part (DD-25)', () => {
+    expect(call('POST', '/api/location', PASSENGER, SONGSHAN)).toMatchObject({ status: 409, body: { error: { code: 'no_activity' } } })
+    expect(call('POST', '/api/activities', PASSENGER)).toMatchObject({ status: 201, body: { role: 'passenger', trip_id: null } })
+    expect(call('POST', '/api/location', PASSENGER, SONGSHAN)).toMatchObject({ status: 201, body: SONGSHAN })
+    expect(call('POST', '/api/location', PASSENGER, { lat: 91, lng: 0 }).status).toBe(400)
+    expect(call('POST', '/api/activities', 'Bearer driver:driver5')).toMatchObject({ status: 409, body: { error: { code: 'no_active_trip' } } })
+    expect(call('POST', '/api/location', 'Bearer driver:driver1', SONGSHAN).status).toBe(201)
+  })
+
+  it('decides passed_pickup from the driver’s reports like the Go backend (DD-06)', () => {
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const report = (m: number) => json<{ passed_pickup: boolean }>('POST', '/api/location', DRIVER, near(m)).passed_pickup
+    // Beyond the area without having entered it: not passed.
+    expect(report(-300)).toBe(false)
+    expect(report(300)).toBe(false)
+    expect(report(40)).toBe(false)
+    // Inside the leave margin (radius 80 + margin 25): still not passed.
+    expect(report(100)).toBe(false)
+    expect(report(120)).toBe(true)
+    expect(report(0)).toBe(true)
+    expect(json<TripView>('GET', '/api/driver/trips/current', DRIVER).passed_pickup).toBe(true)
+  })
+})
+
+describe('request flow matches the Go backend (T11-T13)', () => {
+  it('normal: the driver on stage confirms; the passenger boards and ends the ride', () => {
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const submitted = call('POST', '/api/passenger/requests', PASSENGER, SUBMIT)
+    expect(submitted).toMatchObject({ status: 201, body: { status: 'waiting_driver', pickup_point_id: 1, submitted_lat: near(25).lat } })
+    const id = (submitted.body as RequestView).id
+    expect(current()).toMatchObject({ id, status: 'waiting_driver', reassigned_count: 0, vehicle: null, trip: null })
+
+    const pending = driverRequests().pending
+    expect(pending).toEqual([expect.objectContaining({ id, passenger_name: '乘客 小美', pickup_point: expect.objectContaining({ name: '松山車站' }), boarded: false })])
+    expect(pending[0].dropoff.name).toBeTruthy()
+    expect(json<RequestView>('POST', `/api/driver/requests/${id}/accept`, DRIVER)).toMatchObject({ id, status: 'confirmed' })
+    expect(call('POST', `/api/driver/requests/${id}/accept`, DRIVER)).toMatchObject({ status: 409, body: { error: { code: 'not_waiting' } } })
+
+    const confirmed = statusOf(id)
+    expect(confirmed).toMatchObject({ status: 'confirmed', vehicle: { plate: 'DEF-4567', description: '藍色 Mazda 3' }, pickup_point: { name: '松山車站' } })
+    expect(confirmed.eta_s).toBeGreaterThan(0)
+    expect(confirmed.trip?.route?.bus_stops.length).toBeGreaterThan(0)
+    expect(driverRequests()).toMatchObject({ pending: [], passengers: [expect.objectContaining({ id, status: 'confirmed', boarded: false })] })
+
+    expect(json<RequestView>('POST', `/api/passenger/requests/${id}/board`, PASSENGER)).toMatchObject({ status: 'boarded' })
+    // After boarding the pickup, car, ETA and trip are gone (DD-27, REQ-068).
+    expect(statusOf(id)).toMatchObject({ status: 'boarded', vehicle: null, eta_s: null, trip: null, trip_id: confirmed.trip_id })
+    expect(driverRequests().passengers[0].boarded).toBe(true)
+    expect(call('POST', `/api/driver/requests/${id}/board`, DRIVER)).toMatchObject({ status: 200, body: { status: 'boarded' } })
+
+    call('POST', `/api/passenger/requests/${id}/complete`, PASSENGER)
+    expect(statusOf(id).status).toBe('completed')
+    expect(current()).toBeNull()
+    expect(call('POST', `/api/driver/requests/${id}/complete`, DRIVER)).toMatchObject({ status: 200, body: { status: 'completed' } })
+    expect(call('POST', `/api/driver/requests/${id}/board`, DRIVER)).toMatchObject({ status: 409, body: { error: { code: 'invalid_state' } } })
+    expect(driverRequests().passengers).toEqual([])
+  })
+
+  it('either side may end a ride without marking boarding first (DD-27)', () => {
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const { id } = submit()
+    call('POST', `/api/driver/requests/${id}/accept`, DRIVER)
+    call('POST', `/api/driver/requests/${id}/complete`, DRIVER)
+    expect(statusOf(id).status).toBe('completed')
+  })
+
+  it('only the owner reads a request', () => {
+    const { id } = submit()
+    expect(call('GET', `/api/passenger/requests/${id}`, 'Bearer passenger:passenger2')).toMatchObject({ status: 404, body: { error: { code: 'not_found' } } })
+  })
+
+  it('reassign: the driver times out and a simulated car auto-accepts', () => {
+    scenario('reassign')
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const { id } = submit()
+    advance(16)
+    expect(driverRequests().pending).toEqual([])
+    expect(statusOf(id)).toMatchObject({ status: 'confirmed', reassigned_count: 1 })
+  })
+
+  it('no_cars: answers at once that there is no car, without alternatives (REQ-036)', () => {
+    scenario('no_cars')
+    expect(json<Supply>('GET', SUPPLY, PASSENGER)).toMatchObject({ card: { count: 0, fastest_eta_s: null }, cars: [], pickup_point: { id: 1 } })
+    const request = submit()
+    expect(request).toMatchObject({ status: 'no_match', trip_id: null })
+    expect(statusOf(request.id)).toMatchObject({ reason: 'no_match', message: '目前沒有可搭的車' })
+  })
+
+  it('too far: the position sent with the request is checked (REQ-034, DD-25)', () => {
+    expect(submit({ ...SUBMIT, location: near(420) })).toMatchObject({ status: 'rejected', reason: 'too_far', message: expect.stringContaining('420 公尺') })
+    expect(submit({ ...SUBMIT, location: near(195) }).status).not.toBe('rejected')
+    expect(call('POST', '/api/passenger/requests', PASSENGER, SEARCH)).toMatchObject({ status: 400, body: { error: { code: 'invalid_location' } } })
+  })
+
+  it('supply covers the chosen pickup point only, with the habitual data as fallback (REQ-029, REQ-025)', () => {
+    const supply = json<Supply>('GET', SUPPLY, PASSENGER)
+    expect(supply).toMatchObject({ pickup_point: { name: '松山車站' }, card: { count: 3 }, timeline_range_s: 600, accepted_stop_ids: [9, 23] })
+    expect(supply.cars.map((c) => c.eta_s)).toEqual([...supply.cars.map((c) => c.eta_s)].sort((a, b) => a - b))
+    expect(supply.card.seats_remaining).toBe(supply.cars.reduce((sum, c) => sum + c.seats_available, 0))
+    expect(json<Supply>('GET', SUPPLY.replace('pickup_point_id=1', 'pickup_point_id=2'), PASSENGER).card.count).toBe(0)
+    expect(call('GET', SUPPLY.replace('pickup_point_id=1&', ''), PASSENGER)).toMatchObject({ status: 400, body: { error: { code: 'invalid_request' } } })
+    expect(call('GET', SUPPLY.replace('stop_ids=9,23', 'stop_ids=99999'), PASSENGER)).toMatchObject({ status: 400, body: { error: { code: 'invalid_stop' } } })
+    // passenger1 has habitual data; passenger2 does not.
+    expect(json<Supply>('GET', '/api/passenger/supply?pickup_point_id=1', PASSENGER).destination.name).toBe('瑞光路 513 巷')
+    expect(call('GET', '/api/passenger/supply?pickup_point_id=1', 'Bearer passenger:passenger2')).toMatchObject({ status: 400, body: { error: { code: 'destination_required' } } })
+  })
+
+  it('the trip ends by itself at the destination and finishes the rides on board (UD-16)', () => {
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const { id } = submit()
+    call('POST', `/api/driver/requests/${id}/accept`, DRIVER)
+    call('POST', `/api/passenger/requests/${id}/board`, PASSENGER)
+    advance(3600)
+    expect(driverRequests()).toEqual({ trip_id: null, pending: [], passengers: [] })
+    expect(statusOf(id).status).toBe('completed')
+  })
+
+  it('reset clears trips and requests but keeps the simulated trips', () => {
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    expect(call('POST', '/api/demo/reset').status).toBe(204)
+    expect(driverRequests().trip_id).toBeNull()
+    expect(json<Supply>('GET', SUPPLY, PASSENGER).card.count).toBe(3)
+  })
+})
