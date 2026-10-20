@@ -110,6 +110,7 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
    - 〈範圍〉改成〈子工作單〉，列出每張子工作單。
    - 〈驗收條件〉只留 `- [ ] 所有子工作單皆已關閉`。
    - 〈追溯〉保留所有子工作單追溯的聯集。
+   - 父工作單原本的依賴移到真正需要它的子工作單（標頭列與 blocked by 連結），並移除父工作單上的 blocked by 連結。
 3. 以原生 sub-issue 連結把子工作單掛到父工作單下。原本依賴父工作單的其他工作單，改成依賴真正需要的子工作單，或保留依賴父工作單。
 
 ## 建立步驟
@@ -120,9 +121,9 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
 2. **建立依賴**：對標頭列的每一個依賴，建立原生「blocked by」連結：
 
    ```bash
-   id() { gh api graphql -f query='query($n:Int!){repository(owner:"sohoffice",name:"debugthon-carpool"){issue(number:$n){id}}}' -F n=$1 -q .data.repository.issue.id; }
+   issue_id() { gh api graphql -f query='query($n:Int!){repository(owner:"sohoffice",name:"debugthon-carpool"){issue(number:$n){id}}}' -F n=$1 -q .data.repository.issue.id; }
    gh api graphql -f query='mutation($i:ID!,$b:ID!){addBlockedBy(input:{issueId:$i,blockingIssueId:$b}){issue{number}}}' \
-     -f i=$(id <本工作單>) -f b=$(id <依賴的工作單>)
+     -f i=$(issue_id <本工作單>) -f b=$(issue_id <依賴的工作單>)
    ```
 
    拆分時，另以 `addSubIssue(input:{issueId:<父>, subIssueId:<子>})` 建立 sub-issue 連結。
