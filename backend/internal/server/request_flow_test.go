@@ -298,18 +298,20 @@ func TestTimeoutReassignsAndOnlyWhenDue(t *testing.T) {
 	second := e.addTrip(t, tripSpec{northM: 2000})
 	r := e.submit(t, e.near(), nil)
 	ctx := context.Background()
+	// The sweep also sees overdue requests that other backends or Karate runs committed to the
+	// same database, so these tests check this request's state, never how many were swept.
 
 	// Before the deadline: nothing moves.
-	if n, err := SweepTimeouts(ctx, e.tx); err != nil || n != 0 {
-		t.Fatalf("sweep before the deadline = %d, %v, want 0", n, err)
+	if _, err := SweepTimeouts(ctx, e.tx); err != nil {
+		t.Fatal(err)
 	}
 	assigned(t, e.status(t, r.ID).requestResp, first)
 
 	// The time limit comes from system_settings on every assignment (DD-20).
 	mustExec(t, e.tx, `UPDATE system_settings SET value = 30 WHERE key = 'driver_confirm_timeout'`)
 	e.overdue(t, r.ID)
-	if n, err := SweepTimeouts(ctx, e.tx); err != nil || n != 1 {
-		t.Fatalf("sweep after the deadline = %d, %v, want 1", n, err)
+	if _, err := SweepTimeouts(ctx, e.tx); err != nil {
+		t.Fatal(err)
 	}
 	got := e.status(t, r.ID)
 	assigned(t, got.requestResp, second)
@@ -337,8 +339,11 @@ func TestTimeoutReassignsAndOnlyWhenDue(t *testing.T) {
 		}
 	}
 	// Idempotent: a finished request is not touched again.
-	if n, _ := SweepTimeouts(ctx, e.tx); n != 0 {
-		t.Errorf("sweep over a finished request moved %d", n)
+	if _, err := SweepTimeouts(ctx, e.tx); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.status(t, r.ID); got.Status != reqNoMatch || got.ReassignedCount != 2 {
+		t.Errorf("request = %+v, want it untouched by a later sweep", got.requestResp)
 	}
 }
 
@@ -351,8 +356,8 @@ func TestTimeoutAndAnswerResolveToOneOutcome(t *testing.T) {
 	accepted := e.submit(t, e.near(), nil)
 	e.answer(t, "accept", accepted.ID, driver, http.StatusOK)
 	e.overdue(t, accepted.ID) // late clock: still not waiting
-	if n, _ := SweepTimeouts(context.Background(), e.tx); n != 0 {
-		t.Errorf("sweep moved %d confirmed requests", n)
+	if _, err := SweepTimeouts(context.Background(), e.tx); err != nil {
+		t.Fatal(err)
 	}
 	if got := e.status(t, accepted.ID); got.Status != reqConfirmed {
 		t.Errorf("status = %s, want confirmed", got.Status)

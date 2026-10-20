@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -38,9 +40,25 @@ func main() {
 	defer stop()
 	go server.RunTimeoutSweeper(ctx, pool, time.Second)
 
-	if err := server.NewRouter(pool, deps).Run(addr); err != nil {
+	// The signal that stops the sweeper stops the HTTP server too; otherwise a stopped backend
+	// keeps serving without reassigning overdue requests.
+	srv := &http.Server{Addr: addr, Handler: server.NewRouter(pool, deps)}
+	// ListenAndServe returns as soon as Shutdown starts; done lets in-flight requests finish
+	// before main returns and closes the pool.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Print(err)
+		}
+	}()
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+	<-done
 }
 
 // databaseURL uses DATABASE_URL if set, else the app role created by the first migration.
