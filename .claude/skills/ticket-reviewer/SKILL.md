@@ -56,7 +56,7 @@ description: 以審查者身分審查某張工作單（GitHub issue，如 T06A�
 3. **PR 通過且可以合併時**（`gh pr view <編號> --json mergeable,state`，無衝突且未合併）：在 PR 分支上執行
    〈[審查項目](#審查項目)〉第 4 項的測試確認通過，勾選有證據的驗收條件，然後停下來向開發者回報並請求同意合併 PR 並關閉工作單。
 4. **開發者同意後**：
-   1. 依 `pull-request` skill〈合併〉合併 PR（`gh pr merge`）、在 Slack 公告加上 ✅、刪除本機分支。
+   1. 依 `pull-request` skill〈合併〉合併 PR（`gh pr merge <編號> --merge`）、在 Slack 公告加上 ✅、刪除本機分支。
    2. 關閉工作單：`gh issue close <編號> --comment "<PR 連結>"`。
    3. 用 `SendMessage` 通知實作 session 已合併並關閉工作單。
 
