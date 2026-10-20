@@ -113,6 +113,7 @@
 | GET | `/api/me` | 任一 | 目前帳號與角色 |
 | GET | `/api/pickup-points` | 任一 | 上車點清單 |
 | GET | `/api/bus-stops` | 任一 | 園區內公車站清單 |
+| GET | `/api/places` | 任一 | 搜尋園區地點清單（T20，DD-28）：查詢參數 `q`（必填）為名稱或地址的部分文字，不分大小寫，`%`、`_` 視為一般字元；回 `200` 與最多 8 筆 `[{id,name,address,lat,lng}]`（依名稱排序），沒有符合為 `[]`。`q` 缺漏或全為空白回 `400 invalid_request` |
 | GET | `/api/tags` | 任一 | 標籤清單，`selected` 表示呼叫者是否已選擇 |
 | PUT | `/api/me/tags/:id` | 任一 | 選擇清單中的標籤（重複選擇無影響；不在清單中回 404） |
 | DELETE | `/api/me/tags/:id` | 任一 | 取消選擇標籤 |
@@ -122,6 +123,7 @@
 | POST | `/api/location` | 任一 | 回報位置 `{"lat","lng"}`，回 `201`，歸入呼叫者最新的主檔（從未建立過回 `409 no_activity`）。駕駛的回報若主檔有行程，會回傳 `passed_pickup`。座標缺漏或超出範圍回 `400 invalid_location` |
 | GET | `/api/me/location-reports` | 任一 | 呼叫者所有回報過的位置，由舊到新（位置紀錄只新增、不修改） |
 | POST | `/api/driver/trips` | 駕駛 | 出發（T05）：`pickup_point_id`、`destination{name,lat,lng}`、`capacity`、`auto_accept`、`tag_filters[{tag_id,intent}]`。回 `201` 與行程（含 `route`：`polyline`、`distance_m`、`duration_s`、`simulated`、沿途 `bus_stops`）。行程立即為 `active` 且 `settings_locked`，並同時建立駕駛的參與主檔，之後可直接 `POST /api/location`。上車點不在清單回 `400 invalid_pickup_point`、目的地不在園區內回 `400 destination_outside_park`、標籤不在清單回 `400 invalid_tag`、欄位錯誤回 `400 invalid_request`、已有進行中的行程回 `409 already_active` |
+| POST | `/api/driver/trips/preview` | 駕駛 | 路線預覽（T20，DD-21）：`pickup_point_id`、`destination{lat,lng}`，回 `200` 與 `{route}`，`route` 的格式和出發回傳的行程 `route` 相同（`polyline`、`distance_m`、`duration_s`、`simulated`、沿途 `bus_stops`）。不建立行程、不寫入資料庫；結果暫存在後端記憶體，以上車點加目的地經緯度（不含名稱）為鍵，之後 `POST /api/driver/trips` 遇到相同的上車點與目的地就直接沿用，不論暫存多久、是否為模擬估算；同一組再預覽一次會換成新的結果；後端重啟後暫存清空，出發時才重新規劃。上車點不在清單回 `400 invalid_pickup_point`、目的地不在園區內回 `400 destination_outside_park`、欄位錯誤回 `400 invalid_request`，錯誤碼和出發相同；乘客回 `403` |
 | GET | `/api/driver/trips/defaults` | 駕駛 | 上一次出發的設定，用來預先帶入下一次出發（REQ-016）；從未出發過則各欄位為 `null`、`tag_filters` 為空 |
 | GET | `/api/driver/trips/current` | 駕駛 | 進行中的行程；沒有回 `404` |
 | GET | `/api/trips/:id` | 任一 | 行程與其路線、沿途公車站；SQL 預先建立、尚無路線的行程在第一次讀取時補建並保存（DD-21） |
@@ -184,6 +186,7 @@
 
 - 上車點：松山車站、台北世貿中心、台北大巨蛋（範圍半徑 80 m）。世貿與大巨蛋在地面上、進入停車場前的專用車道：世貿在信義路五段旁通往世貿一館停車場的車道（25.03315, 121.5619，已在地圖上確認），大巨蛋在西側光復南路上（25.044249, 121.557934，使用者指定）。
 - 內湖科學園區範圍：不存資料庫，是 GeoJSON 檔 `backend/config/park/boundary.geojson` 的 52 點多邊形，涵蓋北段與南段（西緣沿堤頂大道（北端到內湖路一段）與基隆河河濱公園的堤防側（河濱公園不含在內），南段北到民權東路六段、南到基隆河北岸、東到行愛路）；園區內公車站 97 個，由 `docs/data/busstop/busstops.csv` 以該多邊形篩選匯入。
+- 園區地點（`places`，DD-28）：由遷移 `backend/migrations/20261020110000_places.sql` 建立，10 筆名稱、地址與經緯度；座標取在園區內公車站旁，Go 測試會逐筆檢查都在園區範圍內。只有「仁寶電腦大樓」是真實的公開大樓，其餘為標示「（示範地址）」的示範資料，Demo 前請換成真實的公開大樓與地址（REQ-064，只收公開資料）。
 - 標籤：6 個使用者自選標籤（`issuer = 'self'`）。
 - 模擬行程：`driver1`～`driver3` 皆從松山車站出發、座位 3／4／2、自動接受，狀態為進行中（`active`、設定已鎖定、`started_at = now()`）；`driver4`、`driver5` 無行程，供真人從駕駛介面操作。`driver3` 帶有「不抽菸」「安靜通勤」標籤，`driver2` 帶有「可載行李」。
 - 車輛與位置回報主檔：由遷移 `backend/migrations/20261019130000_activities_and_vehicles.sql` 建立 `vehicles`、`activities` 兩張表。`driver1`～`driver5` 各有 1 輛車（車牌與描述為暫定的範例資料，可自行修改）；3 筆模擬行程的駕駛各有 1 筆關聯到該行程的主檔，讓模擬器可直接回報位置。乘客的主檔在乘客呼叫 `POST /api/activities` 時才建立。
