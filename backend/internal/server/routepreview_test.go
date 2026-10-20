@@ -46,10 +46,12 @@ func previewJSON(pickupID int64, lat, lng string) string {
 	return `{"pickup_point_id":` + itoa(pickupID) + `,"destination":{"lat":` + lat + `,"lng":` + lng + `}}`
 }
 
-func countTrips(t *testing.T, db DB) int {
+// countTrips counts one driver's trips: the transaction runs at READ COMMITTED, so trips that
+// other backends commit meanwhile must not be counted.
+func countTrips(t *testing.T, db DB, driverID int64) int {
 	t.Helper()
 	var n int
-	if err := db.QueryRow(context.Background(), `SELECT count(*) FROM trips`).Scan(&n); err != nil {
+	if err := db.QueryRow(context.Background(), `SELECT count(*) FROM trips WHERE driver_id = $1`, driverID).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -59,11 +61,11 @@ func countTrips(t *testing.T, db DB) int {
 // and creates no trip.
 func TestPreviewReturnsRouteAndBusStopsWithoutATrip(t *testing.T) {
 	tx := testTx(t)
-	_, token := newUser(t, tx, roleDriver)
+	driverID, token := newUser(t, tx, roleDriver)
 	pickupID := firstPickupID(t, tx)
 	do := routerWith(t, tx, straightRoute{})
 
-	before := countTrips(t, tx)
+	before := countTrips(t, tx, driverID)
 	w := do(http.MethodPost, "/api/driver/route-preview", token, previewJSON(pickupID, "25.0768", "121.5738"))
 	wantStatus(t, w, http.StatusOK, "")
 	v := decode[struct {
@@ -78,7 +80,7 @@ func TestPreviewReturnsRouteAndBusStopsWithoutATrip(t *testing.T) {
 	if v.Route.Polyline == "" || v.Route.DistanceM <= 0 || v.Route.DurationS <= 0 || !v.Route.Simulated || v.Route.BusStops == nil {
 		t.Fatalf("route = %+v, want polyline, distance, duration, simulated flag and a bus stop list", v.Route)
 	}
-	if countTrips(t, tx) != before {
+	if countTrips(t, tx, driverID) != before {
 		t.Fatal("preview created a trip")
 	}
 	wantStatus(t, do(http.MethodGet, "/api/driver/trips/current", token, ""), http.StatusNotFound, "not_found")
