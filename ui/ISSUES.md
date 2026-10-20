@@ -9,6 +9,7 @@
    - [#15 T15 駕駛介面](#15-t15-駕駛介面)
    - [#16 T16 乘客介面](#16-t16-乘客介面)
    - [#57 T25 介面改用 T20、T22 的後端格式](#57-t25-介面改用-t20t22-的後端格式)
+   - [#55 T24 目的地園區範圍檢查（UI）](#55-t24-目的地園區範圍檢查ui)
    - [#8 T08 模擬器（駕駛介面除錯模式）](#8-t08-模擬器駕駛介面除錯模式)
    - [#35 T18B UI 端對端測試](#35-t18b-ui-端對端測試)
    - [展示頁（UD-18）](#展示頁ud-18)
@@ -98,6 +99,8 @@
 - [x] 已有尚未結束的請求時，開啟乘客介面直接顯示該請求，無法再送出
 - [x] 除錯模式設定的位置會附在請求上，且參與主檔建立後持續回報位置（測試：`passenger/src/useLocationReporting.test.ts`）
 
+瀏覽器實測（2026-10-21，Playwright 390×664，全程接 Go 後端，目的地以真的 Google Places 搜尋）：第一次使用的 `passenger2` 搜尋目的地 → 供給看板 → 送出 → 等駕駛確認 → 已確認（地圖上的車依後端方向轉向，經過上車點後顯示「車已到上車點」）→ 已上車（在駕駛的目的地下車，只顯示一列「下車」，SC-P6）→ 共乘完成；中途重新整理仍顯示未結束的請求；`passenger1` 在台北世貿中心旁時看板與送出都是「目前沒有可搭的車」。步驟與截圖見 T16 的瀏覽器驗證 PR。實測找到並修正：常用資料只有目的地、沒有可接受的公車站時（在駕駛的目的地下車不記公車站，DD-19），目的地仍預先帶入，只請乘客選公車站（REQ-025）。
+
 ### #57 T25 介面改用 T20、T22 的後端格式
 
 [#57](https://github.com/sohoffice/debugthon-carpool/issues/57) · 尺寸 M · 依賴 #30、#33（都已合併）
@@ -114,6 +117,19 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 | ETA 的模擬標示 | ✅ 已完成 | `fastest_eta_simulated`、每台車的 `eta_simulated`、請求狀態的 `eta_simulated`（REQ-063） |
 | 型別與示範後端照 `main` 修改，刪除 `GET /api/places` | ✅ 已完成 | 示範後端新增 `GET /api/park/check` |
 | 出發時送出預覽編號；`400 invalid_route_preview` 時重新預覽並提示再按一次 | ⏳ 等後端 | DD-21；`main` 的 Go 後端還沒有預覽編號，等 [#61 T26](https://github.com/sohoffice/debugthon-carpool/issues/61) 合併後再改（第 2 條驗收條件），T25 在那之前保持開啟 |
+
+### #55 T24 目的地園區範圍檢查（UI）
+
+[#55](https://github.com/sohoffice/debugthon-carpool/issues/55) · 尺寸 S · 依賴 #14、#30 · 已關閉
+
+由 T15、T16 拆出，駕駛與乘客一起做。由 [PR #60](https://github.com/sohoffice/debugthon-carpool/pull/60)（T25）與 [PR #64](https://github.com/sohoffice/debugthon-carpool/pull/64) 交付。
+
+| 項目 | 狀態 | 說明 |
+|---|---|---|
+| 選定目的地後以 `GET /api/park/check` 提示不在園區內 | ✅ 已完成 | 駕駛與乘客共用 `PlaceSearch`；不在園區內的地點提示且不採用（PR #60） |
+| 目的地不在園區內時無法出發、送出；改選園區內的地點後恢復 | ✅ 已完成 | PR #60；送出被拒（`destination_outside_park`）時顯示中文訊息 |
+| 示範後端提供 `GET /api/park/check` | ✅ 已完成 | 和 Go 用同一份園區多邊形（PR #60） |
+| e2e：駕駛與乘客各選一次園區外的目的地 | ✅ 已完成 | `e2e/park-check.spec.ts`；Playwright 以假的 Maps API 取代 Google（`e2e/fakeGoogleMaps.ts`），不呼叫真的 Google（PR #64） |
 
 ### #8 T08 模擬器（駕駛介面除錯模式）
 
