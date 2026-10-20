@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -29,6 +32,12 @@ func main() {
 		log.Fatal(err)
 	}
 	deps := server.Deps{Park: boundary}
+
+	// DD-13: overdue requests are reassigned from the database deadlines, also after a restart.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go server.RunTimeoutSweeper(ctx, pool, time.Second)
+
 	if err := server.NewRouter(pool, deps).Run(addr); err != nil {
 		log.Fatal(err)
 	}

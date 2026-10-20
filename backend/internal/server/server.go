@@ -75,10 +75,19 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	driver.POST("/trips", s.depart)
 	driver.GET("/trips/current", s.currentTrip)
 	driver.GET("/trips/defaults", s.tripDefaults)
+	driver.GET("/requests", s.listDriverRequests)
+	driver.POST("/requests/:id/accept", s.respondRequest(true))
+	driver.POST("/requests/:id/decline", s.respondRequest(false))
+	driver.POST("/requests/:id/board", s.boardRequest)
+	driver.POST("/requests/:id/complete", s.completeRequest)
 	passenger := authed.Group("/passenger", requireRole(rolePassenger))
 	passenger.GET("/profile", s.getPassengerProfile)
 	passenger.GET("/supply", s.getSupply)
 	passenger.POST("/requests", s.submitRequest)
+	passenger.GET("/requests/current", s.currentPassengerRequest)
+	passenger.GET("/requests/:id", s.getPassengerRequest)
+	passenger.POST("/requests/:id/board", s.boardRequest)
+	passenger.POST("/requests/:id/complete", s.completeRequest)
 
 	return r
 }
