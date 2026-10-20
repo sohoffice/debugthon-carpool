@@ -80,7 +80,15 @@
 | `just ui mock-advance <秒數>` | 把示範後端的時鐘往前撥，例如讓車開到目的地 |
 | `just ui mock-reset` | 重設示範後端（`POST /api/demo/reset`；Go 後端還沒有這個 API） |
 | `just ui test` | 型別檢查並執行所有前端測試 |
+| `just ui e2e` | 執行前端端對端測試（Playwright，T18B）：自己啟動示範後端與兩個介面，透過瀏覽器走完快樂路徑 |
 
+- 端對端測試（`ui/e2e/`，設定在 `ui/playwright.config.ts`）：
+  - `just ui e2e` 第一次執行時會下載 Playwright 的 Chromium。
+  - 測試自己啟動示範後端 `:8091`、駕駛介面 `:5183`、乘客介面 `:5184`，不會用到開發中的伺服器。
+  - 每個測試前後都重設示範後端，不留下資料。
+  - 不帶地圖金鑰，地圖只顯示提示文字。
+  - 失敗時的紀錄（trace）在 `ui/test-results/`，可用 `npx playwright show-trace <檔案>` 查看。
+  - 目前只接示範後端：Go 後端還沒有 Demo 重設（T17）與目的地搜尋（T20）。
 - 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫；`just ui dev-mock`／`just ui dev` 會自動設定。
 - 示範後端（`ui/mock-server/`）是只用 Node 內建模組的小程式，狀態放在記憶體裡，重啟就回到初始狀態。帳號、上車點、公車站、標籤與模擬行程直接讀 `backend/migrations/` 的種子 SQL，和 Go 後端一致。做法見 `docs/ui-design.md` 10.2。
 - 以網址參數切換 Demo 帳號，例如 `http://localhost:5173/?account=driver2`。

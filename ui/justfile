@@ -59,3 +59,7 @@ mock-reset:
 # Typecheck and run all UI tests
 test:
     cd "{{source_directory()}}" && npm run typecheck && npm test
+
+# Run the UI end-to-end tests (Playwright) on their own mock backend and apps (T18B)
+e2e:
+    cd "{{source_directory()}}" && npx playwright install chromium && npx playwright test

@@ -105,6 +105,17 @@
 - [x] 沒有 `?debug=1` 時看不到除錯模式
 - [x] 頁面在背景執行 10 分鐘以上，模擬駕駛仍被正確判定經過上車點（示範後端：連續執行 10.5 分鐘；把分頁的 JavaScript 完全暫停 6 分鐘，恢復後補報的位置仍被判定經過。`main` 的 Go 後端：把模擬器的計時器壓到每 60 秒才執行一次（Chrome 背景分頁最嚴格的降頻）執行 10 分鐘，driver1～driver4 每次喚醒補報約 21 筆、相鄰兩筆不超過 20 公尺、每位都有 8 筆落在上車點範圍內，四段行程的 `passed_pickup` 都由 `false` 變成 `true`）
 
+### #35 T18B UI 端對端測試
+
+[#35](https://github.com/sohoffice/debugthon-carpool/issues/35) · 尺寸 M · 依賴 #15、#16、#17
+
+| 項目 | 狀態 | 說明 |
+|---|---|---|
+| 選定並建立 e2e 工具 | ✅ 已完成 | Playwright（`@playwright/test` 1.63.0），設定在 `playwright.config.ts`，以 `just ui e2e` 執行（`../DEV.md`） |
+| 快樂路徑：出發 → 查看供給 → 送出並分配 → 確認 → 上車 → 結束共乘 | ✅ 已完成（示範後端） | `e2e/happy-path.spec.ts`；另測無車可配時立即告知 |
+| 測試後不留資料 | ✅ 已完成（示範後端） | 每個測試前後重設示範後端 |
+| 接 Go 後端 | ⬜ 待辦 | 等 T20（駕駛在介面上選目的地）與 T17（重設、不留資料） |
+
 ### 展示頁（UD-18）
 
 已完成：`ui/showcase`（`http://localhost:5170`），並排嵌入駕駛（`driver4`）與乘客（`passenger1`），「重設」按兩次才執行，執行後兩支手機一起重新載入。Go 後端沒有 `POST /api/demo/reset`，`design.md` 也沒有，要交給架構師或後端決定。
