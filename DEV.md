@@ -84,9 +84,9 @@
 
 - 端對端測試（`ui/e2e/`，設定在 `ui/playwright.config.ts`）：
   - `just ui e2e` 第一次執行時會下載 Playwright 的 Chromium。
-  - 測試自己啟動示範後端 `:8091`、駕駛介面 `:5183`、乘客介面 `:5184`，不會用到開發中的伺服器。
+  - 測試自己啟動示範後端 `:8091`、駕駛介面 `:5183`、乘客介面 `:5184`，以及帶假金鑰的駕駛介面 `:5185`、乘客介面 `:5186`，不會用到開發中的伺服器。
   - 每個測試前後都重設示範後端，不留下資料。
-  - 不帶地圖金鑰，地圖只顯示提示文字。
+  - 不帶地圖金鑰，地圖只顯示提示文字。園區範圍檢查的測試（`park-check.spec.ts`）要搜尋目的地，改連 `:5185`、`:5186`，並由 Playwright 攔截 Maps 的腳本、換成 `ui/e2e/fakeGoogleMaps.ts` 的假 API（只認得固定的兩個地點），其他 Google 請求一律擋下，不會呼叫真的 Google。
   - 失敗時的紀錄（trace）在 `ui/test-results/`，可用 `npx playwright show-trace <檔案>` 查看。
   - 目前只接示範後端：Go 後端還沒有 Demo 重設（T17），目的地搜尋由用戶端的 Google Places 負責（DD-32）。
 - 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫；`just ui dev-mock`／`just ui dev` 會自動設定。
