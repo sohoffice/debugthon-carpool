@@ -139,7 +139,7 @@
 
 - **後端以 `main` 為準**：`feat/ui` 原本自己寫的臨時後端（請求流程、地點搜尋、路線預覽、Demo 重設、行程自動結束）已在合併 `main` 時全部刪除，舊程式在 commit `8e27438` 可以找到。介面用到、但 `main` 還沒有的 API：
   - T13 已合併，但介面還沒改成它的格式。
-  - 需求與設計已決定，並開了工作單：地點搜尋與路線預覽（DD-28、DD-21，[#30 T20](https://github.com/sohoffice/debugthon-carpool/issues/30)）、Demo 重設（DD-29，[#17 T17](https://github.com/sohoffice/debugthon-carpool/issues/17)）、行程抵達目的地自動結束（REQ-070、DD-30，[#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31)）、請求狀態的車輛位置與行進方向（DD-31，[#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33)）。
+  - 需求與設計已決定，並開了工作單：園區範圍檢查與路線預覽（DD-32、DD-21，[#30 T20](https://github.com/sohoffice/debugthon-carpool/issues/30)）、Demo 重設（DD-29，[#17 T17](https://github.com/sohoffice/debugthon-carpool/issues/17)）、行程抵達目的地自動結束（REQ-070、DD-30，[#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31)）、請求狀態的車輛位置與行進方向（DD-31，[#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33)）。
 - **介面程式要跟上 `main`**：見 #16 的待辦（供給查詢、送出請求、拿掉距離檢查、替代方案與取消）。改完前，接 Go 後端時乘客介面不能用。
 - **接 Go 後端時的分配順序**：Go 依感受成本排序，通常是最近的模擬車先拿到請求；要讓台上的駕駛收到請求，見 ui-design 8.8。
 - **建議**：

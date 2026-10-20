@@ -88,7 +88,7 @@
   - 每個測試前後都重設示範後端，不留下資料。
   - 不帶地圖金鑰，地圖只顯示提示文字。
   - 失敗時的紀錄（trace）在 `ui/test-results/`，可用 `npx playwright show-trace <檔案>` 查看。
-  - 目前只接示範後端：Go 後端還沒有 Demo 重設（T17）與目的地搜尋（T20）。
+  - 目前只接示範後端：Go 後端還沒有 Demo 重設（T17），目的地搜尋由用戶端的 Google Places 負責（DD-32）。
 - 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫；`just ui dev-mock`／`just ui dev` 會自動設定。
 - 示範後端（`ui/mock-server/`）是只用 Node 內建模組的小程式，狀態放在記憶體裡，重啟就回到初始狀態。帳號、上車點、公車站、標籤與模擬行程直接讀 `backend/migrations/` 的種子 SQL，和 Go 後端一致。做法見 `docs/ui-design.md` 10.2。
 - 以網址參數切換 Demo 帳號，例如 `http://localhost:5173/?account=driver2`。
@@ -113,6 +113,7 @@
 | GET | `/api/me` | 任一 | 目前帳號與角色 |
 | GET | `/api/pickup-points` | 任一 | 上車點清單 |
 | GET | `/api/bus-stops` | 任一 | 園區內公車站清單 |
+| GET | `/api/park/check` | 任一 | 園區範圍檢查（T20，DD-32）：查詢參數 `lat`、`lng`，回 `200` 與 `{"inside":true|false}`，判斷和出發、送出搭車請求相同；不在園區內回 `false` 而不是錯誤。座標缺漏、不是數字或超出範圍回 `400 invalid_location` |
 | GET | `/api/tags` | 任一 | 標籤清單，`selected` 表示呼叫者是否已選擇 |
 | PUT | `/api/me/tags/:id` | 任一 | 選擇清單中的標籤（重複選擇無影響；不在清單中回 404） |
 | DELETE | `/api/me/tags/:id` | 任一 | 取消選擇標籤 |
@@ -122,11 +123,12 @@
 | POST | `/api/location` | 任一 | 回報位置 `{"lat","lng"}`，回 `201`，歸入呼叫者最新的主檔（從未建立過回 `409 no_activity`）。駕駛的回報若主檔有行程，會回傳 `passed_pickup`。座標缺漏或超出範圍回 `400 invalid_location` |
 | GET | `/api/me/location-reports` | 任一 | 呼叫者所有回報過的位置，由舊到新（位置紀錄只新增、不修改） |
 | POST | `/api/driver/trips` | 駕駛 | 出發（T05）：`pickup_point_id`、`destination{name,lat,lng}`、`capacity`、`auto_accept`、`tag_filters[{tag_id,intent}]`。回 `201` 與行程（含 `route`：`polyline`、`distance_m`、`duration_s`、`simulated`、沿途 `bus_stops`）。行程立即為 `active` 且 `settings_locked`，並同時建立駕駛的參與主檔，之後可直接 `POST /api/location`。上車點不在清單回 `400 invalid_pickup_point`、目的地不在園區內回 `400 destination_outside_park`、標籤不在清單回 `400 invalid_tag`、欄位錯誤回 `400 invalid_request`、已有進行中的行程回 `409 already_active` |
+| POST | `/api/driver/route-preview` | 駕駛 | 路線預覽（T20，DD-21）：`pickup_point_id`、`destination{lat,lng}`，回 `200` 與 `{route}`，`route` 的格式和出發回傳的行程 `route` 相同（`polyline`、`distance_m`、`duration_s`、`simulated`、沿途 `bus_stops`）。不建立行程、不寫入資料庫；結果暫存在後端記憶體，以上車點加目的地經緯度（不含名稱）為鍵，之後 `POST /api/driver/trips` 遇到相同的上車點與目的地就直接沿用，不論暫存多久、是否為模擬估算；同一組再預覽一次會換成新的結果；後端重啟後暫存清空，出發時才重新規劃。上車點不在清單回 `400 invalid_pickup_point`、目的地不在園區內回 `400 destination_outside_park`、欄位錯誤回 `400 invalid_request`，錯誤碼和出發相同；乘客回 `403` |
 | GET | `/api/driver/trips/defaults` | 駕駛 | 上一次出發的設定，用來預先帶入下一次出發（REQ-016）；從未出發過則各欄位為 `null`、`tag_filters` 為空 |
 | GET | `/api/driver/trips/current` | 駕駛 | 進行中的行程；沒有回 `404` |
 | GET | `/api/trips/:id` | 任一 | 行程與其路線、沿途公車站；SQL 預先建立、尚無路線的行程在第一次讀取時補建並保存（DD-21） |
 | GET | `/api/passenger/supply` | 乘客 | 供給查詢（T11）：指定上車點的相關車輛。查詢參數 `pickup_point_id`（必填）、`dest_lat`＋`dest_lng`（選填 `dest_name`）、`stop_ids`（`bus_stops.id`，逗號分隔）、`required_tags`／`preferred_tags`（標籤 id，逗號分隔）；目的地與公車站沒帶時用乘客的常用資料（REQ-025）。回 `200`：`card`（`count`、`fastest_eta_s`、`fastest_eta_simulated`、`seats_remaining`）、`cars`（`trip_id`、`eta_s`、`eta_simulated`、`seats_available`，ETA 由近到遠）、`timeline_range_s`（等待上限，秒）與實際採用的 `destination`、`accepted_stop_ids`。`*_simulated` 為 `true` 表示 ETA 來自模擬的路線備援（REQ-063、DD-09）；沒有車時 `fastest_eta_simulated` 為 `null`。篩選沿用媒合引擎的資格篩選，不排序、不提供選車。上車點缺漏回 `400 invalid_request`、不存在回 `400 invalid_pickup_point`、沒有目的地回 `400 destination_required`、沒有公車站回 `400 stops_required`、公車站或標籤不在清單回 `400 invalid_stop`／`invalid_tag`、參數格式錯誤回 `400 invalid_request` |
-| POST | `/api/passenger/requests` | 乘客 | 送出搭車請求（T12）：`pickup_point_id`、`location{lat,lng}`（乘客目前位置，必填）、選填 `destination{name,lat,lng}`、`stop_ids`、`tag_filters[{tag_id,intent}]`；目的地與公車站沒帶時用乘客的常用資料。一律回 `201` 與請求的當下結果：`status` 為 `rejected`（位置離上車點超過送出請求距離，`reason: too_far` 與 `message`）、`no_match`（`message` 為「目前沒有可搭的車」）、`waiting_driver`（已分配排序第一且還有座位的車並暫留座位，`trip_id`、`dropoff_bus_stop_id`、`response_deadline_at`），或 `confirmed`（該行程啟用自動接受，座位正式佔用，乘客最新的參與主檔關聯到該行程）。`relaxed` 表示分配的車未符合全部建議標籤。請求與位置（`submitted_lat`、`submitted_lng`）一律保存。位置缺漏回 `400 invalid_location`，其餘參數錯誤同供給查詢（`invalid_pickup_point`、`destination_required`、`stops_required`、`invalid_stop`、`invalid_tag`、`invalid_request`）。駕駛回應、逾時與改配、查詢請求狀態屬 T13 |
+| POST | `/api/passenger/requests` | 乘客 | 送出搭車請求（T12）：`pickup_point_id`、`location{lat,lng}`（乘客目前位置，必填）、選填 `destination{name,lat,lng}`、`stop_ids`、`tag_filters[{tag_id,intent}]`；目的地與公車站沒帶時用乘客的常用資料。一律回 `201` 與請求的當下結果：`status` 為 `rejected`（位置離上車點超過送出請求距離，`reason: too_far` 與 `message`）、`no_match`（`message` 為「目前沒有可搭的車」）、`waiting_driver`（已分配排序第一且還有座位的車並暫留座位，`trip_id`、`dropoff_bus_stop_id`、`response_deadline_at`），或 `confirmed`（該行程啟用自動接受，座位正式佔用，乘客最新的參與主檔關聯到該行程）。`relaxed` 表示分配的車未符合全部建議標籤。請求與位置（`submitted_lat`、`submitted_lng`）一律保存。位置缺漏回 `400 invalid_location`，最終目的地（含預先帶入的常用目的地）不在園區內回 `400 destination_outside_park`、不建立請求（REQ-001、DD-32），其餘參數錯誤同供給查詢（`invalid_pickup_point`、`destination_required`、`stops_required`、`invalid_stop`、`invalid_tag`、`invalid_request`）。駕駛回應、逾時與改配、查詢請求狀態屬 T13 |
 | GET | `/api/driver/requests` | 駕駛 | 駕駛進行中行程的請求（T13，REQ-049、REQ-066）：`trip_id`（沒有進行中的行程為 `null`，兩個清單為空）、`pending`（等待回應的請求：`id`、`passenger_name`、`pickup_point`、`dropoff{bus_stop_id,name,lat,lng}`——`bus_stop_id` 為 `null` 表示行程目的地、`relaxed`、`response_deadline_at`）與 `passengers`（已確認或已上車的乘客，同樣含 `dropoff`，`boarded` 標示是否已上車） |
 | POST | `/api/driver/requests/:id/accept` | 駕駛 | 確認請求：暫留的座位轉為正式佔用，乘客最新的參與主檔關聯到該行程（DD-25）。回 `200` 與請求；請求不是這位駕駛行程的回 `404 not_found`，已不在等待回應（已回應、已逾時改配）回 `409 not_waiting` |
 | POST | `/api/driver/requests/:id/decline` | 駕駛 | 婉拒請求：釋放座位並改配給排序中下一台還有座位的車（該車自動接受則直接確認），沒有車可配為 `no_match`。錯誤同 `accept` |

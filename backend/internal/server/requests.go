@@ -202,6 +202,11 @@ func (s *Server) submitRequest(c *gin.Context) {
 			return
 		}
 	}
+	// REQ-001, DD-32: the final destination, including the prefilled usual one, must be in the park.
+	if !s.park.Contains(in.Dest.Lat, in.Dest.Lng) {
+		apiError(c, http.StatusBadRequest, "destination_outside_park", "最終目的地必須在內湖科學園區內")
+		return
+	}
 	for _, f := range body.TagFilters {
 		in.Filters = append(in.Filters, tagFilter{TagID: f.TagID, Intent: f.Intent})
 	}

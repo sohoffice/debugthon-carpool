@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -762,4 +763,43 @@ func (f *raceFixture) seats(t *testing.T) (held, confirmed int) {
 		t.Fatal(err)
 	}
 	return
+}
+
+// REQ-001, DD-32: a final destination outside the park is refused with the departure's error
+// code and creates no request; the usual destination is checked too; points on either side of
+// the boundary get the opposite answers.
+func TestSubmitRefusesAFinalDestinationOutsideThePark(t *testing.T) {
+	e := newSupplyEnv(t)
+	e.addTrip(t, tripSpec{})
+	outside := latLng{25.0478, 121.5170}
+	count := func() (n int) {
+		if err := e.tx.QueryRow(context.Background(), `SELECT count(*) FROM ride_requests WHERE passenger_id = $1`, e.userID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// given in the body
+	body := strings.Replace(e.body(e.near(), ""), ftoa(e.dest.Lat), ftoa(outside.Lat), 1)
+	body = strings.Replace(body, ftoa(e.dest.Lng), ftoa(outside.Lng), 1)
+	w := call(t, e.tx, http.MethodPost, "/api/passenger/requests", e.token, body)
+	wantStatus(t, w, http.StatusBadRequest, "destination_outside_park")
+	if count() != 0 {
+		t.Fatal("a refused request was stored")
+	}
+
+	// prefilled from the usual destination
+	mustExec(t, e.tx, `INSERT INTO passenger_profiles (user_id, usual_destination_name, usual_destination_lat, usual_destination_lng) VALUES ($1, '常用', $2, $3)`,
+		e.userID, outside.Lat, outside.Lng)
+	mustExec(t, e.tx, `INSERT INTO passenger_accepted_stops (user_id, bus_stop_id) VALUES ($1, $2)`, e.userID, e.stopID)
+	habit := fmt.Sprintf(`{"pickup_point_id":%d,"location":{"lat":%s,"lng":%s}}`, e.pickupID, ftoa(e.pickup.Lat), ftoa(e.pickup.Lng))
+	wantStatus(t, call(t, e.tx, http.MethodPost, "/api/passenger/requests", e.token, habit), http.StatusBadRequest, "destination_outside_park")
+	if count() != 0 {
+		t.Fatal("a refused request was stored")
+	}
+
+	// inside the park is accepted
+	if r := e.submit(t, e.near(), nil); r.Status == reqRejected {
+		t.Fatalf("a destination in the park was rejected: %+v", r)
+	}
 }

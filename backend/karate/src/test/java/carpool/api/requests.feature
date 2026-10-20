@@ -57,6 +57,20 @@ Feature: ride requests (POST /api/passenger/requests)
     * match response.message contains '送出請求距離'
     * match response.submitted_lat == pickup.lat + 1000 * 0.000009
 
+  Scenario: a final destination outside the park is refused and creates no request
+    * def outside = { name: '市區', lat: 25.0478, lng: 121.5170 }
+    * def body = submission([], 0)
+    * set body.destination = outside
+    * path 'api', 'passenger', 'requests'
+    * request body
+    * method post
+    * status 400
+    * match response.error.code == 'destination_outside_park'
+    * path 'api', 'passenger', 'requests', 'current'
+    * method get
+    * status 200
+    * match response == { request: null }
+
   Scenario: no car for the passenger answers there is no car
     # no car carries this tag
     * path 'api', 'passenger', 'requests'

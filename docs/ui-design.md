@@ -869,8 +869,8 @@ Go 後端已有的 API（介面照抄後端格式）：
 
 | 方法 | 路徑 | 角色 | 回傳 | 說明 |
 |---|---|---|---|---|
-| GET | `/api/places?q=` | 任一 | `Place[]` | 搜尋園區內的目的地，供地址輸入使用（最多 8 筆）；DD-28，T20 |
-| POST | `/api/driver/route-preview` | 駕駛 | `Route` | 指定上車點與目的地的行程路線與沿途公車站，出發前顯示在地圖上；目的地不在園區內時回 `400 destination_outside_park`；DD-21，T20 |
+| GET | `/api/park/check?lat=&lng=` | 任一 | `{inside: boolean}` | 選定的目的地是否在園區內，選定後即時提示；目的地本身以 Google Places 搜尋，後端沒有地點搜尋 API；DD-32，T20 |
+| POST | `/api/driver/route-preview` | 駕駛 | `{route: Route}` | 指定上車點與目的地的行程路線與沿途公車站，出發前顯示在地圖上；目的地不在園區內時回 `400 destination_outside_park`；DD-21，T20 |
 | POST | `/api/demo/reset` | 免身分 | `204` | 重設 Demo 資料（UD-18）；DD-29，T17 |
 
 介面需要、但 `main` 的後端 API 還沒有的資料（都已有工作單）：
@@ -1036,7 +1036,7 @@ flowchart LR
 | Demo 重設 `POST /api/demo/reset` | UD-18；10.2 | DD-29，實作在 [#17 T17](https://github.com/sohoffice/debugthon-carpool/issues/17)；Go 後端還沒有 |
 | 展示頁 | UD-18 | DD-24 寫「開兩個瀏覽器視窗」；展示頁只是把兩個 App 並排嵌入，兩個視窗的做法仍然可用 |
 | 行程抵達目的地時自動結束 | UD-16 | REQ-070、DD-30，實作在 [#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31)；Go 後端還沒有 |
-| 目的地搜尋、出發前的路線預覽 | 7.1、6.1；10.1 | DD-28 與修改後的 DD-21，實作在 [#30 T20](https://github.com/sohoffice/debugthon-carpool/issues/30)；Go 後端還沒有 |
+| 目的地搜尋（Google Places）與園區範圍檢查、出發前的路線預覽 | 7.1、6.1；10.1 | DD-32 與修改後的 DD-21，實作在 [#30 T20](https://github.com/sohoffice/debugthon-carpool/issues/30)；Go 後端還沒有 |
 | Demo 種子直接寫入常用資料 | 10.2〈Demo 種子補充〉 | 已決定為 DD-19 的 Demo 例外：由 [#3 T03](https://github.com/sohoffice/debugthon-carpool/issues/3) 在 Go 後端的種子實作 `passenger1` 的常用資料與 `driver4` 的上一趟行程，內容同示範後端；Go 後端還沒有 |
 
 ## 13. 待討論議題
