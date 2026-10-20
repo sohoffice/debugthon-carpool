@@ -19,6 +19,7 @@ type reportView struct {
 	Lng          float64 `json:"lng"`
 	ReportedAt   string  `json:"reported_at"`
 	PassedPickup *bool   `json:"passed_pickup"`
+	TripEnded    *bool   `json:"trip_ended"`
 }
 
 // newUser inserts a fresh account inside the test transaction, so a test never

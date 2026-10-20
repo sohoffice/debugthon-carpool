@@ -49,6 +49,9 @@ type tripView struct {
 	TagFilters     []tagFilterView `json:"tag_filters"`
 	Route          *routeView      `json:"route"`
 	StartedAt      *time.Time      `json:"started_at"`
+	EndedAt        *time.Time      `json:"ended_at"`
+	// Rides completed on this trip, so far or in all once it ended (the driver UI's trip-ended screen).
+	CompletedRides int `json:"completed_rides"`
 }
 
 // departBody is the departure confirmation (REQ-015): destination, capacity, pickup point,
@@ -262,12 +265,13 @@ func (s *Server) loadTrip(ctx context.Context, tripID int64) (tripView, error) {
 		SELECT t.id, t.driver_id, t.status, p.id, p.name, p.lat, p.lng, p.radius_m,
 		       t.destination_name, t.destination_lat, t.destination_lng,
 		       t.capacity, t.seats_held, t.seats_confirmed, t.auto_accept, t.settings_locked, t.passed_pickup,
-		       t.route_polyline, t.route_distance_m, t.route_duration_s, t.route_simulated, t.started_at
+		       t.route_polyline, t.route_distance_m, t.route_duration_s, t.route_simulated, t.started_at, t.ended_at,
+		       (SELECT count(*) FROM service_records s WHERE s.trip_id = t.id)
 		  FROM trips t JOIN pickup_points p ON p.id = t.pickup_point_id WHERE t.id = $1`, tripID).
 		Scan(&v.ID, &v.DriverID, &v.Status, &v.PickupPoint.ID, &v.PickupPoint.Name, &v.PickupPoint.Lat, &v.PickupPoint.Lng,
 			&v.PickupPoint.RadiusM, &v.Destination.Name, &v.Destination.Lat, &v.Destination.Lng,
 			&v.Capacity, &v.SeatsHeld, &v.SeatsConfirmed, &v.AutoAccept, &v.SettingsLocked, &v.PassedPickup,
-			&polyline, &distance, &duration, &simulated, &v.StartedAt)
+			&polyline, &distance, &duration, &simulated, &v.StartedAt, &v.EndedAt, &v.CompletedRides)
 	if err != nil {
 		return v, err
 	}

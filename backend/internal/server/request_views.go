@@ -104,7 +104,7 @@ func (s *Server) listDriverRequests(c *gin.Context) {
 // are gone (DD-27).
 type requestStatusView struct {
 	requestView
-	ReassignedCount int              `json:"reassigned_count"` // cars that declined or timed out (REQ-053)
+	ReassignedCount int              `json:"reassigned_count"` // cars that declined, timed out or ended their trip (REQ-053)
 	PickupPoint     *pickupPoint     `json:"pickup_point"`
 	Vehicle         *vehicleView     `json:"vehicle"`
 	ETAS            *int             `json:"eta_s"`
@@ -120,7 +120,7 @@ func (s *Server) loadStatusView(ctx context.Context, id int64) (requestStatusVie
 	if v.requestView, err = s.loadRequestView(ctx, id, "", ""); err != nil {
 		return v, err
 	}
-	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM request_candidates WHERE request_id = $1 AND outcome IN ('declined', 'timed_out')`, id).
+	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM request_candidates WHERE request_id = $1 AND outcome IN ('declined', 'timed_out', 'trip_ended')`, id).
 		Scan(&v.ReassignedCount); err != nil {
 		return v, err
 	}

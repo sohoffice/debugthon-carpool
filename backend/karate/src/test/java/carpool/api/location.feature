@@ -30,7 +30,7 @@ Feature: position reports (POST /api/activities, POST /api/location, GET /api/me
     * match declare(token) == { id: '#number', role: 'driver', trip_id: '#(tripId)', created_at: '#string' }
 
     * def far = send(token, at(800))
-    * match far == { id: '#number', activity_id: '#number', trip_id: '#(tripId)', lat: '#number', lng: '#number', reported_at: '#string', passed_pickup: false }
+    * match far == { id: '#number', activity_id: '#number', trip_id: '#(tripId)', lat: '#number', lng: '#number', reported_at: '#string', passed_pickup: false, trip_ended: false }
     * match send(token, at(r + 100)).passed_pickup == false
     * match send(token, at(5)).passed_pickup == false
     # just outside the radius but inside the pass_margin setting (25 m by default): not left yet

@@ -76,13 +76,13 @@ func currentRank(ctx context.Context, db DB, id, tripID int64) (int, error) {
 		SELECT rank FROM request_candidates
 		 WHERE request_id = $1 AND trip_id = $2 AND outcome IS NULL
 		   AND rank > COALESCE((SELECT max(rank) FROM request_candidates
-		                         WHERE request_id = $1 AND outcome IN ('declined', 'timed_out')), 0)
+		                         WHERE request_id = $1 AND outcome IN ('declined', 'timed_out', 'trip_ended')), 0)
 		 ORDER BY rank LIMIT 1`, id, tripID).Scan(&rank)
 	return rank, err
 }
 
-// reassign gives up the current assignment of a waiting request (outcome is declined or
-// timed_out) and moves it to the next candidate whose seat can be held, or to no_match when
+// reassign gives up the current assignment of a waiting request (outcome is declined,
+// timed_out or trip_ended) and moves it to the next candidate whose seat can be held, or to no_match when
 // none is left (REQ-050, DD-12). It auto-confirms when that trip auto-accepts (REQ-022).
 // s.db must be the transaction that holds the request lock.
 func (s *Server) reassign(ctx context.Context, q lockedRequest, outcome string) error {
