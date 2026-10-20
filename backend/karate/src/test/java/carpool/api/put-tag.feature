@@ -1,5 +1,5 @@
 @ignore
-Feature: select one of my tags (arguments: token, id)
+Feature: select a tag (arguments: token, id)
 
   Scenario:
     * configure headers = { Authorization: '#("Bearer " + token)' }

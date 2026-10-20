@@ -50,7 +50,7 @@ ui/
 - 以 `usePolling` 輪詢取得狀態（DD-03）。不用 WebSocket、SSE 或推播。
 - 身分是 `Bearer <角色>:<帳號>`（DD-18），由 `createApiClient` 產生。Demo 時用 `?account=<帳號>` 切換帳號，沒有登入畫面。
 - 只透過各 app `src/config.ts` 裡的 `api` 呼叫 API。呼叫路徑為 `/api/...`，開發時由 Vite 轉送到後端。
-- API 的格式寫在 `shared/src/api/types.ts`，介面與示範後端共用。Go 後端已有的 API 照抄後端格式；其餘是前端提案的格式，清單見 `../docs/ui-design.md` 10.1。
+- API 的格式寫在 `shared/src/api/types.ts`，介面與示範後端共用。**一律以 `main` 的 Go 後端為準**（`../DEV.md`〈後端 API〉）：後端已有的 API 照抄後端格式，和型別檔、示範後端或 `../docs/ui-design.md` 不一致時，改前端，不改後端。後端還沒有的 API 才用前端提案的格式（`../docs/ui-design.md` 10.1），後端完成後改成後端的格式。
 - 後端 API 完成前，前端連到一個共用的示範後端開發，連哪個後端由 `API_PROXY_TARGET` 決定，前端程式不切換（`../docs/ui-design.md` 10.2、UD-14）。
 
 ### 3. 設計文件中的角色規則
@@ -82,7 +82,7 @@ ui/
 ## 測試 — 只測重要的
 
 - 使用 Vitest + Testing Library。測試檔放在程式旁邊，命名為 `*.test.ts(x)`。
-- 要測：shared 的邏輯（API 用戶端、輪詢、帳號），以及各流程的關鍵畫面狀態（例如：請求等待中 → 已確認；無車可配 → 顯示替代方案）。
+- 要測：shared 的邏輯（API 用戶端、輪詢、帳號），以及各流程的關鍵畫面狀態（例如：請求等待中 → 已確認；無車可配 → 顯示「目前沒有可搭的車」）。
 - 不測：樣式、Tailwind class、地圖繪製、snapshot、簡單的元件。
 - mock `fetch` 或 `api` 物件，不要 mock React 內部。測試環境沒有 Maps 金鑰，所以地圖會顯示提示文字。
 - 每個 app 保留一個 smoke test（`App.test.tsx`），確認整體接線正常。
