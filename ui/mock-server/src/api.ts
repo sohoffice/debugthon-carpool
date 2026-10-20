@@ -265,7 +265,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       }),
     ),
 
-    // ---- Proposed: T20 (DD-28, DD-21)
+    // ---- T20 (DD-32, DD-21): /api/places stands in for Google Places, which the real UI calls from the browser; the Go backend only has /api/park/check and /api/driver/route-preview
     { method: 'GET', pattern: '/api/places', access: 'any', run: ({ query }) => ok(searchPlaces(places, query.get('q') ?? '')) },
     {
       method: 'POST',

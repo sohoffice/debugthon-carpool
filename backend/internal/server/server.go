@@ -26,6 +26,8 @@ type Server struct {
 	park   *park.Boundary
 	routes RouteProvider
 	walks  WalkProvider
+	// previews remembers route previews for the departure that follows (DD-21).
+	previews *previewCache
 }
 
 // Deps are the collaborators that are not the database.
@@ -37,7 +39,7 @@ type Deps struct {
 
 // NewRouter builds the HTTP router with all API routes registered.
 func NewRouter(db DB, deps Deps) *gin.Engine {
-	s := &Server{db: db, park: deps.Park, routes: deps.Routes}
+	s := &Server{db: db, park: deps.Park, routes: deps.Routes, previews: &previewCache{}}
 	if s.routes == nil {
 		s.routes = straightRoute{}
 	}
@@ -62,6 +64,7 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	authed.GET("/me", s.getMe)
 	authed.GET("/pickup-points", s.listPickupPoints)
 	authed.GET("/bus-stops", s.listBusStops)
+	authed.GET("/park/check", s.checkPark)
 	authed.GET("/tags", s.listTags)
 	authed.PUT("/me/tags/:id", s.selectTag)
 	authed.DELETE("/me/tags/:id", s.deselectTag)
@@ -73,6 +76,7 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	driver := authed.Group("/driver", requireRole(roleDriver))
 	driver.GET("/profile", s.getDriverProfile)
 	driver.POST("/trips", s.depart)
+	driver.POST("/route-preview", s.previewRoute)
 	driver.GET("/trips/current", s.currentTrip)
 	driver.GET("/trips/defaults", s.tripDefaults)
 	driver.GET("/requests", s.listDriverRequests)

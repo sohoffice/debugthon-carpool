@@ -120,18 +120,8 @@ func (s *Server) depart(c *gin.Context) {
 	driverID := c.GetInt64(ctxUserID)
 	dest := latLng{*body.Destination.Lat, *body.Destination.Lng}
 
-	var pickup latLng
-	err := s.db.QueryRow(c, `SELECT lat, lng FROM pickup_points WHERE id = $1`, *body.PickupPointID).Scan(&pickup.Lat, &pickup.Lng)
-	if isNoRows(err) {
-		apiError(c, http.StatusBadRequest, "invalid_pickup_point", "上車點必須是預先定義的上車點之一")
-		return
-	}
-	if err != nil {
-		s.internalError(c, err)
-		return
-	}
-	if !s.park.Contains(dest.Lat, dest.Lng) {
-		apiError(c, http.StatusBadRequest, "destination_outside_park", "目的地必須在內湖科學園區內")
+	pickup, ok := s.checkRoutePoints(c, *body.PickupPointID, dest)
+	if !ok {
 		return
 	}
 	if ok, err := s.tagsExist(c, s.db, body.TagFilters); err != nil {
@@ -152,11 +142,12 @@ func (s *Server) depart(c *gin.Context) {
 		return
 	}
 
-	route, stopIDs, err := s.planRoute(c, pickup, dest)
+	plan, err := s.routeForDeparture(c, *body.PickupPointID, pickup, dest)
 	if err != nil {
 		s.internalError(c, err)
 		return
 	}
+	route, stopIDs := plan.route, plan.stopIDs
 
 	var tripID int64
 	err = s.inTx(c, func(db DB) error {

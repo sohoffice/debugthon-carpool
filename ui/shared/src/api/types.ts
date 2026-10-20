@@ -307,7 +307,7 @@ export interface CurrentRequest {
 
 // ---------------------------------------------------------------- Proposed: shared
 
-/** GET /api/places?q=… — destinations inside the park, for the address field (DD-28, T20). */
+/** Mock-only stand-in for Google Places search (DD-32): the Go backend has no places API, only GET /api/park/check?lat=&lng= → { inside: boolean } (T20). */
 export type PlaceSearchResult = Place[]
 
 // ---------------------------------------------------------------- Proposed: driver
