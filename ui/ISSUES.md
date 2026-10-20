@@ -139,4 +139,4 @@
 - **建議**：
   1. API 格式要改時，`ui/shared/src/api/types.ts`、示範後端與 Go 後端三邊一起改；示範後端的測試（`mock-server/src/api.test.ts`）與 Karate 的 `requests.feature` 可以當作規格對照。
   2. Demo 劇本（#18）決定接 Go 後端時怎麼讓台上的駕駛收到請求。
-  3. 地圖樣式（ui-oi-17）：捷運線仍以原本的顏色顯示。介面已替行程路線加上白色外框，和捷運線分得開；要再調整雲端樣式，見 `docs/data/map-styles/README.md`。
+  3. 地圖樣式（ui-oi-17）已決定：採用路網樣式，雲端樣式不再調整；捷運線與路線色接近的問題由介面替行程路線加白色外框處理。

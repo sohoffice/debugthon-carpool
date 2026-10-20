@@ -2,10 +2,10 @@
 
 三個候選的 Google 地圖樣式，選定一個後匯入 Google Cloud Console。設計依據見 [UI 設計](../../ui-design.md) 第 8.1 節與第 8.6 節。
 
-> [!WARNING]
-> **樣式還要再調整。** 2026-10-19 以路網樣式實測（Map ID 已建立，見專案根目錄 `.env`）：
+> [!NOTE]
+> **已決定採用路網樣式（ui-oi-17，2026-10-20）。** 2026-10-19 以路網樣式實測（Map ID 已建立，見專案根目錄 `.env`）：
 >
-> - 捷運線以各線原本的顏色顯示（綠、藍、棕），`infrastructure.railwayTrack` 設的灰色沒有生效。松山新店線的綠色和共乘路線色很接近，容易誤認。介面已替行程路線加上白色外框（`RoutePolyline`），兩者分得開；雲端樣式仍可再調整。
+> - 捷運線以各線原本的顏色顯示（綠、藍、棕），`infrastructure.railwayTrack` 設的灰色沒有生效。松山新店線的綠色和共乘路線色很接近，容易誤認。介面已替行程路線加上白色外框（`RoutePolyline`），兩者分得開，所以雲端樣式不再調整。
 > - ~~地圖預設的中心與縮放沒有對準整段路線~~：已處理，`RouteMap` 會自動縮放到整段路線，並留出被面板蓋住的空間（2026-10-20）。
 
 檔案使用 Google Cloud Console 的雲端地圖樣式格式（頂層 `variant`，`styles` 裡每條規則用 `id` 指定地圖元素），可以直接貼進樣式編輯器的 JSON 欄位。格式說明見 [JSON reference for cloud-based maps styling](https://developers.google.com/maps/documentation/javascript/cloud-customization/json-reference)。
