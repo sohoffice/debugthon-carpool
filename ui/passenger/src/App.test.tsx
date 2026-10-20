@@ -340,8 +340,12 @@ describe('passenger App', () => {
 
     expect(await screen.findByRole('heading', { name: '要去內科哪裡？' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '查看接近的車' })).toBeDisabled()
+    expect(screen.queryByRole('img', { name: 'Google Maps' })).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('searchbox', { name: '目的地地址' }), { target: { value: '瑞光' } })
+    // Places suggestions on a screen without a map carry the Google Maps logo (attribution policy).
+    expect(await screen.findByRole('img', { name: 'Google Maps' })).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: new RegExp(DESTINATION.name) }))
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'Google Maps' })).not.toBeInTheDocument())
     fireEvent.click(await screen.findByRole('button', { name: STOP.name }))
     fireEvent.click(screen.getByRole('button', { name: '查看接近的車' }))
     expect(await screen.findByText('到 瑞光路 513 巷')).toBeInTheDocument()

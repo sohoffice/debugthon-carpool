@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ApiClient } from '../api/client'
 import type { ParkCheck, Place } from '../api/types'
+import { PlacesAttribution } from '../map/PlacesAttribution'
 import { usePlaceSearch, type PlaceSuggestion } from '../map/usePlaceSearch'
 
 const SEARCH_DELAY_MS = 250
@@ -59,6 +60,8 @@ export function PlaceSearch({ api, value, onChange }: PlaceSearchProps) {
     }
   }
 
+  const shown = editing ? results : []
+
   return (
     <div>
       <input
@@ -75,7 +78,7 @@ export function PlaceSearch({ api, value, onChange }: PlaceSearchProps) {
         </p>
       )}
       <ul aria-label="符合的地點" className="mt-1">
-        {(editing ? results : []).map((s) => (
+        {shown.map((s) => (
           <li key={s.id}>
             <button type="button" disabled={checking} onClick={() => choose(s)} className="flex min-h-12 w-full items-center gap-3 py-1 text-left disabled:opacity-60">
               <span aria-hidden className="size-3.5 shrink-0 rounded-[2px] bg-brand" />
@@ -87,6 +90,8 @@ export function PlaceSearch({ api, value, onChange }: PlaceSearchProps) {
           </li>
         ))}
       </ul>
+      {/* Suggestions come from Google Places and need its attribution (DD-32). */}
+      {shown.length > 0 && <PlacesAttribution />}
     </div>
   )
 }
