@@ -44,6 +44,9 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match seen.cars == '#[1]'
     * match seen.cars[0] contains { trip_id: '#(tripId)', eta_s: '#? _ > 0', seats_available: 3 }
     * match seen.card contains { count: 1, seats_remaining: 3 }
+    # REQ-063, DD-09: the ETA says it is simulated
+    * match seen.cars[0].eta_simulated == true
+    * match seen.card.fastest_eta_simulated == true
 
     # 3. REQ-036: the request is assigned to that driver, one seat held
     * def req = karate.call('classpath:carpool/api/submit-request.feature', { token: pt, body: { pickup_point_id: pickup.id, location: { lat: pickup.lat, lng: pickup.lng }, destination: inPark, stop_ids: [stop.id], tag_filters: [{ tag_id: tagId, intent: 'required' }] } }).response
@@ -66,12 +69,22 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match confirmed.response contains deep { status: 'confirmed', pickup_point: { id: '#(pickup.id)' }, vehicle: '#object', eta_s: '#number', trip: { id: '#(tripId)' } }
     * match doGet(pt, 'api/passenger/requests/current').response.request.id == req.id
     * match doGet(dt, 'api/driver/requests').response contains { pending: '#[0]', passengers: '#[1]' }
+    # REQ-052, REQ-063, DD-31: the car is on the map, not yet at the pickup, and its ETA is marked simulated
+    * match confirmed.response contains { passed_pickup: false, eta_simulated: true }
+    * match confirmed.response.vehicle_position contains { lat: '#(pickup.lat + 500 * 0.000009)', lng: '#(pickup.lng)', heading_deg: null, reported_at: '#string' }
+
+    # 4b. DD-31: the car drives towards the pickup; the passenger sees it move and which way it heads
+    * karate.call('classpath:carpool/api/post-location.feature', { token: dt, lat: pickup.lat + 200 * 0.000009, lng: pickup.lng })
+    * def approaching = doGet(pt, 'api/passenger/requests/' + req.id).response
+    * match approaching.vehicle_position.lat == pickup.lat + 200 * 0.000009
+    * match approaching.vehicle_position.heading_deg == '#number? _ > 179 && _ < 181'
+    * match approaching contains { passed_pickup: false, eta_s: '#? _ < confirmed.response.eta_s' }
 
     # 5. REQ-068, DD-27: the passenger marks boarding and the request becomes boarded
     * def boarded = doPost(pt, 'api/passenger/requests/' + req.id + '/board')
     * match boarded.responseStatus == 200
     * match boarded.response contains { id: '#(req.id)', status: 'boarded', boarded_at: '#string' }
-    * match doGet(pt, 'api/passenger/requests/' + req.id).response contains { status: 'boarded', boarded_at: '#(boarded.response.boarded_at)' }
+    * match doGet(pt, 'api/passenger/requests/' + req.id).response contains { status: 'boarded', boarded_at: '#(boarded.response.boarded_at)', vehicle_position: null, passed_pickup: null }
     * def onBoard = doGet(dt, 'api/driver/requests').response.passengers
     * match onBoard == '#[1]'
     * match onBoard[0] contains { id: '#(req.id)', boarded: true }

@@ -104,11 +104,14 @@ func (s *Server) listDriverRequests(c *gin.Context) {
 // are gone (DD-27).
 type requestStatusView struct {
 	requestView
-	ReassignedCount int          `json:"reassigned_count"` // cars that declined or timed out (REQ-053)
-	PickupPoint     *pickupPoint `json:"pickup_point"`
-	Vehicle         *vehicleView `json:"vehicle"`
-	ETAS            *int         `json:"eta_s"`
-	Trip            *tripView    `json:"trip"`
+	ReassignedCount int              `json:"reassigned_count"` // cars that declined or timed out (REQ-053)
+	PickupPoint     *pickupPoint     `json:"pickup_point"`
+	Vehicle         *vehicleView     `json:"vehicle"`
+	ETAS            *int             `json:"eta_s"`
+	ETASimulated    *bool            `json:"eta_simulated"`    // null without an ETA (REQ-063, DD-31)
+	VehiclePosition *vehiclePosition `json:"vehicle_position"` // confirmed only; null before the first report (DD-31)
+	PassedPickup    *bool            `json:"passed_pickup"`    // confirmed only (DD-31)
+	Trip            *tripView        `json:"trip"`
 }
 
 func (s *Server) loadStatusView(ctx context.Context, id int64) (requestStatusView, error) {
@@ -146,7 +149,13 @@ func (s *Server) loadStatusView(ctx context.Context, id int64) (requestStatusVie
 		return v, err
 	} else if eta != nil {
 		v.ETAS = &eta.DurationS
+		v.ETASimulated = &eta.Simulated
 	}
+	pos, passed, err := s.vehicleTrack(ctx, *v.TripID)
+	if err != nil {
+		return v, err
+	}
+	v.VehiclePosition, v.PassedPickup = pos, &passed
 	if err := s.ensureRoute(ctx, *v.TripID); err != nil {
 		return v, err
 	}

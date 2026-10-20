@@ -33,3 +33,14 @@ func passedPickup(pickup latLng, radiusM, marginM float64, reports []latLng) boo
 	}
 	return false
 }
+
+// bearingDeg is the initial compass bearing from a to b in degrees: due north is 0, clockwise,
+// in [0, 360) (DD-31).
+func bearingDeg(a, b latLng) float64 {
+	rad := math.Pi / 180
+	dLng := (b.Lng - a.Lng) * rad
+	y := math.Sin(dLng) * math.Cos(b.Lat*rad)
+	x := math.Cos(a.Lat*rad)*math.Sin(b.Lat*rad) - math.Sin(a.Lat*rad)*math.Cos(b.Lat*rad)*math.Cos(dLng)
+	deg := math.Atan2(y, x) / rad
+	return math.Mod(deg+360, 360)
+}
