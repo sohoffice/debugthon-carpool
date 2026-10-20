@@ -80,7 +80,7 @@
 | 取消請求改成示意按鈕 | ✅ 已完成 | `CancelButton`：等駕駛確認、已確認、已上車都顯示，按下不呼叫 API（UD-17）；示範後端的取消已刪除 |
 | 請求狀態改用 `main` 的 T13 格式 | ✅ 已完成 | 打開 App 用 `GET /api/passenger/requests/current`，輪詢 `GET /api/passenger/requests/:id`；改配看 `reassigned_count`。上車點、公車站名稱由清單對照；已上車後狀態不再帶車輛與行程，介面保留確認時的車輛，行程以 `GET /api/trips/:id` 補上。車輛位置與 `passed_pickup` 先用前端提案的欄位（只有示範後端提供），T22 完成後照 `DEV.md` 改名；「車已到上車點」依是否已經過上車點判斷，不用 `eta_s` 為 `null` 判斷 |
 | 送出請求改用 `main` 的 T12 格式 | ✅ 已完成 | 本文 `pickup_point_id`、`location`、`destination`、`stop_ids`、`tag_filters`；回傳的 `RequestView` 已是結果，再讀一次請求狀態取得車輛與行程 |
-| 地圖上的車改用後端的方向 | ⬜ 待辦 | DD-31：行進方向由後端計算，介面不自己算。拿掉 `shared/src/map/vehicleMotion.ts` 的 `nextHeading` 以兩個位置推算方向的備援，API 沒給方向時保持原來的方向（UD-15）；欄位等 [#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33) |
+| 地圖上的車改用後端的方向 | ✅ 已完成 | DD-31：行進方向由後端計算，介面不自己算；`nextHeading` 只用 API 的方向，沒有方向時保持原來的方向（UD-15）。接 Go 後端要等 [#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33) 提供欄位 |
 | 已有尚未結束的請求時不能再送出（REQ-069） | ✅ 已完成 | 後端不檢查，只由介面防止：打開 App 時以 `GET /api/passenger/requests/current` 帶出該請求、沒有送出入口；送出前也再查一次，有就直接顯示該請求 |
 
 驗收條件：
