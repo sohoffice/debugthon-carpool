@@ -2,210 +2,214 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"math"
+	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sohoffice/debugthon-carpool/backend/internal/settings"
 )
 
-// HTTP surface of the request flow (requestflow.go). Shapes follow ui/shared/src/api/types.ts.
+// Ride request flow, submission half (REQ-034..REQ-036, REQ-047, REQ-048, REQ-022, DD-12,
+// DD-25). A request is answered at once: rejected, assigned to the first ranked car with a seat
+// held, confirmed (auto-accept), or "no car". Driver response, timeout and reassignment are T13.
 
-type vehicleView struct {
-	Plate       string `json:"plate"`
-	Description string `json:"description"`
+// Request statuses, as in ride_requests.status.
+const (
+	reqSubmitted     = "submitted"
+	reqRejected      = "rejected"
+	reqWaitingDriver = "waiting_driver"
+	reqNoMatch       = "no_match"
+	reqConfirmed     = "confirmed"
+	reqCompleted     = "completed"
+)
+
+// requestTransitions is the state diagram of design 4.12, as far as the stored statuses go.
+var requestTransitions = map[string][]string{
+	reqSubmitted:     {reqRejected, reqWaitingDriver, reqNoMatch},
+	reqWaitingDriver: {reqConfirmed, reqWaitingDriver, reqNoMatch}, // waiting -> waiting: declined or timed out, next car
+	reqConfirmed:     {reqCompleted},
 }
 
-type dropoffView struct {
-	place
-	BusStopID *int64 `json:"bus_stop_id"`
-}
-
-type positionView struct {
-	Lat        float64   `json:"lat"`
-	Lng        float64   `json:"lng"`
-	Heading    *float64  `json:"heading"`
-	ReportedAt time.Time `json:"reported_at"`
-}
-
-type rideView struct {
-	Vehicle      vehicleView   `json:"vehicle"`
-	EtaS         *int          `json:"eta_s"`
-	Dropoff      dropoffView   `json:"dropoff"`
-	Route        *routeView    `json:"route"`
-	Position     *positionView `json:"position"`
-	PassedPickup bool          `json:"passed_pickup"`
-	Simulated    bool          `json:"simulated"`
-}
-
-type rejectReason struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	DistanceM int    `json:"distance_m"`
-}
-
-type alternativeView struct {
-	Mode        string  `json:"mode"`
-	Via         *string `json:"via"`
-	DurationMin int     `json:"duration_min"`
-	Simulated   bool    `json:"simulated"`
-}
-
-type passengerRequestView struct {
-	ID           int64             `json:"id"`
-	Status       string            `json:"status"`
-	PickupPoint  pickupPoint       `json:"pickup_point"`
-	Destination  place             `json:"destination"`
-	Reassigned   bool              `json:"reassigned"`
-	Relaxed      bool              `json:"relaxed"`
-	RejectReason *rejectReason     `json:"reject_reason"`
-	Ride         *rideView         `json:"ride"`
-	Alternatives []alternativeView `json:"alternatives"`
-	CanCancel    bool              `json:"can_cancel"`
-	CreatedAt    time.Time         `json:"created_at"`
-}
-
-type pendingRequestView struct {
-	ID          int64       `json:"id"`
-	PickupPoint pickupPoint `json:"pickup_point"`
-	Dropoff     place       `json:"dropoff"`
-}
-
-type driverPassengerView struct {
-	RequestID int64 `json:"request_id"`
-	Dropoff   place `json:"dropoff"`
-	Boarded   bool  `json:"boarded"`
-}
-
-type driverTripView struct {
-	tripView
-	EndedAt        *time.Time            `json:"ended_at"`
-	PendingRequest *pendingRequestView   `json:"pending_request"`
-	Passengers     []driverPassengerView `json:"passengers"`
-	CompletedCount int                   `json:"completed_count"`
-}
-
-// requestError maps the flow's errors to the API's codes; false when err is not one of them.
-func requestError(c *gin.Context, err error) bool {
-	switch {
-	case errors.Is(err, errRequestActive):
-		apiError(c, http.StatusConflict, "request_active", "已經有進行中的請求")
-	case errors.Is(err, errNotFound):
-		apiError(c, http.StatusNotFound, "not_found", "找不到這個請求")
-	case errors.Is(err, errNotPending):
-		apiError(c, http.StatusConflict, "request_not_pending", "這個請求已經不需要回應")
-	case errors.Is(err, errNotConfirmed):
-		apiError(c, http.StatusConflict, "request_not_confirmed", "這個請求還沒有確認")
-	case errors.Is(err, errCannotCancel):
-		apiError(c, http.StatusConflict, "cannot_cancel", "上車後不能取消請求")
-	case errors.Is(err, errRequestFinished):
-		apiError(c, http.StatusConflict, "request_closed", "這個請求已經結束")
-	default:
-		return false
+func canTransition(from, to string) bool {
+	for _, t := range requestTransitions[from] {
+		if t == to {
+			return true
+		}
 	}
-	return true
+	return false
 }
 
-func requestIDParam(c *gin.Context) (int64, bool) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+// transition moves a request from one status to another, refusing pairs the diagram lacks and
+// requests that are no longer in the expected status. set holds further assignments (with
+// placeholders from $4 on) applied in the same statement.
+func transition(ctx context.Context, db DB, id int64, from, to, set string, args ...any) error {
+	if !canTransition(from, to) {
+		return fmt.Errorf("request %d: transition %s -> %s is not allowed", id, from, to)
+	}
+	if set != "" {
+		set = ", " + set
+	}
+	tag, err := db.Exec(ctx, `UPDATE ride_requests SET status = $3`+set+` WHERE id = $1 AND status = $2`,
+		append([]any{id, from, to}, args...)...)
 	if err != nil {
-		apiError(c, http.StatusBadRequest, "bad_request", "請求編號格式錯誤")
-		return 0, false
+		return err
 	}
-	return id, true
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("request %d is not %s", id, from)
+	}
+	return nil
 }
 
-// ------------------------------------------------------------------ passenger
+// requestLockNamespace is the first key of the advisory locks that serialise submissions.
+const requestLockNamespace = 1201
 
-type submissionBody struct {
+type requestBody struct {
 	PickupPointID *int64 `json:"pickup_point_id"`
-	Destination   *struct {
+	Location      *struct {
+		Lat *float64 `json:"lat"`
+		Lng *float64 `json:"lng"`
+	} `json:"location"`
+	Destination *struct {
 		Name string   `json:"name"`
 		Lat  *float64 `json:"lat"`
 		Lng  *float64 `json:"lng"`
 	} `json:"destination"`
-	AcceptedStopIDs []int64         `json:"accepted_stop_ids"`
-	TagFilters      []tagFilterBody `json:"tag_filters"`
-	Location        *locationBody   `json:"location"`
+	StopIDs    []int64         `json:"stop_ids"`
+	TagFilters []tagFilterBody `json:"tag_filters"`
 }
 
-// postRequest is "送出請求" (REQ-035, REQ-036): the answer is already decided.
-func (s *Server) postRequest(c *gin.Context) {
-	var body submissionBody
-	if err := c.ShouldBindJSON(&body); err != nil || body.PickupPointID == nil || body.Destination == nil ||
-		body.Destination.Name == "" || body.Destination.Lat == nil || body.Destination.Lng == nil || !validTagFilters(body.TagFilters) {
-		apiError(c, http.StatusBadRequest, "invalid_request",
-			"需要 pickup_point_id、destination（name、lat、lng）、accepted_stop_ids、location，tag_filters 的 intent 為 required 或 preferred 且不可重複")
-		return
-	}
-	if body.Location == nil || body.Location.Lat == nil || body.Location.Lng == nil ||
-		math.Abs(*body.Location.Lat) > 90 || math.Abs(*body.Location.Lng) > 180 {
-		apiError(c, http.StatusBadRequest, "invalid_location", "需要有效的 location（lat -90～90、lng -180～180）")
-		return
-	}
-	if len(body.AcceptedStopIDs) == 0 {
-		apiError(c, http.StatusBadRequest, "no_accepted_stops", "至少選一個可以下車的公車站")
-		return
-	}
-	dest := place{Name: body.Destination.Name, Lat: *body.Destination.Lat, Lng: *body.Destination.Lng}
-	if !s.park.Contains(dest.Lat, dest.Lng) {
-		apiError(c, http.StatusBadRequest, "destination_outside_park", "目的地必須在內湖科學園區內")
-		return
-	}
-	var pickupOK bool
-	var stopCount int
-	if err := s.db.QueryRow(c, `SELECT EXISTS (SELECT 1 FROM pickup_points WHERE id = $1), (SELECT count(*) FROM bus_stops WHERE id = ANY($2))`,
-		*body.PickupPointID, body.AcceptedStopIDs).Scan(&pickupOK, &stopCount); err != nil {
-		s.internalError(c, err)
-		return
-	}
-	if !pickupOK {
-		apiError(c, http.StatusBadRequest, "invalid_pickup_point", "上車點必須是預先定義的上車點之一")
-		return
-	}
-	if stopCount != len(uniqueIDs(body.AcceptedStopIDs)) {
-		apiError(c, http.StatusBadRequest, "unknown_bus_stop", "公車站不在清單中")
-		return
-	}
-	if ok, err := s.tagsExist(c, s.db, body.TagFilters); err != nil {
-		s.internalError(c, err)
-		return
-	} else if !ok {
-		apiError(c, http.StatusBadRequest, "invalid_tag", "標籤不在清單中")
-		return
-	}
+// requestView is the immediate answer to a submission (REQ-036).
+type requestView struct {
+	ID                 int64      `json:"id"`
+	Status             string     `json:"status"`
+	Reason             *string    `json:"reason"` // set when rejected or unmatched
+	Message            *string    `json:"message"`
+	Relaxed            bool       `json:"relaxed"` // the car lacks some preferred tag (REQ-047)
+	PickupPointID      int64      `json:"pickup_point_id"`
+	SubmittedLat       float64    `json:"submitted_lat"`
+	SubmittedLng       float64    `json:"submitted_lng"`
+	TripID             *int64     `json:"trip_id"`
+	DropoffBusStopID   *int64     `json:"dropoff_bus_stop_id"` // null: the trip's destination
+	ResponseDeadlineAt *time.Time `json:"response_deadline_at"`
+	ConfirmedAt        *time.Time `json:"confirmed_at"`
+	CreatedAt          time.Time  `json:"created_at"`
+}
 
-	filters := make([]tagFilter, len(body.TagFilters))
-	for i, f := range body.TagFilters {
-		filters[i] = tagFilter{TagID: f.TagID, Intent: f.Intent}
+// requestInput is a validated submission.
+type requestInput struct {
+	PassengerID int64
+	Pickup      pickupPoint
+	At          latLng // where the passenger was when submitting (DD-25)
+	Dest        place
+	StopIDs     []int64
+	Filters     []tagFilter
+}
+
+// submitRequest handles POST /api/passenger/requests.
+func (s *Server) submitRequest(c *gin.Context) {
+	userID := c.GetInt64(ctxUserID)
+	var body requestBody
+	if err := c.ShouldBindJSON(&body); err != nil || body.PickupPointID == nil {
+		apiError(c, http.StatusBadRequest, "invalid_request", "需要 pickup_point_id")
+		return
 	}
-	id, err := s.submitRequest(c, submission{
-		PassengerID: c.GetInt64(ctxUserID), PickupID: *body.PickupPointID, Destination: dest,
-		Stops: uniqueIDs(body.AcceptedStopIDs), Filters: filters, Location: latLng{*body.Location.Lat, *body.Location.Lng},
-	})
-	if requestError(c, err) {
+	in := requestInput{PassengerID: userID}
+	if body.Location == nil || body.Location.Lat == nil || body.Location.Lng == nil ||
+		*body.Location.Lat < -90 || *body.Location.Lat > 90 || *body.Location.Lng < -180 || *body.Location.Lng > 180 {
+		apiError(c, http.StatusBadRequest, "invalid_location", "需要乘客目前的位置 location（lat -90～90、lng -180～180）")
+		return
+	}
+	in.At = latLng{*body.Location.Lat, *body.Location.Lng}
+
+	err := s.db.QueryRow(c, `SELECT id, name, lat, lng, radius_m FROM pickup_points WHERE id = $1`, *body.PickupPointID).
+		Scan(&in.Pickup.ID, &in.Pickup.Name, &in.Pickup.Lat, &in.Pickup.Lng, &in.Pickup.RadiusM)
+	if isNoRows(err) {
+		apiError(c, http.StatusBadRequest, "invalid_pickup_point", "上車點必須是預先定義的上車點之一")
 		return
 	}
 	if err != nil {
 		s.internalError(c, err)
 		return
 	}
-	s.respondRequest(c, http.StatusCreated, id)
-}
 
-// lockedThen runs fn under the assignment lock, so "first one wins" holds between both sides.
-func lockedThen(ctx context.Context, db DB, fn func() error) error {
-	if err := lockAssignments(ctx, db); err != nil {
-		return err
+	// Habitual data fills whatever the body leaves out (REQ-025).
+	var destName *string
+	var destLat, destLng *float64
+	err = s.db.QueryRow(c, `
+		SELECT usual_destination_name, usual_destination_lat, usual_destination_lng
+		  FROM passenger_profiles WHERE user_id = $1`, userID).Scan(&destName, &destLat, &destLng)
+	if err != nil && !isNoRows(err) {
+		s.internalError(c, err)
+		return
 	}
-	return fn()
+	dest := usualPlace(destName, destLat, destLng)
+	if d := body.Destination; d != nil {
+		if d.Lat == nil || d.Lng == nil || *d.Lat < -90 || *d.Lat > 90 || *d.Lng < -180 || *d.Lng > 180 {
+			apiError(c, http.StatusBadRequest, "invalid_request", "destination 需要有效的 lat 與 lng")
+			return
+		}
+		dest = &place{Name: d.Name, Lat: *d.Lat, Lng: *d.Lng}
+	}
+	if dest == nil {
+		apiError(c, http.StatusBadRequest, "destination_required", "需要最終目的地")
+		return
+	}
+	in.Dest = *dest
+
+	in.StopIDs = dedupe(body.StopIDs)
+	if len(in.StopIDs) == 0 {
+		if in.StopIDs, err = s.habitualStopIDs(c, userID); err != nil {
+			s.internalError(c, err)
+			return
+		}
+	} else {
+		var n int
+		if err := s.db.QueryRow(c, `SELECT count(*) FROM bus_stops WHERE id = ANY($1)`, in.StopIDs).Scan(&n); err != nil {
+			s.internalError(c, err)
+			return
+		}
+		if n != len(in.StopIDs) {
+			apiError(c, http.StatusBadRequest, "invalid_stop", "公車站不在清單中")
+			return
+		}
+	}
+	if len(in.StopIDs) == 0 {
+		apiError(c, http.StatusBadRequest, "stops_required", "需要至少一個可接受的下車公車站")
+		return
+	}
+
+	if !validTagFilters(body.TagFilters) {
+		apiError(c, http.StatusBadRequest, "invalid_request", "標籤篩選的意圖需為 required 或 preferred，且同一標籤只能出現一次")
+		return
+	}
+	if len(body.TagFilters) > 0 {
+		if ok, err := s.tagsExist(c, s.db, body.TagFilters); err != nil {
+			s.internalError(c, err)
+			return
+		} else if !ok {
+			apiError(c, http.StatusBadRequest, "invalid_tag", "標籤不在清單中")
+			return
+		}
+	}
+	for _, f := range body.TagFilters {
+		in.Filters = append(in.Filters, tagFilter{TagID: f.TagID, Intent: f.Intent})
+	}
+
+	var view requestView
+	err = s.inTx(c, func(tx DB) (err error) {
+		view, err = s.placeRequest(c, tx, in)
+		return err
+	})
+	if err != nil {
+		s.internalError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, view)
 }
 
-func uniqueIDs(ids []int64) []int64 {
+func dedupe(ids []int64) []int64 {
 	seen := map[int64]bool{}
 	var out []int64
 	for _, id := range ids {
@@ -217,314 +221,214 @@ func uniqueIDs(ids []int64) []int64 {
 	return out
 }
 
-// getMyRequest is the passenger's poll (REQ-053): the latest request, or null.
-func (s *Server) getMyRequest(c *gin.Context) {
-	if err := s.expireRequests(c); err != nil {
-		s.internalError(c, err)
-		return
+// placeRequest runs the whole submission on db, which must be a transaction: the request, its
+// candidates, the seat hold and the status changes commit together (DD-12).
+func (s *Server) placeRequest(ctx context.Context, db DB, in requestInput) (requestView, error) {
+	ts := *s // reads and writes below go through the caller's transaction
+	ts.db = db
+
+	// REQ-048, DD-12: submissions for one pickup point (the whole contention scope, since a trip
+	// has one) queue up before the request id is taken, so id order is hold order even when
+	// ranking is slow. The lock is released when the transaction ends.
+	if _, err := db.Exec(ctx, `SELECT pg_advisory_xact_lock($1, $2)`, requestLockNamespace, int32(in.Pickup.ID)); err != nil {
+		return requestView{}, err
 	}
+
 	var id int64
-	err := s.db.QueryRow(c, `SELECT id FROM ride_requests WHERE passenger_id = $1 ORDER BY id DESC LIMIT 1`, c.GetInt64(ctxUserID)).Scan(&id)
-	if isNoRows(err) {
-		c.JSON(http.StatusOK, gin.H{"request": nil})
-		return
-	}
+	err := db.QueryRow(ctx, `
+		INSERT INTO ride_requests (passenger_id, pickup_point_id, destination_name, destination_lat, destination_lng,
+		                           submitted_lat, submitted_lng)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		in.PassengerID, in.Pickup.ID, in.Dest.Name, in.Dest.Lat, in.Dest.Lng, in.At.Lat, in.At.Lng).Scan(&id)
 	if err != nil {
-		s.internalError(c, err)
-		return
+		return requestView{}, err
 	}
-	s.respondRequest(c, http.StatusOK, id)
-}
+	for _, f := range in.Filters {
+		if _, err := db.Exec(ctx, `INSERT INTO request_tag_filters (request_id, tag_id, intent) VALUES ($1, $2, $3)`,
+			id, f.TagID, f.Intent); err != nil {
+			return requestView{}, err
+		}
+	}
 
-// passengerAction is cancel, board or complete on the caller's own request.
-func (s *Server) passengerAction(action string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id, ok := requestIDParam(c)
-		if !ok {
-			return
+	// REQ-034: too far from the pickup point to ask for a car.
+	limit, err := settings.New(db).Get(ctx, "submit_distance")
+	if err != nil {
+		return requestView{}, err
+	}
+	pickup := latLng{in.Pickup.Lat, in.Pickup.Lng}
+	if d := distanceM(pickup, in.At); d > limit {
+		msg := fmt.Sprintf("你離上車點「%s」約 %.0f 公尺，超過送出請求距離 %.0f 公尺", in.Pickup.Name, d, limit)
+		if err := transition(ctx, db, id, reqSubmitted, reqRejected, ""); err != nil {
+			return requestView{}, err
 		}
-		var owner int64
-		err := s.db.QueryRow(c, `SELECT passenger_id FROM ride_requests WHERE id = $1`, id).Scan(&owner)
-		if isNoRows(err) || (err == nil && owner != c.GetInt64(ctxUserID)) {
-			apiError(c, http.StatusNotFound, "not_found", "找不到這個請求")
-			return
+		return ts.loadRequestView(ctx, id, "too_far", msg)
+	}
+
+	ranked, trips, err := ts.rankForRequest(ctx, in)
+	if err != nil {
+		return requestView{}, err
+	}
+	for i, r := range ranked {
+		if _, err := db.Exec(ctx, `
+			INSERT INTO request_candidates (request_id, rank, trip_id, dropoff_bus_stop_id) VALUES ($1, $2, $3, $4)`,
+			id, i+1, r.TripID, r.DropOff.StopID); err != nil {
+			return requestView{}, err
 		}
+	}
+
+	// REQ-048, DD-12: the first car whose seat can still be held wins; a car filled by an
+	// earlier request in the meantime is skipped, its candidate outcome left empty.
+	for i, r := range ranked {
+		held, err := holdSeat(ctx, db, r.TripID)
 		if err != nil {
-			s.internalError(c, err)
-			return
+			return requestView{}, err
 		}
-		switch action {
-		case "cancel":
-			err = s.cancelRequest(c, id)
-		case "board":
-			err = s.inTx(c, func(db DB) error { return lockedThen(c, db, func() error { return boardRequest(c, db, id) }) })
-		case "complete":
-			err = s.inTx(c, func(db DB) error { return lockedThen(c, db, func() error { return completeRequest(c, db, id) }) })
-		}
-		if requestError(c, err) {
-			return
-		}
-		if err != nil {
-			s.internalError(c, err)
-			return
-		}
-		s.respondRequest(c, http.StatusOK, id)
-	}
-}
-
-func (s *Server) respondRequest(c *gin.Context, status int, id int64) {
-	v, err := s.loadPassengerRequest(c, id)
-	if err != nil {
-		s.internalError(c, err)
-		return
-	}
-	c.JSON(status, gin.H{"request": v})
-}
-
-// loadPassengerRequest builds what the passenger sees about a request.
-func (s *Server) loadPassengerRequest(ctx context.Context, id int64) (passengerRequestView, error) {
-	var v passengerRequestView
-	var tripID, stopID *int64
-	var submitted latLng
-	err := s.db.QueryRow(ctx, `
-		SELECT r.id, r.status, p.id, p.name, p.lat, p.lng, p.radius_m, r.destination_name, r.destination_lat, r.destination_lng,
-		       r.relaxed, r.trip_id, r.dropoff_bus_stop_id, COALESCE(r.submitted_lat, 0), COALESCE(r.submitted_lng, 0), r.created_at,
-		       EXISTS (SELECT 1 FROM request_candidates c WHERE c.request_id = r.id AND c.outcome IN ('declined', 'timed_out'))
-		  FROM ride_requests r JOIN pickup_points p ON p.id = r.pickup_point_id WHERE r.id = $1`, id).
-		Scan(&v.ID, &v.Status, &v.PickupPoint.ID, &v.PickupPoint.Name, &v.PickupPoint.Lat, &v.PickupPoint.Lng, &v.PickupPoint.RadiusM,
-			&v.Destination.Name, &v.Destination.Lat, &v.Destination.Lng, &v.Relaxed, &tripID, &stopID,
-			&submitted.Lat, &submitted.Lng, &v.CreatedAt, &v.Reassigned)
-	if err != nil {
-		return v, err
-	}
-	v.Alternatives = []alternativeView{}
-	pickup := latLng{v.PickupPoint.Lat, v.PickupPoint.Lng}
-
-	switch v.Status {
-	case statusRejected:
-		limit, err := settings.New(s.db).Get(ctx, "submit_distance")
-		if err != nil {
-			return v, err
-		}
-		d := int(math.Round(distanceM(pickup, submitted)))
-		v.RejectReason = &rejectReason{Code: "too_far", DistanceM: d,
-			Message: fmt.Sprintf("你離%s約 %d 公尺，走到 %d 公尺內再送出。", v.PickupPoint.Name, d, int(limit))}
-	case statusNoMatch:
-		// Walking is always possible (REQ-051); bus alternatives need route data the backend does not have yet.
-		walk, err := s.walks.Walk(ctx, pickup, latLng{v.Destination.Lat, v.Destination.Lng})
-		if err != nil {
-			return v, err
-		}
-		v.Alternatives = append(v.Alternatives, alternativeView{Mode: "walk", DurationMin: int(math.Ceil(float64(walk.DurationS) / 60)), Simulated: walk.Simulated})
-	}
-
-	if tripID != nil && (v.Status == statusConfirmed || v.Status == statusBoarded || v.Status == statusCompleted) {
-		ride, err := s.loadRide(ctx, *tripID, stopID, v.Status)
-		if err != nil {
-			return v, err
-		}
-		v.Ride = ride
-		v.CanCancel = v.Status == statusConfirmed && !ride.PassedPickup
-	}
-	if v.Status == statusWaitingDriver {
-		v.CanCancel = true
-	}
-	return v, nil
-}
-
-// loadRide is the assigned car as the passenger sees it (REQ-052): the car, the ETA and position
-// while it approaches, where to get off and the route. After boarding: no ETA or position (REQ-068).
-func (s *Server) loadRide(ctx context.Context, tripID int64, stopID *int64, status string) (*rideView, error) {
-	if err := s.ensureRoute(ctx, tripID); err != nil {
-		return nil, err
-	}
-	trip, err := s.loadTrip(ctx, tripID)
-	if err != nil {
-		return nil, err
-	}
-	var simulated bool
-	ride := &rideView{Route: trip.Route, PassedPickup: trip.PassedPickup}
-	err = s.db.QueryRow(ctx, `
-		SELECT COALESCE(v.plate, '—'), COALESCE(v.description, ''), t.simulated
-		  FROM trips t LEFT JOIN vehicles v ON v.user_id = t.driver_id WHERE t.id = $1`, tripID).
-		Scan(&ride.Vehicle.Plate, &ride.Vehicle.Description, &simulated)
-	if err != nil {
-		return nil, err
-	}
-	ride.Simulated = simulated || (trip.Route != nil && trip.Route.Simulated)
-
-	ride.Dropoff = dropoffView{place: trip.Destination, BusStopID: stopID}
-	if stopID != nil {
-		if err := s.db.QueryRow(ctx, `SELECT name, lat, lng FROM bus_stops WHERE id = $1`, *stopID).
-			Scan(&ride.Dropoff.Name, &ride.Dropoff.Lat, &ride.Dropoff.Lng); err != nil {
-			return nil, err
-		}
-	}
-
-	if status != statusConfirmed {
-		return ride, nil
-	}
-	if !trip.PassedPickup {
-		eta, err := s.vehicleETA(ctx, tripID)
-		if err != nil {
-			return nil, err
-		}
-		if eta != nil {
-			ride.EtaS = &eta.DurationS
-			ride.Simulated = ride.Simulated || eta.Simulated
-		}
-	}
-	ride.Position, err = s.carPosition(ctx, tripID)
-	return ride, err
-}
-
-// carPosition is the driver's latest report on the trip with the heading taken from the one
-// before it; a move under 5 m gives no heading, so noise cannot spin the car (UD-15).
-func (s *Server) carPosition(ctx context.Context, tripID int64) (*positionView, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT r.lat, r.lng, r.reported_at FROM location_reports r JOIN activities a ON a.id = r.activity_id
-		 WHERE a.trip_id = $1 AND a.role = 'driver' ORDER BY r.id DESC LIMIT 2`, tripID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var pts []positionView
-	for rows.Next() {
-		var p positionView
-		if err := rows.Scan(&p.Lat, &p.Lng, &p.ReportedAt); err != nil {
-			return nil, err
-		}
-		pts = append(pts, p)
-	}
-	if err := rows.Err(); err != nil || len(pts) == 0 {
-		return nil, err
-	}
-	latest := pts[0]
-	if len(pts) == 2 {
-		from, to := latLng{pts[1].Lat, pts[1].Lng}, latLng{latest.Lat, latest.Lng}
-		if distanceM(from, to) >= 5 {
-			h := math.Round(bearingDeg(from, to))
-			latest.Heading = &h
-		}
-	}
-	return &latest, nil
-}
-
-// bearingDeg is the direction from a to b, degrees clockwise from north.
-func bearingDeg(a, b latLng) float64 {
-	rad := math.Pi / 180
-	y := math.Sin((b.Lng-a.Lng)*rad) * math.Cos(b.Lat*rad)
-	x := math.Cos(a.Lat*rad)*math.Sin(b.Lat*rad) - math.Sin(a.Lat*rad)*math.Cos(b.Lat*rad)*math.Cos((b.Lng-a.Lng)*rad)
-	return math.Mod(math.Atan2(y, x)/rad+360, 360)
-}
-
-// ------------------------------------------------------------------ driver
-
-// getDriverTrip is the driver's poll (DD-04): the running trip, else the latest one, with the
-// request waiting for an answer, the confirmed passengers and how many rides it finished.
-func (s *Server) getDriverTrip(c *gin.Context) {
-	if err := s.expireRequests(c); err != nil {
-		s.internalError(c, err)
-		return
-	}
-	s.respondDriverTrip(c)
-}
-
-func (s *Server) respondDriverTrip(c *gin.Context) {
-	var id int64
-	err := s.db.QueryRow(c, `
-		SELECT id FROM trips WHERE driver_id = $1 ORDER BY (status = 'active') DESC, id DESC LIMIT 1`, c.GetInt64(ctxUserID)).Scan(&id)
-	if isNoRows(err) {
-		c.JSON(http.StatusOK, gin.H{"trip": nil})
-		return
-	}
-	if err != nil {
-		s.internalError(c, err)
-		return
-	}
-	v, err := s.loadDriverTrip(c, id)
-	if err != nil {
-		s.internalError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"trip": v})
-}
-
-func (s *Server) loadDriverTrip(ctx context.Context, id int64) (driverTripView, error) {
-	var v driverTripView
-	if err := s.ensureRoute(ctx, id); err != nil {
-		return v, err
-	}
-	trip, err := s.loadTrip(ctx, id)
-	if err != nil {
-		return v, err
-	}
-	v.tripView = trip
-	v.Passengers = []driverPassengerView{}
-	if err := s.db.QueryRow(ctx, `
-		SELECT t.ended_at, (SELECT count(*) FROM service_records r WHERE r.trip_id = t.id) FROM trips t WHERE t.id = $1`, id).
-		Scan(&v.EndedAt, &v.CompletedCount); err != nil {
-		return v, err
-	}
-	rows, err := s.db.Query(ctx, `
-		SELECT r.id, r.status, COALESCE(b.name, t.destination_name), COALESCE(b.lat, t.destination_lat), COALESCE(b.lng, t.destination_lng)
-		  FROM ride_requests r JOIN trips t ON t.id = r.trip_id LEFT JOIN bus_stops b ON b.id = r.dropoff_bus_stop_id
-		 WHERE r.trip_id = $1 AND r.status IN ('waiting_driver', 'confirmed', 'boarded') ORDER BY r.id`, id)
-	if err != nil {
-		return v, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var reqID int64
-		var status string
-		var drop place
-		if err := rows.Scan(&reqID, &status, &drop.Name, &drop.Lat, &drop.Lng); err != nil {
-			return v, err
-		}
-		if status == statusWaitingDriver {
-			if v.PendingRequest == nil {
-				v.PendingRequest = &pendingRequestView{ID: reqID, PickupPoint: trip.PickupPoint, Dropoff: drop}
-			}
+		if !held {
 			continue
 		}
-		v.Passengers = append(v.Passengers, driverPassengerView{RequestID: reqID, Dropoff: drop, Boarded: status == statusBoarded})
+		return ts.assign(ctx, id, i+1, r, relaxedFor(in.Filters, tripByID(trips, r.TripID).Tags))
 	}
-	return v, rows.Err()
+	if err := transition(ctx, db, id, reqSubmitted, reqNoMatch, ""); err != nil {
+		return requestView{}, err
+	}
+	return ts.loadRequestView(ctx, id, "no_match", "目前沒有可搭的車")
 }
 
-// driverAction is accept, decline, board or complete on a request assigned to the caller's trip.
-func (s *Server) driverAction(action string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id, ok := requestIDParam(c)
-		if !ok {
-			return
-		}
-		driverID := c.GetInt64(ctxUserID)
-		var err error
-		switch action {
-		case "accept", "decline":
-			err = s.answerRequest(c, id, driverID, action == "accept")
-		case "board", "complete":
-			err = s.inTx(c, func(db DB) error {
-				if err := lockAssignments(c, db); err != nil {
-					return err
-				}
-				if _, _, err := driverRequest(c, db, id, driverID); err != nil {
-					return err
-				}
-				if action == "board" {
-					return boardRequest(c, db, id)
-				}
-				return completeRequest(c, db, id)
-			})
-		}
-		if requestError(c, err) {
-			return
-		}
-		if err != nil {
-			s.internalError(c, err)
-			return
-		}
-		s.respondDriverTrip(c)
+// assign records the held seat on the request and, when the trip auto-accepts, confirms it at
+// once (REQ-022).
+func (s *Server) assign(ctx context.Context, id int64, rank int, r rankedTrip, relaxed bool) (requestView, error) {
+	timeout, err := settings.New(s.db).Get(ctx, "driver_confirm_timeout")
+	if err != nil {
+		return requestView{}, err
 	}
+	err = transition(ctx, s.db, id, reqSubmitted, reqWaitingDriver,
+		`trip_id = $4, dropoff_bus_stop_id = $5, relaxed = $6, response_deadline_at = now() + make_interval(secs => $7)`,
+		r.TripID, r.DropOff.StopID, relaxed, timeout)
+	if err != nil {
+		return requestView{}, err
+	}
+
+	var auto bool
+	var passengerID int64
+	if err := s.db.QueryRow(ctx, `SELECT t.auto_accept, q.passenger_id FROM trips t, ride_requests q
+		 WHERE t.id = $1 AND q.id = $2`, r.TripID, id).Scan(&auto, &passengerID); err != nil {
+		return requestView{}, err
+	}
+	if !auto {
+		return s.loadRequestView(ctx, id, "", "")
+	}
+
+	if ok, err := confirmSeat(ctx, s.db, r.TripID); err != nil || !ok {
+		if err == nil {
+			err = fmt.Errorf("trip %d lost the seat held for request %d", r.TripID, id)
+		}
+		return requestView{}, err
+	}
+	if err := transition(ctx, s.db, id, reqWaitingDriver, reqConfirmed, `confirmed_at = now(), response_deadline_at = NULL`); err != nil {
+		return requestView{}, err
+	}
+	if _, err := s.db.Exec(ctx, `UPDATE request_candidates SET outcome = 'accepted' WHERE request_id = $1 AND rank = $2`, id, rank); err != nil {
+		return requestView{}, err
+	}
+	// DD-25: the passenger's latest activity now belongs to this trip. Only a passenger activity
+	// not yet linked qualifies: a driver activity (an account with both roles) or an activity of
+	// an earlier ride must keep its trip.
+	if _, err := s.db.Exec(ctx, `
+		UPDATE activities SET trip_id = $2
+		 WHERE id = (SELECT id FROM activities WHERE user_id = $1 ORDER BY id DESC LIMIT 1)
+		   AND role = 'passenger' AND trip_id IS NULL`, passengerID, r.TripID); err != nil {
+		return requestView{}, err
+	}
+	return s.loadRequestView(ctx, id, "", "")
+}
+
+// rankForRequest screens and ranks the cars at the pickup point with the matching engine
+// (DD-10, DD-11). It also returns the trips as screened, for their tags.
+func (s *Server) rankForRequest(ctx context.Context, in requestInput) ([]rankedTrip, []matchTrip, error) {
+	params, err := loadMatchParams(ctx, s.db)
+	if err != nil {
+		return nil, nil, err
+	}
+	myTags, err := s.userTagIDs(ctx, in.PassengerID)
+	if err != nil {
+		return nil, nil, err
+	}
+	trips, err := s.loadMatchTrips(ctx, in.Pickup.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	need := map[int64]bool{}
+	for _, id := range in.StopIDs {
+		need[id] = true
+	}
+	for _, t := range trips {
+		for _, id := range t.RouteStops {
+			need[id] = true
+		}
+	}
+	stops := map[int64]latLng{}
+	rows, err := s.db.Query(ctx, `SELECT id, lat, lng FROM bus_stops`)
+	if err != nil {
+		return nil, nil, err
+	}
+	for rows.Next() {
+		var id int64
+		var p latLng
+		if err := rows.Scan(&id, &p.Lat, &p.Lng); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		if need[id] {
+			stops[id] = p
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	req := matchRequest{PickupPointID: in.Pickup.ID, Destination: latLng{in.Dest.Lat, in.Dest.Lng},
+		AcceptedStops: in.StopIDs, Filters: in.Filters, Tags: myTags}
+	ranked, failed := rankRequest(ctx, s.routes, s.walks, params, req, latLng{in.Pickup.Lat, in.Pickup.Lng}, stops, trips)
+	for _, f := range failed {
+		log.Printf("request: trip %d left out: %v", f.TripID, f.Err)
+	}
+	return ranked, trips, nil
+}
+
+func tripByID(trips []matchTrip, id int64) matchTrip {
+	for _, t := range trips {
+		if t.ID == id {
+			return t
+		}
+	}
+	return matchTrip{}
+}
+
+// relaxedFor reports whether the car lacks any of the passenger's preferred tags (REQ-047).
+func relaxedFor(filters []tagFilter, carTags []int64) bool {
+	have := make(map[int64]bool, len(carTags))
+	for _, id := range carTags {
+		have[id] = true
+	}
+	for _, f := range filters {
+		if f.Intent == "preferred" && !have[f.TagID] {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) loadRequestView(ctx context.Context, id int64, reason, message string) (requestView, error) {
+	var v requestView
+	err := s.db.QueryRow(ctx, `
+		SELECT id, status, relaxed, pickup_point_id, submitted_lat, submitted_lng, trip_id, dropoff_bus_stop_id,
+		       response_deadline_at, confirmed_at, created_at
+		  FROM ride_requests WHERE id = $1`, id).Scan(&v.ID, &v.Status, &v.Relaxed, &v.PickupPointID,
+		&v.SubmittedLat, &v.SubmittedLng, &v.TripID, &v.DropoffBusStopID, &v.ResponseDeadlineAt, &v.ConfirmedAt, &v.CreatedAt)
+	if reason != "" {
+		v.Reason, v.Message = &reason, &message
+	}
+	return v, err
 }

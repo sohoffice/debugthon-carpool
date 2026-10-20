@@ -29,7 +29,6 @@ func main() {
 		log.Fatal(err)
 	}
 	deps := server.Deps{Park: boundary}
-	go server.RunTimeouts(context.Background(), pool, deps)
 	if err := server.NewRouter(pool, deps).Run(addr); err != nil {
 		log.Fatal(err)
 	}

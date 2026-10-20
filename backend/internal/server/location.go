@@ -108,30 +108,8 @@ func (s *Server) reportLocation(c *gin.Context) {
 			return
 		}
 		r.PassedPickup = &passed
-		if passed {
-			if err := s.endTripIfArrived(c, *act.TripID, latLng{r.Lat, r.Lng}); err != nil {
-				s.internalError(c, err)
-				return
-			}
-		}
 	}
 	c.JSON(http.StatusCreated, r)
-}
-
-// arrivalRadiusM: a car this close to its destination, after the pickup point, has arrived.
-const arrivalRadiusM = 50
-
-// endTripIfArrived ends the trip once the car reaches its destination (docs/ui-design.md UD-16),
-// so the driver needs no "end trip" button while driving (REQ-066).
-func (s *Server) endTripIfArrived(c *gin.Context, tripID int64, at latLng) error {
-	var dest latLng
-	var active bool
-	err := s.db.QueryRow(c, `SELECT destination_lat, destination_lng, status = 'active' FROM trips WHERE id = $1`, tripID).
-		Scan(&dest.Lat, &dest.Lng, &active)
-	if err != nil || !active || distanceM(at, dest) > arrivalRadiusM {
-		return err
-	}
-	return s.endTrip(c, tripID)
 }
 
 // updatePassedPickup re-evaluates the driver's report history on the trip and

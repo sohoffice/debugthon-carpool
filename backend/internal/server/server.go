@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -33,41 +32,19 @@ type Server struct {
 type Deps struct {
 	Park   *park.Boundary // 內湖科學園區 boundary, for checking destinations
 	Routes RouteProvider  // plans the pickup -> destination route; nil means the simulated straight line
-	Walks  WalkProvider   // walking times for ranking drop-offs; nil means the simulated straight line
-}
-
-func newServer(db DB, deps Deps) *Server {
-	s := &Server{db: db, park: deps.Park, routes: deps.Routes, walks: deps.Walks}
-	if s.routes == nil {
-		s.routes = straightRoute{}
-	}
-	if s.walks == nil {
-		s.walks = straightWalk{}
-	}
-	return s
-}
-
-// RunTimeouts moves requests whose driver did not answer in time to the next car, every second
-// until ctx ends (DD-13). Polls also run the same check, so a missed tick only delays it.
-func RunTimeouts(ctx context.Context, db DB, deps Deps) {
-	s := newServer(db, deps)
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := s.expireRequests(ctx); err != nil && ctx.Err() == nil {
-				log.Printf("request timeouts: %v", err)
-			}
-		}
-	}
+	Walks  WalkProvider   // estimates the walk from a drop-off to the destination; nil means the simulated straight line
 }
 
 // NewRouter builds the HTTP router with all API routes registered.
 func NewRouter(db DB, deps Deps) *gin.Engine {
-	s := newServer(db, deps)
+	s := &Server{db: db, park: deps.Park, routes: deps.Routes}
+	if s.routes == nil {
+		s.routes = straightRoute{}
+	}
+	s.walks = deps.Walks
+	if s.walks == nil {
+		s.walks = straightWalk{}
+	}
 
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
@@ -79,7 +56,6 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 
 	api := r.Group("/api")
 	api.GET("/ping", ping)
-	api.POST("/demo/reset", s.resetDemo)
 
 	// Any authenticated role.
 	authed := api.Group("", s.authenticate)
@@ -93,27 +69,16 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	authed.POST("/location", s.reportLocation)
 	authed.GET("/me/location-reports", s.listMyLocationReports)
 	authed.GET("/trips/:id", s.getTrip)
-	authed.GET("/places", s.searchPlaces)
 
 	driver := authed.Group("/driver", requireRole(roleDriver))
 	driver.GET("/profile", s.getDriverProfile)
 	driver.POST("/trips", s.depart)
 	driver.GET("/trips/current", s.currentTrip)
 	driver.GET("/trips/defaults", s.tripDefaults)
-	driver.POST("/route-preview", s.previewRoute)
-	driver.GET("/trip", s.getDriverTrip)
-	for _, action := range []string{"accept", "decline", "board", "complete"} {
-		driver.POST("/requests/:id/"+action, s.driverAction(action))
-	}
-
 	passenger := authed.Group("/passenger", requireRole(rolePassenger))
 	passenger.GET("/profile", s.getPassengerProfile)
 	passenger.GET("/supply", s.getSupply)
-	passenger.POST("/requests", s.postRequest)
-	passenger.GET("/request", s.getMyRequest)
-	for _, action := range []string{"cancel", "board", "complete"} {
-		passenger.POST("/requests/:id/"+action, s.passengerAction(action))
-	}
+	passenger.POST("/requests", s.submitRequest)
 
 	return r
 }

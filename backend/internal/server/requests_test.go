@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,683 +15,748 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Request flow tests (T12, T13). They use 台北大巨蛋, where the demo seed has no cars, so only the
-// trips a test makes take part.
+func TestRequestTransitions(t *testing.T) {
+	statuses := []string{reqSubmitted, reqRejected, reqWaitingDriver, reqNoMatch, reqConfirmed, reqCompleted}
+	allowed := map[[2]string]bool{
+		{reqSubmitted, reqRejected}:          true, // beyond the submit distance
+		{reqSubmitted, reqWaitingDriver}:     true, // assigned to the first ranked car
+		{reqSubmitted, reqNoMatch}:           true, // no car passes screening
+		{reqWaitingDriver, reqConfirmed}:     true, // driver confirms / auto-accept
+		{reqWaitingDriver, reqWaitingDriver}: true, // declined or timed out: next car
+		{reqWaitingDriver, reqNoMatch}:       true, // no car left in the ranking
+		{reqConfirmed, reqCompleted}:         true,
+	}
+	for _, from := range statuses {
+		for _, to := range statuses {
+			if got := canTransition(from, to); got != allowed[[2]string{from, to}] {
+				t.Errorf("canTransition(%s, %s) = %v, want %v", from, to, got, !got)
+			}
+		}
+	}
+}
+
+func TestTransitionRefusesForbiddenAndStaleMoves(t *testing.T) {
+	e := newSupplyEnv(t)
+	r := e.submit(t, e.near(), nil)
+	ctx := context.Background()
+	if err := transition(ctx, e.tx, r.ID, reqRejected, reqConfirmed, ""); err == nil {
+		t.Error("rejected -> confirmed was allowed")
+	}
+	// The request is waiting_driver or no_match, not submitted any more: a stale move changes nothing.
+	if err := transition(ctx, e.tx, r.ID, reqSubmitted, reqRejected, ""); err == nil {
+		t.Error("a request that left submitted was moved from submitted")
+	}
+}
 
 type requestResp struct {
-	ID           int64  `json:"id"`
-	Status       string `json:"status"`
-	Reassigned   bool   `json:"reassigned"`
-	Relaxed      bool   `json:"relaxed"`
-	CanCancel    bool   `json:"can_cancel"`
-	RejectReason *struct {
-		Code      string `json:"code"`
-		DistanceM int    `json:"distance_m"`
-	} `json:"reject_reason"`
-	Ride *struct {
-		Vehicle struct {
-			Plate string `json:"plate"`
-		} `json:"vehicle"`
-		EtaS     *int `json:"eta_s"`
-		Position *struct {
-			Lat float64 `json:"lat"`
-		} `json:"position"`
-		Dropoff struct {
-			Name      string `json:"name"`
-			BusStopID *int64 `json:"bus_stop_id"`
-		} `json:"dropoff"`
-		Route *struct {
-			Polyline string `json:"polyline"`
-		} `json:"route"`
-	} `json:"ride"`
-	Alternatives []struct {
-		Mode        string `json:"mode"`
-		DurationMin int    `json:"duration_min"`
-	} `json:"alternatives"`
+	ID                 int64      `json:"id"`
+	Status             string     `json:"status"`
+	Reason             *string    `json:"reason"`
+	Message            *string    `json:"message"`
+	Relaxed            bool       `json:"relaxed"`
+	PickupPointID      int64      `json:"pickup_point_id"`
+	SubmittedLat       float64    `json:"submitted_lat"`
+	SubmittedLng       float64    `json:"submitted_lng"`
+	TripID             *int64     `json:"trip_id"`
+	DropoffBusStopID   *int64     `json:"dropoff_bus_stop_id"`
+	ResponseDeadlineAt *time.Time `json:"response_deadline_at"`
+	ConfirmedAt        *time.Time `json:"confirmed_at"`
 }
 
-type driverTripResp struct {
-	ID             int64      `json:"id"`
-	Status         string     `json:"status"`
-	EndedAt        *time.Time `json:"ended_at"`
-	CompletedCount int        `json:"completed_count"`
-	PendingRequest *struct {
-		ID int64 `json:"id"`
-	} `json:"pending_request"`
-	Passengers []struct {
-		RequestID int64 `json:"request_id"`
-		Boarded   bool  `json:"boarded"`
-	} `json:"passengers"`
-}
+// near is the passenger standing at the pickup point.
+func (e *supplyEnv) near() latLng { return e.pickup }
 
-var flowDest = place{Name: "瑞光路 內科大樓 A", Lat: 25.0768, Lng: 121.5738}
-
-type flowPickup struct {
-	id  int64
-	pos latLng
-}
-
-func domePickup(t *testing.T, db DB) flowPickup {
-	t.Helper()
-	var p flowPickup
-	if err := db.QueryRow(context.Background(), `SELECT id, lat, lng FROM pickup_points WHERE name = '台北大巨蛋'`).
-		Scan(&p.id, &p.pos.Lat, &p.pos.Lng); err != nil {
-		t.Fatalf("no seeded pickup point 台北大巨蛋: %v", err)
-	}
-	return p
-}
-
-func anyStop(t *testing.T, db DB) int64 {
-	t.Helper()
-	var id int64
-	if err := db.QueryRow(context.Background(), `SELECT min(id) FROM bus_stops`).Scan(&id); err != nil {
-		t.Fatal(err)
-	}
-	return id
-}
-
-// flowTrip departs a fresh driver at 台北大巨蛋 and reports the car metresAway south of it, so
-// the trip has an ETA and has not passed the pickup point.
-func flowTrip(t *testing.T, tx pgx.Tx, capacity int, autoAccept bool, metresAway float64) tripFixture {
-	t.Helper()
-	p := domePickup(t, tx)
-	f := tripFixture{pickup: p.pos, radiusM: 80}
-	f.driverID, f.token = newUser(t, tx, roleDriver)
-	body := `{"pickup_point_id":` + itoa(p.id) + `,"destination":{"name":"` + flowDest.Name + `","lat":` + ftoa(flowDest.Lat) +
-		`,"lng":` + ftoa(flowDest.Lng) + `},"capacity":` + strconv.Itoa(capacity) + `,"auto_accept":` + strconv.FormatBool(autoAccept) + `}`
-	w := call(t, tx, http.MethodPost, "/api/driver/trips", f.token, body)
-	wantStatus(t, w, http.StatusCreated, "")
-	f.id = decode[tripResp](t, w).ID
-	report(t, tx, f.token, offsetM(p.pos, -metresAway))
-	return f
-}
-
-func submitBody(pickupID, stopID int64, at latLng, extra string) string {
-	b := `{"pickup_point_id":` + itoa(pickupID) + `,"destination":{"name":"` + flowDest.Name + `","lat":` + ftoa(flowDest.Lat) +
-		`,"lng":` + ftoa(flowDest.Lng) + `},"accepted_stop_ids":[` + itoa(stopID) + `],"tag_filters":[],"location":{"lat":` +
-		ftoa(at.Lat) + `,"lng":` + ftoa(at.Lng) + `}`
+// body builds a submission from the env's passenger; extra is spliced in as further JSON members.
+func (e *supplyEnv) body(at latLng, extra string) string {
+	b := fmt.Sprintf(`{"pickup_point_id":%d,"location":{"lat":%s,"lng":%s},"destination":{"name":"目的地","lat":%s,"lng":%s},"stop_ids":[%d]`,
+		e.pickupID, ftoa(at.Lat), ftoa(at.Lng), ftoa(e.dest.Lat), ftoa(e.dest.Lng), e.stopID)
 	if extra != "" {
 		b += "," + extra
 	}
 	return b + "}"
 }
 
-// passengerAt makes a fresh passenger who has taken part (DD-25).
-func passengerAt(t *testing.T, tx pgx.Tx) (int64, string) {
+// submit sends a request as the env's passenger and expects 201.
+func (e *supplyEnv) submit(t *testing.T, at latLng, extra *string) requestResp {
 	t.Helper()
-	id, token := newUser(t, tx, rolePassenger)
-	declare(t, tx, token)
-	return id, token
+	x := ""
+	if extra != nil {
+		x = *extra
+	}
+	return e.submitAs(t, e.token, e.body(at, x))
 }
 
-func submit(t *testing.T, tx pgx.Tx, token string, metresFromPickup float64) requestResp {
+func (e *supplyEnv) submitAs(t *testing.T, token, body string) requestResp {
 	t.Helper()
-	p := domePickup(t, tx)
-	w := call(t, tx, http.MethodPost, "/api/passenger/requests", token, submitBody(p.id, anyStop(t, tx), offsetM(p.pos, metresFromPickup), ""))
+	w := call(t, e.tx, http.MethodPost, "/api/passenger/requests", token, body)
 	wantStatus(t, w, http.StatusCreated, "")
-	return decode[struct {
-		Request requestResp `json:"request"`
-	}](t, w).Request
+	return decode[requestResp](t, w)
 }
 
-func myRequest(t *testing.T, tx pgx.Tx, token string) requestResp {
+func (e *supplyEnv) seats(t *testing.T, tripID int64) (held, confirmed int) {
 	t.Helper()
-	w := call(t, tx, http.MethodGet, "/api/passenger/request", token, "")
-	wantStatus(t, w, http.StatusOK, "")
-	return decode[struct {
-		Request requestResp `json:"request"`
-	}](t, w).Request
-}
-
-func driverTrip(t *testing.T, tx pgx.Tx, token string) driverTripResp {
-	t.Helper()
-	w := call(t, tx, http.MethodGet, "/api/driver/trip", token, "")
-	wantStatus(t, w, http.StatusOK, "")
-	return decode[struct {
-		Trip driverTripResp `json:"trip"`
-	}](t, w).Trip
-}
-
-func act(t *testing.T, tx pgx.Tx, token, role string, requestID int64, action string, status int, code string) {
-	t.Helper()
-	w := call(t, tx, http.MethodPost, "/api/"+role+"/requests/"+itoa(requestID)+"/"+action, token, "")
-	wantStatus(t, w, status, code)
-}
-
-func linkedTrip(t *testing.T, db DB, passengerID int64) *int64 {
-	t.Helper()
-	var trip *int64
-	if err := db.QueryRow(context.Background(), `SELECT trip_id FROM activities WHERE user_id = $1 ORDER BY id DESC LIMIT 1`, passengerID).
-		Scan(&trip); err != nil {
+	if err := e.tx.QueryRow(context.Background(), `SELECT seats_held, seats_confirmed FROM trips WHERE id = $1`, tripID).
+		Scan(&held, &confirmed); err != nil {
 		t.Fatal(err)
 	}
-	return trip
+	return
 }
 
-func TestRequestIsHeldThenConfirmedByTheDriver(t *testing.T) {
-	tx := testTx(t)
-	trip := flowTrip(t, tx, 3, false, 400)
-	passengerID, token := passengerAt(t, tx)
-
-	r := submit(t, tx, token, 20)
-	if r.Status != statusWaitingDriver || !r.CanCancel || r.Ride != nil {
-		t.Fatalf("submitted = %+v, want waiting_driver with no ride yet", r)
+func str(s *string) string {
+	if s == nil {
+		return ""
 	}
-	if h, c := seatCounts(t, tx, trip.id); h != 1 || c != 0 {
-		t.Fatalf("held/confirmed = %d/%d, want the seat held (DD-12)", h, c)
-	}
-	d := driverTrip(t, tx, trip.token)
-	if d.PendingRequest == nil || d.PendingRequest.ID != r.ID {
-		t.Fatalf("driver sees %+v, want request %d pending", d, r.ID)
-	}
-
-	act(t, tx, trip.token, "driver", r.ID, "accept", http.StatusOK, "")
-	got := myRequest(t, tx, token)
-	if got.Status != statusConfirmed || got.Ride == nil || got.Ride.EtaS == nil || *got.Ride.EtaS <= 0 || got.Ride.Position == nil ||
-		got.Ride.Route == nil || got.Ride.Dropoff.Name != flowDest.Name {
-		t.Fatalf("confirmed = %+v, want the car, ETA, position, route and drop-off (REQ-052)", got)
-	}
-	if h, c := seatCounts(t, tx, trip.id); h != 0 || c != 1 {
-		t.Fatalf("held/confirmed = %d/%d, want 0/1", h, c)
-	}
-	if lt := linkedTrip(t, tx, passengerID); lt == nil || *lt != trip.id {
-		t.Fatalf("passenger activity trip = %v, want %d (DD-25)", lt, trip.id)
-	}
-	if d := driverTrip(t, tx, trip.token); d.PendingRequest != nil || len(d.Passengers) != 1 || d.Passengers[0].Boarded {
-		t.Fatalf("driver sees %+v, want one confirmed passenger not on board", d)
-	}
-	act(t, tx, trip.token, "driver", r.ID, "accept", http.StatusConflict, "request_not_pending")
+	return *s
 }
 
-func TestAutoAcceptConfirmsAtOnce(t *testing.T) {
-	tx := testTx(t)
-	trip := flowTrip(t, tx, 2, true, 400)
-	passengerID, token := passengerAt(t, tx)
+func TestSubmitRejectedBeyondSubmitDistance(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{})
 
-	if r := submit(t, tx, token, 20); r.Status != statusConfirmed {
-		t.Fatalf("status = %s, want confirmed (REQ-022)", r.Status)
+	// REQ-034, boundary on both sides of the 200 m default.
+	inside := e.submit(t, offsetM(e.pickup, 190), nil)
+	if inside.Status == reqRejected {
+		t.Fatalf("190 m from the pickup point was rejected: %+v", inside)
 	}
-	if h, c := seatCounts(t, tx, trip.id); h != 0 || c != 1 {
-		t.Fatalf("held/confirmed = %d/%d, want 0/1", h, c)
+	outside := e.submit(t, offsetM(e.pickup, 210), nil)
+	if outside.Status != reqRejected || str(outside.Reason) != "too_far" || str(outside.Message) == "" {
+		t.Fatalf("210 m away = %+v, want rejected with reason too_far and a message", outside)
 	}
-	if lt := linkedTrip(t, tx, passengerID); lt == nil || *lt != trip.id {
-		t.Fatalf("passenger activity trip = %v, want %d (DD-25)", lt, trip.id)
+	if outside.TripID != nil {
+		t.Errorf("a rejected request got trip %d", *outside.TripID)
 	}
-}
-
-func TestTooFarIsRejectedWithTheDistance(t *testing.T) {
-	tx := testTx(t)
-	flowTrip(t, tx, 3, true, 400)
-	_, token := passengerAt(t, tx)
-
-	r := submit(t, tx, token, 420)
-	if r.Status != statusRejected || r.RejectReason == nil || r.RejectReason.Code != "too_far" ||
-		r.RejectReason.DistanceM < 410 || r.RejectReason.DistanceM > 430 {
-		t.Fatalf("got %+v, want rejected too_far at about 420 m (REQ-034)", r)
-	}
-	var lat float64
-	if err := tx.QueryRow(context.Background(), `SELECT submitted_lat FROM ride_requests WHERE id = $1`, r.ID).Scan(&lat); err != nil || lat == 0 {
-		t.Fatalf("submitted_lat = %v, %v; want the position kept on the request (DD-25)", lat, err)
-	}
-}
-
-func TestNoCarAnswersAtOnceWithWalking(t *testing.T) {
-	tx := testTx(t)
-	_, token := passengerAt(t, tx)
-	r := submit(t, tx, token, 20)
-	if r.Status != statusNoMatch || len(r.Alternatives) == 0 || r.Alternatives[0].Mode != "walk" || r.Alternatives[0].DurationMin <= 0 {
-		t.Fatalf("got %+v, want no_match with a walking alternative (REQ-036, REQ-051)", r)
-	}
-}
-
-func TestDeclinesMoveOnUntilNoCarIsLeft(t *testing.T) {
-	tx := testTx(t)
-	first := flowTrip(t, tx, 3, false, 300)
-	second := flowTrip(t, tx, 3, false, 900)
-	_, token := passengerAt(t, tx)
-
-	r := submit(t, tx, token, 20)
-	if d := driverTrip(t, tx, first.token); d.PendingRequest == nil {
-		t.Fatalf("the closer car should get the request first")
-	}
-	act(t, tx, first.token, "driver", r.ID, "decline", http.StatusOK, "")
-	if h, _ := seatCounts(t, tx, first.id); h != 0 {
-		t.Fatalf("declined car still holds %d seats", h)
-	}
-	if d := driverTrip(t, tx, second.token); d.PendingRequest == nil || d.PendingRequest.ID != r.ID {
-		t.Fatalf("the next car should get it (REQ-050), got %+v", d)
-	}
-	if got := myRequest(t, tx, token); got.Status != statusWaitingDriver || !got.Reassigned {
-		t.Fatalf("got %+v, want waiting_driver and reassigned", got)
-	}
-	act(t, tx, second.token, "driver", r.ID, "decline", http.StatusOK, "")
-	if got := myRequest(t, tx, token); got.Status != statusNoMatch {
-		t.Fatalf("status = %s, want no_match once every car declined", got.Status)
-	}
-}
-
-func TestTimeoutMovesToTheNextCar(t *testing.T) {
-	tx := testTx(t)
-	first := flowTrip(t, tx, 3, false, 300)
-	second := flowTrip(t, tx, 3, true, 900)
-	_, token := passengerAt(t, tx)
-
-	r := submit(t, tx, token, 20)
-	// The deadline is stored, so passing it is enough; any poll runs the check (DD-13).
-	mustExec(t, tx, `UPDATE ride_requests SET response_deadline_at = now() - interval '1 second' WHERE id = $1`, r.ID)
-	got := myRequest(t, tx, token)
-	if got.Status != statusConfirmed || !got.Reassigned {
-		t.Fatalf("got %+v, want confirmed by the auto-accepting car after the timeout", got)
-	}
-	var outcome string
-	if err := tx.QueryRow(context.Background(), `SELECT outcome FROM request_candidates WHERE request_id = $1 AND trip_id = $2`, r.ID, first.id).
-		Scan(&outcome); err != nil || outcome != "timed_out" {
-		t.Fatalf("first car outcome = %q, %v; want timed_out", outcome, err)
-	}
-	if h, c := seatCounts(t, tx, second.id); h != 0 || c != 1 {
-		t.Fatalf("second car held/confirmed = %d/%d, want 0/1", h, c)
-	}
-}
-
-func TestBoardingAndCompletingHappenOnce(t *testing.T) {
-	tx := testTx(t)
-	trip := flowTrip(t, tx, 3, true, 400)
-	passengerID, token := passengerAt(t, tx)
-	r := submit(t, tx, token, 20)
-
-	act(t, tx, token, "passenger", r.ID, "board", http.StatusOK, "")
-	act(t, tx, trip.token, "driver", r.ID, "board", http.StatusOK, "") // second one is a no-op (DD-27)
-	got := myRequest(t, tx, token)
-	if got.Status != statusBoarded || got.CanCancel || got.Ride == nil || got.Ride.EtaS != nil || got.Ride.Position != nil {
-		t.Fatalf("boarded = %+v, want no ETA, no position and no cancel (REQ-068)", got)
-	}
-	if d := driverTrip(t, tx, trip.token); len(d.Passengers) != 1 || !d.Passengers[0].Boarded {
-		t.Fatalf("driver sees %+v, want the passenger marked on board", d)
-	}
-	act(t, tx, token, "passenger", r.ID, "cancel", http.StatusConflict, "cannot_cancel")
-
-	act(t, tx, token, "passenger", r.ID, "complete", http.StatusOK, "")
-	act(t, tx, trip.token, "driver", r.ID, "complete", http.StatusOK, "") // no-op (DD-23)
-	var records int
-	var pickedUp *time.Time
-	if err := tx.QueryRow(context.Background(), `SELECT count(*), max(picked_up_at) FROM service_records WHERE request_id = $1`, r.ID).
-		Scan(&records, &pickedUp); err != nil || records != 1 || pickedUp == nil {
-		t.Fatalf("service records = %d (picked up %v), %v; want exactly one with the boarding time (REQ-055)", records, pickedUp, err)
-	}
-	if _, c := seatCounts(t, tx, trip.id); c != 0 {
-		t.Fatalf("seat still taken after the ride ended")
-	}
-	if d := driverTrip(t, tx, trip.token); d.CompletedCount != 1 || len(d.Passengers) != 0 {
-		t.Fatalf("driver sees %+v, want one finished ride", d)
-	}
-
-	// Habitual data follows the completed ride (DD-19).
-	var dest string
-	var stops int
-	if err := tx.QueryRow(context.Background(), `
-		SELECT p.usual_destination_name, (SELECT count(*) FROM passenger_accepted_stops s WHERE s.user_id = p.user_id)
-		  FROM passenger_profiles p WHERE p.user_id = $1`, passengerID).Scan(&dest, &stops); err != nil || dest != flowDest.Name || stops != 1 {
-		t.Fatalf("passenger profile = %q with %d stops, %v", dest, stops, err)
-	}
-	var capacity int
-	if err := tx.QueryRow(context.Background(), `SELECT capacity FROM driver_profiles WHERE user_id = $1`, trip.driverID).Scan(&capacity); err != nil || capacity != 3 {
-		t.Fatalf("driver profile capacity = %d, %v; want 3", capacity, err)
-	}
-}
-
-func TestCompleteWithoutBoarding(t *testing.T) {
-	tx := testTx(t)
-	trip := flowTrip(t, tx, 3, true, 400)
-	_, token := passengerAt(t, tx)
-	r := submit(t, tx, token, 20)
-	act(t, tx, trip.token, "driver", r.ID, "complete", http.StatusOK, "")
-	if got := myRequest(t, tx, token); got.Status != statusCompleted {
-		t.Fatalf("status = %s, want completed straight from confirmed (DD-27)", got.Status)
-	}
-}
-
-func TestCancelBeforeBoardingOnly(t *testing.T) {
-	tx := testTx(t)
-	trip := flowTrip(t, tx, 3, false, 400)
-	_, token := passengerAt(t, tx)
-
-	first := submit(t, tx, token, 20)
-	act(t, tx, token, "passenger", first.ID, "cancel", http.StatusOK, "")
-	if h, _ := seatCounts(t, tx, trip.id); h != 0 {
-		t.Fatalf("cancelled request still holds a seat")
-	}
-	if d := driverTrip(t, tx, trip.token); d.PendingRequest != nil {
-		t.Fatalf("the driver still sees the cancelled request")
-	}
-
-	second := submit(t, tx, token, 20)
-	act(t, tx, trip.token, "driver", second.ID, "accept", http.StatusOK, "")
-	mustExec(t, tx, `UPDATE trips SET passed_pickup = true WHERE id = $1`, trip.id)
-	act(t, tx, token, "passenger", second.ID, "cancel", http.StatusConflict, "cannot_cancel")
-	if got := myRequest(t, tx, token); got.CanCancel {
-		t.Fatalf("can_cancel after the car passed the pickup point")
-	}
-}
-
-func TestOneOpenRequestAtATime(t *testing.T) {
-	tx := testTx(t)
-	flowTrip(t, tx, 3, false, 400)
-	_, token := passengerAt(t, tx)
-	submit(t, tx, token, 20)
-	p := domePickup(t, tx)
-	w := call(t, tx, http.MethodPost, "/api/passenger/requests", token, submitBody(p.id, anyStop(t, tx), p.pos, ""))
-	wantStatus(t, w, http.StatusConflict, "request_active")
-}
-
-func TestSubmissionValidation(t *testing.T) {
-	tx := testTx(t)
-	_, token := passengerAt(t, tx)
-	p := domePickup(t, tx)
-	stop := anyStop(t, tx)
-	for name, tc := range map[string]struct{ body, code string }{
-		"no location":  {strings.Replace(submitBody(p.id, stop, p.pos, ""), `,"location":{"lat":`+ftoa(p.pos.Lat)+`,"lng":`+ftoa(p.pos.Lng)+`}`, "", 1), "invalid_location"},
-		"no stops":     {strings.Replace(submitBody(p.id, stop, p.pos, ""), `[`+itoa(stop)+`]`, `[]`, 1), "no_accepted_stops"},
-		"bad pickup":   {submitBody(999999, stop, p.pos, ""), "invalid_pickup_point"},
-		"unknown stop": {submitBody(p.id, 99999999, p.pos, ""), "unknown_bus_stop"},
-		"outside park": {strings.Replace(submitBody(p.id, stop, p.pos, ""), `"lat":25.0768,"lng":121.5738`, `"lat":25.0478,"lng":121.517`, 1), "destination_outside_park"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			wantStatus(t, call(t, tx, http.MethodPost, "/api/passenger/requests", token, tc.body), http.StatusBadRequest, tc.code)
-		})
-	}
-}
-
-func TestTripEndsAtTheDestination(t *testing.T) {
-	tx := testTx(t)
-	trip := flowTrip(t, tx, 3, true, 400)
-	_, token := passengerAt(t, tx)
-	if r := submit(t, tx, token, 20); r.Status != statusConfirmed {
-		t.Fatalf("status = %s, want confirmed", r.Status)
-	}
-
-	report(t, tx, trip.token, trip.pickup)               // enter the pickup area
-	report(t, tx, trip.token, offsetM(trip.pickup, 300)) // leave it: passed
-	if d := driverTrip(t, tx, trip.token); d.Status != "active" {
-		t.Fatalf("trip ended before reaching its destination")
-	}
-	report(t, tx, trip.token, latLng{flowDest.Lat, flowDest.Lng})
-	d := driverTrip(t, tx, trip.token)
-	if d.Status != "completed" || d.EndedAt == nil || d.CompletedCount != 1 {
-		t.Fatalf("driver sees %+v, want the trip ended with one finished ride (UD-16)", d)
-	}
-	if got := myRequest(t, tx, token); got.Status != statusCompleted {
-		t.Fatalf("ride status = %s, want completed with the trip (REQ-067)", got.Status)
-	}
-}
-
-func TestSupplyOfThePickupPoint(t *testing.T) {
-	tx := testTx(t)
-	far := flowTrip(t, tx, 3, false, 900)
-	near := flowTrip(t, tx, 2, false, 300)
-	_, token := passengerAt(t, tx)
-	p := domePickup(t, tx)
-	q := "/api/passenger/supply?pickup_point_id=" + itoa(p.id) + "&destination_name=x&destination_lat=" + ftoa(flowDest.Lat) +
-		"&destination_lng=" + ftoa(flowDest.Lng) + "&accepted_stop_ids=" + itoa(anyStop(t, tx)) + "&required_tag_ids=&preferred_tag_ids="
-
-	w := call(t, tx, http.MethodGet, q, token, "")
-	wantStatus(t, w, http.StatusOK, "")
-	got := decode[struct {
-		PickupPoint  pickupPoint `json:"pickup_point"`
-		WaitLimitMin float64     `json:"wait_limit_min"`
-		VehicleCount int         `json:"vehicle_count"`
-		FastestEtaS  *int        `json:"fastest_eta_s"`
-		Seats        int         `json:"seats"`
-		Vehicles     []struct {
-			ID   int64 `json:"id"`
-			EtaS int   `json:"eta_s"`
-		} `json:"vehicles"`
-	}](t, w)
-	if got.PickupPoint.ID != p.id || got.WaitLimitMin != 10 || got.VehicleCount != 2 || got.Seats != 5 ||
-		got.Vehicles[0].ID != near.id || got.Vehicles[1].ID != far.id || got.FastestEtaS == nil || *got.FastestEtaS != got.Vehicles[0].EtaS {
-		t.Fatalf("supply = %+v, want both cars nearest first with 5 seats (REQ-029, REQ-030)", got)
-	}
-	wantStatus(t, call(t, tx, http.MethodGet, strings.Replace(q, "pickup_point_id="+itoa(p.id)+"&", "", 1), token, ""), http.StatusBadRequest, "invalid_request")
-	wantStatus(t, call(t, tx, http.MethodGet, strings.Replace(q, "accepted_stop_ids="+itoa(anyStop(t, tx)), "accepted_stop_ids=", 1), token, ""), http.StatusBadRequest, "invalid_request")
-}
-
-// The timeline spans the wait limit setting, read on every query (REQ-030, DD-20), and a car whose
-// driver lacks a tag the passenger requires is left out (REQ-040).
-func TestSupplyFollowsWaitLimitAndRequiredTags(t *testing.T) {
-	tx := testTx(t)
-	trip := flowTrip(t, tx, 3, false, 900)
-	_, token := passengerAt(t, tx)
-	p := domePickup(t, tx)
-	var tagID int64
-	if err := tx.QueryRow(context.Background(), `SELECT min(id) FROM tags`).Scan(&tagID); err != nil {
+	// The position the passenger sent is kept on the request (DD-25).
+	var lat, lng float64
+	var status string
+	if err := e.tx.QueryRow(context.Background(), `SELECT status, submitted_lat, submitted_lng FROM ride_requests WHERE id = $1`, outside.ID).
+		Scan(&status, &lat, &lng); err != nil {
 		t.Fatal(err)
 	}
-	q := func(required string) string {
-		return "/api/passenger/supply?pickup_point_id=" + itoa(p.id) + "&destination_name=x&destination_lat=" + ftoa(flowDest.Lat) +
-			"&destination_lng=" + ftoa(flowDest.Lng) + "&accepted_stop_ids=" + itoa(anyStop(t, tx)) + "&required_tag_ids=" + required
+	want := offsetM(e.pickup, 210)
+	if status != reqRejected || lat != want.Lat || lng != want.Lng {
+		t.Errorf("stored = %s (%v, %v), want rejected at %+v", status, lat, lng, want)
 	}
-	type supply struct {
-		WaitLimitMin float64 `json:"wait_limit_min"`
-		VehicleCount int     `json:"vehicle_count"`
-	}
-	get := func(path string) supply {
-		w := call(t, tx, http.MethodGet, path, token, "")
-		wantStatus(t, w, http.StatusOK, "")
-		return decode[supply](t, w)
-	}
-
-	if s := get(q("")); s.WaitLimitMin != 10 || s.VehicleCount != 1 {
-		t.Fatalf("supply = %+v, want the car within a 10-minute limit", s)
-	}
-	// The car is about 3.5 minutes away; a 2-minute limit leaves it out and shortens the timeline.
-	mustExec(t, tx, `UPDATE system_settings SET value = 2 WHERE key = 'wait_limit'`)
-	if s := get(q("")); s.WaitLimitMin != 2 || s.VehicleCount != 0 {
-		t.Fatalf("supply = %+v, want a 2-minute timeline without the car", s)
-	}
-	mustExec(t, tx, `UPDATE system_settings SET value = 10 WHERE key = 'wait_limit'`)
-
-	if s := get(q(itoa(tagID))); s.VehicleCount != 0 {
-		t.Fatalf("a required tag the driver lacks should exclude the car, got %+v", s)
-	}
-	mustExec(t, tx, `INSERT INTO user_tags (user_id, tag_id) VALUES ($1, $2)`, trip.driverID, tagID)
-	if s := get(q(itoa(tagID))); s.VehicleCount != 1 {
-		t.Fatalf("the driver now carries the tag, got %+v", s)
-	}
-
-	for name, path := range map[string]string{
-		"no destination": strings.Replace(q(""), "&destination_lat="+ftoa(flowDest.Lat), "", 1),
-		"no stops":       strings.Replace(q(""), "&accepted_stop_ids="+itoa(anyStop(t, tx)), "", 1),
-		"no pickup":      strings.Replace(q(""), "pickup_point_id="+itoa(p.id)+"&", "", 1),
-	} {
-		t.Run(name, func(t *testing.T) {
-			wantStatus(t, call(t, tx, http.MethodGet, path, token, ""), http.StatusBadRequest, "invalid_request")
-		})
+	if held, _ := e.seats(t, trip); held != 1 { // only the accepted 190 m request holds a seat
+		t.Errorf("seats_held = %d, want 1", held)
 	}
 }
 
-func TestPlacesAndRoutePreview(t *testing.T) {
-	tx := testTx(t)
-	_, token := newUser(t, tx, roleDriver)
-	w := call(t, tx, http.MethodGet, "/api/places?q="+"瑞光", token, "")
-	wantStatus(t, w, http.StatusOK, "")
-	places := decode[[]place](t, w)
-	if len(places) == 0 || len(places) > maxPlaces || !strings.Contains(places[0].Name, "瑞光") {
-		t.Fatalf("places = %+v, want park places matching 瑞光", places)
+func TestSubmitDistanceFollowsTheSetting(t *testing.T) {
+	e := newSupplyEnv(t)
+	e.addTrip(t, tripSpec{})
+	mustExec(t, e.tx, `UPDATE system_settings SET value = 100 WHERE key = 'submit_distance'`)
+	if r := e.submit(t, offsetM(e.pickup, 90), nil); r.Status == reqRejected {
+		t.Errorf("90 m with a 100 m limit: %+v", r)
 	}
-
-	p := domePickup(t, tx)
-	body := `{"pickup_point_id":` + itoa(p.id) + `,"destination":` + inPark + `}`
-	w = call(t, tx, http.MethodPost, "/api/driver/route-preview", token, body)
-	wantStatus(t, w, http.StatusOK, "")
-	if r := decode[routeView](t, w); r.Polyline == "" || r.DistanceM <= 0 || r.BusStops == nil {
-		t.Fatalf("route = %+v", r)
+	if r := e.submit(t, offsetM(e.pickup, 110), nil); r.Status != reqRejected {
+		t.Errorf("110 m with a 100 m limit: %+v", r)
 	}
-	var trips int
-	if err := tx.QueryRow(context.Background(), `SELECT count(*) FROM trips t JOIN users u ON u.id = t.driver_id WHERE u.username = $1`,
-		strings.TrimPrefix(token, "driver:")).Scan(&trips); err != nil || trips != 0 {
-		t.Fatalf("a preview must not store a trip (%d, %v)", trips, err)
-	}
-	wantStatus(t, call(t, tx, http.MethodPost, "/api/driver/route-preview", token, `{"pickup_point_id":`+itoa(p.id)+`,"destination":`+outPark+`}`),
-		http.StatusBadRequest, "destination_outside_park")
 }
 
-func TestDemoResetRestartsTheDemo(t *testing.T) {
-	tx := testTx(t)
-	before, err := int64s(context.Background(), tx, `SELECT id FROM trips WHERE simulated AND status = 'active' ORDER BY id`)
+func TestSubmitAssignsTheFirstRankedCarAndHoldsASeat(t *testing.T) {
+	e := newSupplyEnv(t)
+	far := e.addTrip(t, tripSpec{northM: 2000})
+	near := e.addTrip(t, tripSpec{northM: 500})
+	mustExec(t, e.tx, `UPDATE system_settings SET value = 90 WHERE key = 'driver_confirm_timeout'`)
+
+	before := time.Now()
+	r := e.submit(t, e.near(), nil)
+	if r.Status != reqWaitingDriver || r.TripID == nil || *r.TripID != near {
+		t.Fatalf("request = %+v, want waiting_driver on the nearer trip %d", r, near)
+	}
+	if held, confirmed := e.seats(t, near); held != 1 || confirmed != 0 {
+		t.Errorf("near seats held/confirmed = %d/%d, want 1/0", held, confirmed)
+	}
+	if held, _ := e.seats(t, far); held != 0 {
+		t.Errorf("the second car also holds %d seats", held)
+	}
+	// The confirmation time limit comes from the setting.
+	if r.ResponseDeadlineAt == nil || r.ResponseDeadlineAt.Sub(before) < 89*time.Second || r.ResponseDeadlineAt.Sub(before) > 92*time.Second {
+		t.Errorf("response_deadline_at = %v, want about 90 s after %v", r.ResponseDeadlineAt, before)
+	}
+	// The whole ranking is kept for reassignment (T13), nothing decided yet.
+	rows, err := e.tx.Query(context.Background(), `SELECT trip_id, outcome FROM request_candidates WHERE request_id = $1 ORDER BY rank`, r.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustExec(t, tx, `DELETE FROM passenger_profiles WHERE user_id = (SELECT id FROM users WHERE username = 'passenger1')`)
-
-	wantStatus(t, call(t, tx, http.MethodPost, "/api/demo/reset", "", ""), http.StatusNoContent, "")
-
-	after, err := int64s(context.Background(), tx, `SELECT id FROM trips WHERE simulated AND status = 'active' ORDER BY id`)
-	if err != nil || len(after) != 3 || (len(before) > 0 && after[0] <= before[len(before)-1]) {
-		t.Fatalf("simulated trips %v → %v, want three new ones (DD-14)", before, after)
-	}
-	var activities int
-	if err := tx.QueryRow(context.Background(), `SELECT count(*) FROM activities WHERE trip_id = ANY($1) AND role = 'driver'`, after).Scan(&activities); err != nil || activities != 3 {
-		t.Fatalf("driver activities on the new trips = %d, %v; want 3 (DD-25)", activities, err)
-	}
-	w := call(t, tx, http.MethodGet, "/api/passenger/profile", "passenger:passenger1", "")
-	if !strings.Contains(w.Body.String(), "瑞光路 513 巷") {
-		t.Fatalf("passenger1 profile after reset = %s, want the demo destination", w.Body.String())
-	}
-	w = call(t, tx, http.MethodGet, "/api/driver/trips/defaults", "driver:driver4", "")
-	if d := decode[defaultsResp](t, w); d.Destination == nil || d.Destination.Name != "瑞光路 513 巷" || len(d.TagFilters) != 1 {
-		t.Fatalf("driver4 defaults after reset = %+v, want the demo's last trip (REQ-016)", d)
-	}
-	w = call(t, tx, http.MethodGet, "/api/driver/trip", "driver:driver4", "")
-	if !strings.Contains(w.Body.String(), `"status":"completed"`) {
-		t.Fatalf("driver4 should have no running trip after reset: %s", w.Body.String())
-	}
-}
-
-// ---------------------------------------------------------------- with real concurrent connections
-
-// raceFixture commits a fresh driver trip at 台北大巨蛋 with a reported position. Activities and
-// reports are append-only, so the accounts stay; the trip is ended and requests removed afterwards.
-func raceFixture(t *testing.T, pool *pgxpool.Pool, capacity int) (tripID int64, passengerTokens []string) {
-	t.Helper()
-	ctx := context.Background()
-	srv := newServer(pool, testDeps(t))
-	stamp := strconv.FormatInt(time.Now().UnixNano(), 36)
-	var driverID int64
-	if err := pool.QueryRow(ctx, `INSERT INTO users (username, display_name, is_driver) VALUES ($1, $1, true) RETURNING id`,
-		"test-race-driver-"+stamp).Scan(&driverID); err != nil {
-		t.Fatal(err)
-	}
-	p := domePickup(t, pool)
-	if err := pool.QueryRow(ctx, `
-		INSERT INTO trips (driver_id, pickup_point_id, destination_name, destination_lat, destination_lng, capacity, status, auto_accept, started_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', true, now()) RETURNING id`,
-		driverID, p.id, flowDest.Name, flowDest.Lat, flowDest.Lng, capacity).Scan(&tripID); err != nil {
-		t.Fatal(err)
-	}
-	var activityID int64
-	if err := pool.QueryRow(ctx, `INSERT INTO activities (user_id, role, trip_id) VALUES ($1, 'driver', $2) RETURNING id`, driverID, tripID).Scan(&activityID); err != nil {
-		t.Fatal(err)
-	}
-	car := offsetM(p.pos, -400)
-	if _, err := pool.Exec(ctx, `INSERT INTO location_reports (activity_id, lat, lng) VALUES ($1, $2, $3)`, activityID, car.Lat, car.Lng); err != nil {
-		t.Fatal(err)
-	}
-	if err := srv.ensureRoute(ctx, tripID); err != nil {
-		t.Fatal(err)
-	}
-	var passengerIDs []int64
-	for i := 0; i < 2; i++ {
-		name := "test-race-passenger-" + strconv.Itoa(i) + "-" + stamp
+	defer rows.Close()
+	var got []int64
+	for rows.Next() {
 		var id int64
-		if err := pool.QueryRow(ctx, `INSERT INTO users (username, display_name, is_passenger) VALUES ($1, $1, true) RETURNING id`, name).Scan(&id); err != nil {
+		var outcome *string
+		if err := rows.Scan(&id, &outcome); err != nil {
 			t.Fatal(err)
 		}
-		passengerIDs = append(passengerIDs, id)
-		passengerTokens = append(passengerTokens, "passenger:"+name)
+		if outcome != nil {
+			t.Errorf("candidate %d outcome = %s, want none", id, *outcome)
+		}
+		got = append(got, id)
 	}
-	t.Cleanup(func() {
-		pool.Exec(ctx, `DELETE FROM service_records WHERE trip_id = $1`, tripID)
-		pool.Exec(ctx, `DELETE FROM ride_requests WHERE passenger_id = ANY($1)`, passengerIDs)
-		pool.Exec(ctx, `UPDATE trips SET status = 'completed', ended_at = now() WHERE id = $1`, tripID)
-		pool.Exec(ctx, `DELETE FROM passenger_profiles WHERE user_id = ANY($1)`, passengerIDs)
-		pool.Exec(ctx, `DELETE FROM users WHERE id = ANY($1)`, passengerIDs)
-		pool.Exec(ctx, `DELETE FROM driver_profiles WHERE user_id = $1`, driverID)
-	})
-	return tripID, passengerTokens
+	if len(got) != 2 || got[0] != near || got[1] != far {
+		t.Errorf("candidates = %v, want [%d %d]", got, near, far)
+	}
 }
 
-func testPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	pool, err := pgxpool.New(context.Background(), testDatabaseURL())
+func TestSubmitWithNoCarAnswersNoMatch(t *testing.T) {
+	e := newSupplyEnv(t)
+	e.addTrip(t, tripSpec{northM: 6000}) // beyond the wait limit
+	r := e.submit(t, e.near(), nil)
+	if r.Status != reqNoMatch || str(r.Reason) != "no_match" || str(r.Message) != "目前沒有可搭的車" || r.TripID != nil {
+		t.Fatalf("request = %+v, want no_match with the 目前沒有可搭的車 message and no trip", r)
+	}
+	var status string
+	if err := e.tx.QueryRow(context.Background(), `SELECT status FROM ride_requests WHERE id = $1`, r.ID).Scan(&status); err != nil || status != reqNoMatch {
+		t.Errorf("stored status = %q (%v)", status, err)
+	}
+}
+
+// REQ-048: the last seat goes to the request that came first; the next one skips the full car.
+func TestSecondRequestSkipsTheFullCar(t *testing.T) {
+	e := newSupplyEnv(t)
+	nearOne := e.addTrip(t, tripSpec{northM: 500, capacity: 1})
+	farther := e.addTrip(t, tripSpec{northM: 1500})
+	_, second := newUser(t, e.tx, rolePassenger)
+
+	first := e.submit(t, e.near(), nil)
+	later := e.submitAs(t, second, e.body(e.near(), ""))
+	if first.TripID == nil || *first.TripID != nearOne {
+		t.Fatalf("first request = %+v, want the near one-seat trip %d", first, nearOne)
+	}
+	if later.TripID == nil || *later.TripID != farther {
+		t.Fatalf("second request = %+v, want the farther trip %d", later, farther)
+	}
+	if held, _ := e.seats(t, nearOne); held != 1 {
+		t.Errorf("near trip holds %d seats, want 1", held)
+	}
+}
+
+func TestRequestBehindTheLastSeatGetsNoMatch(t *testing.T) {
+	e := newSupplyEnv(t)
+	e.addTrip(t, tripSpec{capacity: 1})
+	_, second := newUser(t, e.tx, rolePassenger)
+	if r := e.submit(t, e.near(), nil); r.Status != reqWaitingDriver {
+		t.Fatalf("first = %+v", r)
+	}
+	if r := e.submitAs(t, second, e.body(e.near(), "")); r.Status != reqNoMatch {
+		t.Errorf("second for the last seat = %+v, want no_match", r)
+	}
+}
+
+func TestAutoAcceptConfirmsAndLinksTheActivity(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{})
+	mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, trip)
+	oldAct := declare(t, e.tx, e.token) // an earlier activity must stay unlinked
+	newAct := declare(t, e.tx, e.token)
+
+	r := e.submit(t, e.near(), nil)
+	if r.Status != reqConfirmed || r.ConfirmedAt == nil || r.ResponseDeadlineAt != nil || r.TripID == nil || *r.TripID != trip {
+		t.Fatalf("request = %+v, want confirmed on trip %d at once, no deadline", r, trip)
+	}
+	if held, confirmed := e.seats(t, trip); held != 0 || confirmed != 1 {
+		t.Errorf("seats held/confirmed = %d/%d, want 0/1", held, confirmed)
+	}
+	var outcome string
+	if err := e.tx.QueryRow(context.Background(), `SELECT outcome FROM request_candidates WHERE request_id = $1 AND rank = 1`, r.ID).Scan(&outcome); err != nil || outcome != "accepted" {
+		t.Errorf("candidate outcome = %q (%v), want accepted", outcome, err)
+	}
+	linked := func(id int64) *int64 {
+		var tid *int64
+		if err := e.tx.QueryRow(context.Background(), `SELECT trip_id FROM activities WHERE id = $1`, id).Scan(&tid); err != nil {
+			t.Fatal(err)
+		}
+		return tid
+	}
+	if got := linked(newAct.ID); got == nil || *got != trip {
+		t.Errorf("latest activity trip = %v, want %d", got, trip)
+	}
+	if got := linked(oldAct.ID); got != nil {
+		t.Errorf("older activity trip = %d, want none", *got)
+	}
+}
+
+func TestAutoAcceptWithoutAnActivityStillConfirms(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{})
+	mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, trip)
+	if r := e.submit(t, e.near(), nil); r.Status != reqConfirmed {
+		t.Errorf("request = %+v, want confirmed", r)
+	}
+}
+
+func TestAutoAcceptLeavesOtherActivitiesAlone(t *testing.T) {
+	tripOf := func(e *supplyEnv, id int64) *int64 {
+		var tid *int64
+		if err := e.tx.QueryRow(context.Background(), `SELECT trip_id FROM activities WHERE id = $1`, id).Scan(&tid); err != nil {
+			t.Fatal(err)
+		}
+		return tid
+	}
+
+	t.Run("latest activity is a driver activity", func(t *testing.T) {
+		e := newSupplyEnv(t)
+		trip := e.addTrip(t, tripSpec{})
+		mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, trip)
+		other := e.addTrip(t, tripSpec{}) // the account's own trip as a driver
+		var act int64
+		if err := e.tx.QueryRow(context.Background(), `INSERT INTO activities (user_id, role, trip_id) VALUES ($1, 'driver', $2) RETURNING id`,
+			e.userID, other).Scan(&act); err != nil {
+			t.Fatal(err)
+		}
+		r := e.submit(t, e.near(), nil)
+		if r.Status != reqConfirmed {
+			t.Fatalf("request = %+v, want confirmed", r)
+		}
+		if got := tripOf(e, act); got == nil || *got != other {
+			t.Errorf("driver activity trip = %v, want it left at %d", got, other)
+		}
+	})
+
+	t.Run("latest passenger activity already belongs to an earlier trip", func(t *testing.T) {
+		e := newSupplyEnv(t)
+		trip := e.addTrip(t, tripSpec{})
+		mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, trip)
+		earlier := e.addTrip(t, tripSpec{})
+		act := declare(t, e.tx, e.token)
+		mustExec(t, e.tx, `UPDATE activities SET trip_id = $2 WHERE id = $1`, act.ID, earlier)
+		r := e.submit(t, e.near(), nil)
+		if r.Status != reqConfirmed {
+			t.Fatalf("request = %+v, want confirmed", r)
+		}
+		if got := tripOf(e, act.ID); got == nil || *got != earlier {
+			t.Errorf("earlier ride's activity trip = %v, want it left at %d", got, earlier)
+		}
+	})
+}
+
+func TestDriverWithoutAutoAcceptKeepsTheRequestWaiting(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{})
+	r := e.submit(t, e.near(), nil)
+	if r.Status != reqWaitingDriver || r.ConfirmedAt != nil {
+		t.Fatalf("request = %+v, want waiting_driver", r)
+	}
+	if held, confirmed := e.seats(t, trip); held != 1 || confirmed != 0 {
+		t.Errorf("seats held/confirmed = %d/%d, want 1/0", held, confirmed)
+	}
+}
+
+func TestRelaxedWhenPreferredTagsAreMissing(t *testing.T) {
+	e := newSupplyEnv(t)
+	tags := tagIDs(t, e.tx, 2)
+	a, b := tags[0], tags[1]
+	prefer := func(ids ...int64) *string {
+		s := `"tag_filters":[`
+		for i, id := range ids {
+			if i > 0 {
+				s += ","
+			}
+			s += `{"tag_id":` + strconv.FormatInt(id, 10) + `,"intent":"preferred"}`
+		}
+		s += "]"
+		return &s
+	}
+
+	e.addTrip(t, tripSpec{tagIDs: []int64{a}})
+	for _, c := range []struct {
+		name    string
+		extra   *string
+		relaxed bool
+	}{
+		{"no preferred tag asked", nil, false},
+		{"every preferred tag carried", prefer(a), false},
+		{"one of two preferred tags missing", prefer(a, b), true},
+		{"the only preferred tag missing", prefer(b), true},
+	} {
+		_, tok := newUser(t, e.tx, rolePassenger)
+		x := ""
+		if c.extra != nil {
+			x = *c.extra
+		}
+		r := e.submitAs(t, tok, e.body(e.near(), x))
+		if r.TripID == nil {
+			t.Fatalf("%s: not assigned: %+v", c.name, r)
+		}
+		if r.Relaxed != c.relaxed {
+			t.Errorf("%s: relaxed = %v, want %v", c.name, r.Relaxed, c.relaxed)
+		}
+		var stored bool
+		if err := e.tx.QueryRow(context.Background(), `SELECT relaxed FROM ride_requests WHERE id = $1`, r.ID).Scan(&stored); err != nil || stored != c.relaxed {
+			t.Errorf("%s: stored relaxed = %v (%v)", c.name, stored, err)
+		}
+		// capacity 3 and four requests: free the seat so every case sees the car
+		mustExec(t, e.tx, `UPDATE trips SET seats_held = 0`+" WHERE id = $1", *r.TripID)
+	}
+}
+
+func TestSubmitKeepsAndAppliesTagFilters(t *testing.T) {
+	e := newSupplyEnv(t)
+	tags := tagIDs(t, e.tx, 2)
+	e.addTrip(t, tripSpec{})
+	req := fmt.Sprintf(`"tag_filters":[{"tag_id":%d,"intent":"required"},{"tag_id":%d,"intent":"preferred"}]`, tags[0], tags[1])
+	r := e.submit(t, e.near(), &req)
+	// REQ-040: the only car does not carry the required tag.
+	if r.Status != reqNoMatch {
+		t.Fatalf("request = %+v, want no_match for a missing required tag", r)
+	}
+	rows, err := e.tx.Query(context.Background(), `SELECT tag_id, intent FROM request_tag_filters WHERE request_id = $1 ORDER BY tag_id`, r.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(pool.Close) // registered before the fixture's cleanup, so it runs after it
-	return pool
+	defer rows.Close()
+	got := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var intent string
+		if err := rows.Scan(&id, &intent); err != nil {
+			t.Fatal(err)
+		}
+		got[id] = intent
+	}
+	if len(got) != 2 || got[tags[0]] != "required" || got[tags[1]] != "preferred" {
+		t.Errorf("stored filters = %v", got)
+	}
 }
 
-// Two passengers race for the last seat: the one submitted first gets it (REQ-048, DD-12).
-func TestLastSeatGoesToTheFirstSubmitted(t *testing.T) {
-	pool := testPool(t)
-	_, tokens := raceFixture(t, pool, 1)
-	p := domePickup(t, pool)
-	body := submitBody(p.id, anyStop(t, pool), offsetM(p.pos, 20), "")
+func TestSubmitRequestValidationAndAccess(t *testing.T) {
+	e := newSupplyEnv(t)
+	post := func(token, body string) *httptest.ResponseRecorder {
+		return call(t, e.tx, http.MethodPost, "/api/passenger/requests", token, body)
+	}
+	good := e.body(e.near(), "")
+	wantStatus(t, post("", good), http.StatusUnauthorized, "")
+	_, driver := newUser(t, e.tx, roleDriver)
+	wantStatus(t, post(driver, good), http.StatusForbidden, "")
+
+	for _, c := range []struct{ name, body, code string }{
+		{"not json", `x`, "invalid_request"},
+		{"no pickup point", `{"location":{"lat":25,"lng":121}}`, "invalid_request"},
+		{"unknown pickup point", `{"pickup_point_id":999999,"location":{"lat":25,"lng":121}}`, "invalid_pickup_point"},
+		{"no location", fmt.Sprintf(`{"pickup_point_id":%d}`, e.pickupID), "invalid_location"},
+		{"location out of range", fmt.Sprintf(`{"pickup_point_id":%d,"location":{"lat":91,"lng":121}}`, e.pickupID), "invalid_location"},
+		{"no destination and no habit", fmt.Sprintf(`{"pickup_point_id":%d,"location":{"lat":25,"lng":121}}`, e.pickupID), "destination_required"},
+		{"no stops and no habit", fmt.Sprintf(`{"pickup_point_id":%d,"location":{"lat":25,"lng":121},"destination":{"name":"x","lat":25,"lng":121}}`, e.pickupID), "stops_required"},
+		{"unknown stop", e.body(e.near(), `"stop_ids":[999999]`), "invalid_stop"},
+		{"unknown tag", e.body(e.near(), `"tag_filters":[{"tag_id":999999,"intent":"required"}]`), "invalid_tag"},
+		{"bad intent", e.body(e.near(), `"tag_filters":[{"tag_id":1,"intent":"maybe"}]`), "invalid_request"},
+	} {
+		w := post(e.token, c.body)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400 (%s)", c.name, w.Code, w.Body.String())
+			continue
+		}
+		if got := decode[errBody](t, w).Error.Code; got != c.code {
+			t.Errorf("%s: code %q, want %q", c.name, got, c.code)
+		}
+	}
+	var n int
+	if err := e.tx.QueryRow(context.Background(), `SELECT count(*) FROM ride_requests WHERE passenger_id = $1`, e.userID).Scan(&n); err != nil || n != 0 {
+		t.Errorf("refused submissions left %d requests (%v)", n, err)
+	}
+}
+
+func TestSubmitFallsBackToHabitualData(t *testing.T) {
+	e := newSupplyEnv(t)
+	e.addTrip(t, tripSpec{})
+	mustExec(t, e.tx, `INSERT INTO passenger_profiles (user_id, usual_destination_name, usual_destination_lat, usual_destination_lng) VALUES ($1, '常用', $2, $3)`,
+		e.userID, e.dest.Lat, e.dest.Lng)
+	mustExec(t, e.tx, `INSERT INTO passenger_accepted_stops (user_id, bus_stop_id) VALUES ($1, $2)`, e.userID, e.stopID)
+	body := fmt.Sprintf(`{"pickup_point_id":%d,"location":{"lat":%s,"lng":%s}}`, e.pickupID, ftoa(e.pickup.Lat), ftoa(e.pickup.Lng))
+	if r := e.submitAs(t, e.token, body); r.Status != reqWaitingDriver {
+		t.Errorf("request = %+v, want waiting_driver", r)
+	}
+}
+
+// Two passengers race for the last seat over committed transactions (acceptance: the one that
+// submitted first gets it). Fixtures are committed, so cleanup removes them (the driver stays, see raceFixture.cleanup).
+func TestLastSeatGoesToTheFirstSubmitter(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testDatabaseURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close) // registered first, so it runs after the fixture's own cleanup
+	f := newRaceFixture(t, pool)
+
+	// A deterministic order: the first request holds the seat in a transaction that is still
+	// open while the second one is submitted; the second must wait on the seat and then lose it.
+	s := &Server{db: pool, routes: straightRoute{}, walks: straightWalk{}}
+	first, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Rollback(ctx)
+	r1, err := s.placeRequest(ctx, first, f.input(f.passengers[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan requestView, 1)
+	go func() {
+		second, err := pool.Begin(ctx)
+		if err != nil {
+			t.Error(err)
+			done <- requestView{}
+			return
+		}
+		defer second.Rollback(ctx)
+		r2, err := s.placeRequest(ctx, second, f.input(f.passengers[1]))
+		if err != nil {
+			t.Error(err)
+		} else if err := second.Commit(ctx); err != nil {
+			t.Error(err)
+		}
+		done <- r2
+	}()
+	select {
+	case <-done:
+		t.Fatal("the second request finished while the first still held the seat")
+	case <-time.After(500 * time.Millisecond):
+	}
+	if err := first.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r2 := <-done
+
+	if r1.Status != reqWaitingDriver || r1.TripID == nil || *r1.TripID != f.trip {
+		t.Errorf("first = %+v, want the seat on trip %d", r1, f.trip)
+	}
+	if r2.Status != reqNoMatch {
+		t.Errorf("second = %+v, want no_match", r2)
+	}
+	if held, confirmed := f.seats(t); held != 1 || confirmed != 0 {
+		t.Errorf("seats held/confirmed = %d/%d, want 1/0", held, confirmed)
+	}
+}
+
+// slowWalk blocks its first call until released, standing in for a slow external provider.
+type slowWalk struct {
+	blocked atomic.Bool
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (w *slowWalk) Walk(ctx context.Context, from, to latLng) (Walk, error) {
+	if w.blocked.CompareAndSwap(false, true) { // only the very first call waits
+		close(w.entered)
+		<-w.release
+	}
+	return straightWalk{}.Walk(ctx, from, to)
+}
+
+// REQ-048: the first submitted gets the seat even when its ranking is slow. The first request is
+// held up after it was inserted; a second one, submitted meanwhile, must wait for it and lose.
+func TestSlowRankingDoesNotLetALaterRequestOvertake(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testDatabaseURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	f := newRaceFixture(t, pool)
+
+	slow := &slowWalk{entered: make(chan struct{}), release: make(chan struct{})}
+	s := &Server{db: pool, routes: straightRoute{}, walks: slow}
+	var wg sync.WaitGroup
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(slow.release) }) }
+	// However the test ends, let the stuck request go and wait for it, so the fixture can be removed.
+	defer func() {
+		release()
+		wg.Wait()
+	}()
+	submit := func(p raceUser) <-chan requestView {
+		out := make(chan requestView, 1)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tx, err := pool.Begin(ctx)
+			if err != nil {
+				t.Error(err)
+				out <- requestView{}
+				return
+			}
+			defer tx.Rollback(ctx)
+			v, err := s.placeRequest(ctx, tx, f.input(p))
+			if err == nil {
+				err = tx.Commit(ctx)
+			}
+			if err != nil {
+				t.Error(err)
+			}
+			out <- v
+		}()
+		return out
+	}
+
+	first := submit(f.passengers[0])
+	<-slow.entered // the first request is inserted and stuck in ranking
+	second := submit(f.passengers[1])
+	select {
+	case v := <-second:
+		t.Fatalf("a later request finished while the first was still ranking: %+v", v)
+	case <-time.After(500 * time.Millisecond):
+	}
+	release()
+	r1, r2 := <-first, <-second
+
+	if r1.Status != reqWaitingDriver || r1.TripID == nil || *r1.TripID != f.trip {
+		t.Errorf("first = %+v, want the seat on trip %d", r1, f.trip)
+	}
+	if r2.Status != reqNoMatch {
+		t.Errorf("second = %+v, want no_match", r2)
+	}
+	if r1.ID >= r2.ID {
+		t.Errorf("request ids %d, %d: the first submitted should have the lower id", r1.ID, r2.ID)
+	}
+}
+
+// Fully concurrent submissions through the HTTP handler: exactly one gets the one seat.
+func TestConcurrentSubmissionsNeverOversell(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testDatabaseURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close) // registered first, so it runs after the fixture's own cleanup
+	f := newRaceFixture(t, pool)
 
 	var wg sync.WaitGroup
-	for _, token := range tokens {
+	got := make([]requestResp, len(f.passengers))
+	start := make(chan struct{})
+	for i, p := range f.passengers {
 		wg.Add(1)
-		go func(token string) {
+		go func() {
 			defer wg.Done()
-			call(t, pool, http.MethodPost, "/api/passenger/requests", token, body)
-		}(token)
+			<-start
+			w := call(t, pool, http.MethodPost, "/api/passenger/requests", "passenger:"+p.name,
+				fmt.Sprintf(`{"pickup_point_id":%d,"location":{"lat":%s,"lng":%s},"destination":{"name":"d","lat":%s,"lng":%s},"stop_ids":[%d]}`,
+					f.pickup.ID, ftoa(f.pickup.Lat), ftoa(f.pickup.Lng), ftoa(f.dest.Lat), ftoa(f.dest.Lng), f.stopID))
+			if w.Code != http.StatusCreated {
+				t.Errorf("status %d: %s", w.Code, w.Body.String())
+				return
+			}
+			got[i] = decode[requestResp](t, w)
+		}()
 	}
+	close(start)
 	wg.Wait()
 
-	rows, err := pool.Query(context.Background(), `
-		SELECT r.status FROM ride_requests r JOIN users u ON u.id = r.passenger_id
-		 WHERE u.username = ANY($1) ORDER BY r.id`, []string{strings.TrimPrefix(tokens[0], "passenger:"), strings.TrimPrefix(tokens[1], "passenger:")})
-	if err != nil {
-		t.Fatal(err)
+	var assigned, none int
+	for _, r := range got {
+		switch r.Status {
+		case reqWaitingDriver:
+			assigned++
+		case reqNoMatch:
+			none++
+		}
 	}
-	statuses, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil || len(statuses) != 2 || statuses[0] != statusConfirmed || statuses[1] != statusNoMatch {
-		t.Fatalf("statuses in submission order = %v, %v; want [confirmed no_match]", statuses, err)
+	if assigned != 1 || none != len(got)-1 {
+		t.Errorf("assigned %d, no_match %d, want 1 and %d (%+v)", assigned, none, len(got)-1, got)
+	}
+	if held, _ := f.seats(t); held != 1 {
+		t.Errorf("seats_held = %d, want 1", held)
 	}
 }
 
-// Both sides ending, or boarding, the same ride at the same moment take effect once (DD-23, DD-27).
-func TestSimultaneousBoardAndCompleteTakeEffectOnce(t *testing.T) {
-	pool := testPool(t)
-	tripID, tokens := raceFixture(t, pool, 2)
-	p := domePickup(t, pool)
-	w := call(t, pool, http.MethodPost, "/api/passenger/requests", tokens[0], submitBody(p.id, anyStop(t, pool), offsetM(p.pos, 20), ""))
-	wantStatus(t, w, http.StatusCreated, "")
-	id := decode[struct {
-		Request requestResp `json:"request"`
-	}](t, w).Request.ID
-	var driver string
-	if err := pool.QueryRow(context.Background(), `SELECT u.username FROM trips t JOIN users u ON u.id = t.driver_id WHERE t.id = $1`, tripID).Scan(&driver); err != nil {
+type raceUser struct {
+	id   int64
+	name string
+}
+
+type raceFixture struct {
+	t          *testing.T
+	pool       *pgxpool.Pool
+	pickup     pickupPoint
+	dest       latLng
+	stopID     int64
+	trip       int64
+	passengers []raceUser
+	driver     raceUser
+}
+
+// newRaceFixture commits a one-seat car at a pickup point with no other active trip, and three
+// passengers. Cleanup ends the trip and removes the rest.
+func newRaceFixture(t *testing.T, pool *pgxpool.Pool) *raceFixture {
+	t.Helper()
+	ctx := context.Background()
+	f := &raceFixture{t: t, pool: pool, dest: latLng{25.0800, 121.5700}}
+	if err := pool.QueryRow(ctx, `
+		SELECT id, name, lat, lng, radius_m FROM pickup_points p
+		 WHERE NOT EXISTS (SELECT 1 FROM trips t WHERE t.pickup_point_id = p.id AND t.status = 'active')
+		 ORDER BY id DESC LIMIT 1`).Scan(&f.pickup.ID, &f.pickup.Name, &f.pickup.Lat, &f.pickup.Lng, &f.pickup.RadiusM); err != nil {
+		t.Skipf("no pickup point without an active trip: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT id FROM bus_stops ORDER BY id LIMIT 1`).Scan(&f.stopID); err != nil {
 		t.Fatal(err)
 	}
+	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
+	mk := func(prefix string, driver bool) raceUser {
+		u := raceUser{name: "test-race-" + prefix + "-" + suffix}
+		if err := pool.QueryRow(ctx, `INSERT INTO users (username, display_name, is_driver, is_passenger) VALUES ($1, $1, $2, $3) RETURNING id`,
+			u.name, driver, !driver).Scan(&u.id); err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	f.driver = mk("driver", true)
+	for _, n := range []string{"a", "b", "c"} {
+		f.passengers = append(f.passengers, mk(n, false))
+	}
+	var act int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO trips (driver_id, pickup_point_id, destination_name, destination_lat, destination_lng, capacity, status,
+		                   route_polyline, route_distance_m, route_duration_s, route_simulated)
+		VALUES ($1, $2, '測試目的地', $3, $4, 1, 'active', '', 1, 1, true) RETURNING id`, // route present: ranking writes nothing to the trip
+		f.driver.id, f.pickup.ID, f.dest.Lat, f.dest.Lng).Scan(&f.trip); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO activities (user_id, role, trip_id) VALUES ($1, 'driver', $2) RETURNING id`,
+		f.driver.id, f.trip).Scan(&act); err != nil {
+		t.Fatal(err)
+	}
+	car := offsetM(latLng{f.pickup.Lat, f.pickup.Lng}, 500)
+	if _, err := pool.Exec(ctx, `INSERT INTO location_reports (activity_id, lat, lng) VALUES ($1, $2, $3)`, act, car.Lat, car.Lng); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(f.cleanup)
+	return f
+}
 
-	for _, action := range []string{"board", "complete"} {
-		var wg sync.WaitGroup
-		codes := make([]int, 2)
-		for i, path := range []struct{ token, role string }{{tokens[0], "passenger"}, {"driver:" + driver, "driver"}} {
-			wg.Add(1)
-			go func(i int, token, role string) {
-				defer wg.Done()
-				codes[i] = call(t, pool, http.MethodPost, "/api/"+role+"/requests/"+itoa(id)+"/"+action, token, "").Code
-			}(i, path.token, path.role)
-		}
-		wg.Wait()
-		if codes[0] != http.StatusOK || codes[1] != http.StatusOK {
-			t.Fatalf("%s: codes %v, want both 200", action, codes)
-		}
+// cleanup ends the car's trip and removes the requests and passengers. The driver, its activity
+// and its location report stay: location_reports is append-only (DD-06) and the app role cannot
+// lift that, so an account that reported can never be deleted (same as the Karate drivers).
+func (f *raceFixture) cleanup() {
+	ctx := context.Background()
+	var passengers []int64
+	for _, p := range f.passengers {
+		passengers = append(passengers, p.id)
 	}
-	var records, confirmed int
-	if err := pool.QueryRow(context.Background(), `
-		SELECT (SELECT count(*) FROM service_records WHERE request_id = $1), (SELECT seats_confirmed FROM trips WHERE id = $2)`, id, tripID).
-		Scan(&records, &confirmed); err != nil || records != 1 || confirmed != 0 {
-		t.Fatalf("service records %d, seats confirmed %d, %v; want 1 and 0", records, confirmed, err)
+	err := pgx.BeginFunc(ctx, f.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE trips SET status = 'completed', ended_at = now() WHERE id = $1`, f.trip); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM ride_requests WHERE passenger_id = ANY($1)`, passengers); err != nil { // candidates and filters cascade
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM users WHERE id = ANY($1)`, passengers)
+		return err
+	})
+	if err != nil {
+		f.t.Errorf("remove race fixture: %v", err)
 	}
+}
+
+func (f *raceFixture) input(p raceUser) requestInput {
+	return requestInput{PassengerID: p.id, Pickup: f.pickup, At: latLng{f.pickup.Lat, f.pickup.Lng},
+		Dest: place{Name: "d", Lat: f.dest.Lat, Lng: f.dest.Lng}, StopIDs: []int64{f.stopID}}
+}
+
+func (f *raceFixture) seats(t *testing.T) (held, confirmed int) {
+	t.Helper()
+	if err := f.pool.QueryRow(context.Background(), `SELECT seats_held, seats_confirmed FROM trips WHERE id = $1`, f.trip).
+		Scan(&held, &confirmed); err != nil {
+		t.Fatal(err)
+	}
+	return
 }

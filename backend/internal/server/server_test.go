@@ -83,8 +83,6 @@ func TestUnknownRouteUsesErrorFormat(t *testing.T) {
 
 func TestProfiles(t *testing.T) {
 	tx := testTx(t)
-	// passenger1 carries demo habitual data (demo_seed_extras); start this account from none.
-	mustExec(t, tx, `DELETE FROM passenger_profiles WHERE user_id = (SELECT id FROM users WHERE username = 'passenger1')`)
 
 	// Fresh accounts have no accumulated data yet (DD-19).
 	type place struct {

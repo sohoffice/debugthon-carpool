@@ -78,7 +78,7 @@
 | `just ui mock` | 只啟動示範後端 `:8081` |
 | `just ui mock-scenario <情境>` | 切換示範情境並重設：`normal`、`reassign`、`no_cars` |
 | `just ui mock-advance <秒數>` | 把示範後端的時鐘往前撥，例如讓車開到目的地 |
-| `just ui mock-reset` | 重設示範後端（和 Go 後端相同的 `POST /api/demo/reset`） |
+| `just ui mock-reset` | 重設示範後端（`POST /api/demo/reset`；Go 後端還沒有這個 API） |
 | `just ui test` | 型別檢查並執行所有前端測試 |
 
 - 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫；`just ui dev-mock`／`just ui dev` 會自動設定。
@@ -118,6 +118,7 @@
 | GET | `/api/driver/trips/current` | 駕駛 | 進行中的行程；沒有回 `404` |
 | GET | `/api/trips/:id` | 任一 | 行程與其路線、沿途公車站；SQL 預先建立、尚無路線的行程在第一次讀取時補建並保存（DD-21） |
 | GET | `/api/passenger/supply` | 乘客 | 供給查詢（T11）：指定上車點的相關車輛。查詢參數 `pickup_point_id`（必填）、`dest_lat`＋`dest_lng`（選填 `dest_name`）、`stop_ids`（`bus_stops.id`，逗號分隔）、`required_tags`／`preferred_tags`（標籤 id，逗號分隔）；目的地與公車站沒帶時用乘客的常用資料（REQ-025）。回 `200`：`card`（`count`、`fastest_eta_s`、`seats_remaining`）、`cars`（`trip_id`、`eta_s`、`seats_available`，ETA 由近到遠）、`timeline_range_s`（等待上限，秒）與實際採用的 `destination`、`accepted_stop_ids`。篩選沿用媒合引擎的資格篩選，不排序、不提供選車。上車點缺漏回 `400 invalid_request`、不存在回 `400 invalid_pickup_point`、沒有目的地回 `400 destination_required`、沒有公車站回 `400 stops_required`、公車站或標籤不在清單回 `400 invalid_stop`／`invalid_tag`、參數格式錯誤回 `400 invalid_request` |
+| POST | `/api/passenger/requests` | 乘客 | 送出搭車請求（T12）：`pickup_point_id`、`location{lat,lng}`（乘客目前位置，必填）、選填 `destination{name,lat,lng}`、`stop_ids`、`tag_filters[{tag_id,intent}]`；目的地與公車站沒帶時用乘客的常用資料。一律回 `201` 與請求的當下結果：`status` 為 `rejected`（位置離上車點超過送出請求距離，`reason: too_far` 與 `message`）、`no_match`（`message` 為「目前沒有可搭的車」）、`waiting_driver`（已分配排序第一且還有座位的車並暫留座位，`trip_id`、`dropoff_bus_stop_id`、`response_deadline_at`），或 `confirmed`（該行程啟用自動接受，座位正式佔用，乘客最新的參與主檔關聯到該行程）。`relaxed` 表示分配的車未符合全部建議標籤。請求與位置（`submitted_lat`、`submitted_lng`）一律保存。位置缺漏回 `400 invalid_location`，其餘參數錯誤同供給查詢（`invalid_pickup_point`、`destination_required`、`stops_required`、`invalid_stop`、`invalid_tag`、`invalid_request`）。駕駛回應、逾時與改配、查詢請求狀態屬 T13 |
 
 - 除 `/api/ping` 外都需要 `Authorization: Bearer <角色>:<帳號>`：格式錯誤或帳號不存在回 `401`，帳號沒有該角色或角色不能使用該 API 回 `403`。
 - 行程路線目前由模擬的直線備援產生（`route.simulated` 為 `true`，距離為直線 × 1.3、時速 20 公里，DD-09）；T07 的真實來源完成後換進 `RouteProvider` 即可。園區範圍由後端啟動時載入 `backend/config/park/boundary.geojson`，可用環境變數 `PARK_BOUNDARY` 指定其他路徑。
@@ -128,38 +129,15 @@
 
 啟動後可用 `curl -i localhost:8080/api/ping` 驗證。
 
-### 臨時 API（`feat/ui`，待後端實作或審查）
-
-以下 API 是 `feat/ui` 為了讓介面接上 Go 後端而先寫的臨時實作，不是後端工作單的交付內容。後端（T12、T13 等工作單）提供同一功能後，一律改用後端的版本，並刪除這裡的臨時實作。
-
-| 方法 | 路徑 | 角色 | 說明 |
-| --- | --- | --- | --- |
-| GET | `/api/places?q=` | 任一 | 園區內的目的地搜尋（最多 8 筆）：用過的目的地與公車站名稱，供地址輸入使用；PoC 沒有地理編碼服務 |
-| POST | `/api/driver/route-preview` | 駕駛 | 出發前的路線預覽：`pickup_point_id`、`destination`，回傳和出發時相同格式的 `route`，不建立行程；目的地不在園區內回 `400 destination_outside_park` |
-| GET | `/api/driver/trip` | 駕駛 | 駕駛介面的輪詢（DD-04）：進行中的行程（沒有時為最近一趟，從未出發為 `null`），另含 `ended_at`、待回應的請求 `pending_request`、已確認乘客 `passengers[{request_id,dropoff,boarded}]` 與這趟完成的人數 `completed_count` |
-| POST | `/api/driver/requests/:id/accept` | 駕駛 | 確認請求：暫留座位轉為正式佔用，乘客的參與主檔關聯到行程（DD-25）；不是等待中回 `409 request_not_pending` |
-| POST | `/api/driver/requests/:id/decline` | 駕駛 | 婉拒：釋放座位並改配下一台（REQ-050） |
-| POST | `/api/driver/requests/:id/board` | 駕駛 | 標記乘客已上車（DD-27）；已標記不報錯 |
-| POST | `/api/driver/requests/:id/complete` | 駕駛 | 替乘客結束共乘（DD-23）；已結束不報錯 |
-| POST | `/api/passenger/requests` | 乘客 | 送出請求（T12）：供給查詢的內容加上 `location`（目前位置，DD-25）。立即回傳結果：`rejected`（超過送出請求距離）、`no_match`、`waiting_driver` 或 `confirmed`（自動接受）。已有進行中的請求回 `409 request_active`。**PR #25（T12）合併後以它的格式為準** |
-| GET | `/api/passenger/request` | 乘客 | 乘客介面的輪詢：最近一筆請求與狀態；已確認時含車輛、ETA、下車點、行程路線與車輛位置、行進方向；已上車時不含 ETA 與位置（REQ-068） |
-| POST | `/api/passenger/requests/:id/cancel` | 乘客 | 上車前取消（UD-17），座位釋放；上車後或車已經過上車點回 `409 cannot_cancel`。**與 PR #26 衝突**：PoC 不提供取消（carpool-oi-13），待確認 |
-| POST | `/api/passenger/requests/:id/board` | 乘客 | 「我已上車」（DD-27）；已標記不報錯 |
-| POST | `/api/passenger/requests/:id/complete` | 乘客 | 「我已下車，結束共乘」（DD-23）：建立服務紀錄並更新雙方的常用資料（DD-19）；已結束不報錯 |
-| POST | `/api/demo/reset` | 免身分 | 重設 Demo（UD-18），回 `204`：只動 Demo 帳號（`users.simulated`），清除它們的請求與服務紀錄、結束它們的行程、以新的行程重新開始模擬行程，並重新寫入 Demo 種子（`demo_seed_extras()`） |
-
-- 請求流程（`internal/server/requestflow.go`）：分配、確認、婉拒、逾時、上車、結束共乘與取消都在同一把 advisory lock 下的交易中進行，所以座位依送出順序分配（REQ-048、DD-12）。駕駛確認時限由後端計時（DD-13）：伺服器每秒檢查一次到期的請求，兩個輪詢 API 也會先檢查；期限存在資料庫，重啟後照常生效。
-- 駕駛的回報經過上車點之後，回報位置離目的地 50 公尺內時，行程自動結束，車上的共乘一併完成（UD-16；這項規則還沒經過需求與設計審查，`docs/design.md` 沒有）。
-
 ### API 整合測試（Karate）
 
 測試位於 `backend/karate/`（Maven 專案，[Karate](https://github.com/karatelabs/karate) 2.1.3、Java 21 以上），以 `just backend karate` 執行。
 
 - 針對**已啟動**的後端與資料庫；需先 `just infra up` 與 `just backend db-apply`。測試依賴種子資料：測試帳號（見下節）、標籤、上車點與公車站，不自行建立。
-- 在同一個資料庫跑過 Demo 後（真的完成過共乘，種子帳號就會累積常用資料，DD-19），先 `curl -X POST localhost:8080/api/demo/reset` 回到種子狀態再跑，否則假設種子帳號沒有常用資料的情境會失敗。
 - 測試資料的原則：**有 REST API 可寫入就用 API**（例如以 `PUT`／`DELETE /api/me/tags/:id` 選擇與取消標籤，並在情境結束前還原）；**只有沒有 API 可用時才用 SQL**（目前是帳號與常用資料，見 DD-19），寫在 `profiles.feature`，由 `Db.java` 以 `carpool` 角色寫入。
 - SQL 建立的帳號名稱帶 `karate-` 前綴與隨機後綴；每個情境結束時由 `cleanup.feature` 刪除（常用資料隨帳號連動刪除），因此情境可平行執行，也不會留下資料。新增這類情境時沿用同一做法。
 - **新增或修改 API 的任務，一律要同時補上 Karate 情境**，覆蓋成功、被拒絕與未帶 token 的情況。
+- 請求（`requests.feature`）在最後一個上車點（大巨蛋）建立車輛，並讓每個情境各用一個專屬標籤隔離自己的車（乘客要求該標籤，只有該情境的車帶有），因此情境可平行執行；送出過請求的乘客帳號會留在資料庫（`ride_requests` 參照 `users`），行程由 `cleanup-tracking.feature` 結束。
 - 位置回報（`location.feature`）是例外：`location_reports` 只新增（DD-06），觸發器擋下 `DELETE`，且回報掛在 `activities` 之下、`activities.user_id` 的外鍵不連動刪除，所以表示過參與的帳號無法被刪除。做法：每個情境各用一個全新的 `karate-track-` 帳號（可平行、斷言精確）；目前沒有行程 API，進行中的行程以 SQL 建立；情境結束時由 `cleanup-tracking.feature` 將該帳號的行程設為 `completed`，並刪除從未表示過參與的帳號。表示過參與的 `karate-track-` 帳號會留在資料庫，不影響其他測試與供給查詢。
 - 行程（`trips.feature`）同理：出發會建立參與主檔，所以每個情境各用一個全新的 `karate-trip-` 駕駛帳號，結束時由 `cleanup-tracking.feature` 結束其行程；帳號本身會留在資料庫。
 - 以 `-DbaseUrl=...` 指定後端位址（預設 `http://localhost:8080`），以 `-DdbUrl=...`、`-DdbUser=...`、`-DdbPassword=...` 指定 JDBC 連線（預設 `jdbc:postgresql://localhost:5432/carpool`、`carpool`／`carpool`）；`just backend karate` 會依 `PORT`、`POSTGRES_PORT`、`POSTGRES_DB` 帶入。
@@ -190,8 +168,7 @@
 - 標籤：6 個使用者自選標籤（`issuer = 'self'`）。
 - 模擬行程：`driver1`～`driver3` 皆從松山車站出發、座位 3／4／2、自動接受，狀態為進行中（`active`、設定已鎖定、`started_at = now()`）；`driver4`、`driver5` 無行程，供真人從駕駛介面操作。`driver3` 帶有「不抽菸」「安靜通勤」標籤，`driver2` 帶有「可載行李」。
 - 車輛與位置回報主檔：由遷移 `backend/migrations/20261019130000_activities_and_vehicles.sql` 建立 `vehicles`、`activities` 兩張表。`driver1`～`driver5` 各有 1 輛車（車牌與描述為暫定的範例資料，可自行修改）；3 筆模擬行程的駕駛各有 1 筆關聯到該行程的主檔，讓模擬器可直接回報位置。乘客的主檔在乘客呼叫 `POST /api/activities` 時才建立。
-- Demo 種子補充（遷移 `backend/migrations/20261020090100_demo_seed_extras.sql`，函式 `demo_seed_extras()`，Demo 重設時也會再執行）：`passenger1` 的常用資料（目的地瑞光路 513 巷、可接受公車站同下），讓乘客介面直接進供給看板；`driver4` 一趟已結束的行程（松山車站 → 瑞光路 513 巷、可載 3 人、不自動接受、「不抽菸」建議），讓出發確認畫面預先帶入。`passenger2`、`driver5` 都沒有，用來展示第一次使用的畫面。
-- Demo 乘客：`passenger1` 在松山車站，最終目的地約 (25.0765, 121.5742)（瑞光路），可接受的公車站為「瑞光港墘路口」（`stop_id` 1013）與「港墘路」（`stop_id` 1106）。`driver1`、`driver3` 的目的地在其 200 m 內（完全相符），`driver2` 的目的地在基湖路，只能靠沿途公車站相符；取捨結果須待 T07／T08 提供路線與位置後才能驗證。
+- Demo 乘客（尚未建立為資料，請求時輸入）：`passenger1` 在松山車站，最終目的地約 (25.0765, 121.5742)（瑞光路），可接受的公車站為「瑞光港墘路口」（`stop_id` 1013）與「港墘路」（`stop_id` 1106）。`driver1`、`driver3` 的目的地在其 200 m 內（完全相符），`driver2` 的目的地在基湖路，只能靠沿途公車站相符；取捨結果須待 T07／T08 提供路線與位置後才能驗證。
 - 重建：遷移已套用的資料庫要改種子時，用 `just backend db-reset`。Down 只在剛種子的資料庫可用，跑過 Demo 後（位置紀錄、請求都會參照這些資料）請改用 `db-reset`。
 - 系統設定預設值在建立結構的遷移中（`system_settings`）。
 - 離開緩衝 `pass_margin`（預設 25 m）由遷移 `backend/migrations/20261019150000_pass_margin_setting.sql` 加入：車輛進入上車點範圍（`radius_m`）後，要離上車點超過「`radius_m` ＋ `pass_margin`」才算已經過，避免定位誤差在範圍邊緣造成誤判（DD-06）。每次回報都會重新讀取，改 SQL 後立即生效；設為 0 即為單一門檻。
