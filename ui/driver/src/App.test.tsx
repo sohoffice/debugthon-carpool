@@ -99,6 +99,8 @@ describe('driver App', () => {
 
     expect(await screen.findByRole('heading', { name: '第一次出發' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '我出發了' })).toBeDisabled()
+    // The empty route strip says what is still to choose (8.6).
+    expect(within(screen.getByRole('list', { name: '今天的路線' })).getByText('選目的地')).toBeInTheDocument()
   })
 
   it('a request turns the screen into the request view; confirming goes back to waiting', async () => {

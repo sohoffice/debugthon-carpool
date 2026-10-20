@@ -24,6 +24,7 @@ import { CapacityStepper } from './CapacityStepper'
 import { api } from './config'
 import { draftFrom, hasDefaults, toSettings, type DepartureDraft } from './departureDraft'
 import { PickupEditor } from './PickupEditor'
+import { RoutePlaceholder } from './RoutePlaceholder'
 import { SettingLine, SettingRow } from './SettingRow'
 import { Switch } from './Switch'
 
@@ -132,8 +133,10 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
                   {strip.hidden > 0 && <span>沿途共 {strip.items.length - 2 + strip.hidden} 個公車站</span>}
                 </p>
               </>
+            ) : routeFailed ? (
+              <p className="text-base text-ink-soft">路線畫不出來，還是可以出發。</p>
             ) : (
-              <p className="text-base text-ink-soft">{routeFailed ? '路線畫不出來，還是可以出發。' : '今天的路線會畫在這裡。'}</p>
+              <RoutePlaceholder pickupName={pickup?.name} destinationName={destination?.name} />
             )}
           </div>
 

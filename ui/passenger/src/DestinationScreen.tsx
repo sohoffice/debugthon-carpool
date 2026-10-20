@@ -13,6 +13,7 @@ import {
 } from '@carpool/shared'
 import { useState } from 'react'
 import { api } from './config'
+import { loadFilters } from './savedFilters'
 
 /** Stops within this walk of the destination are offered (no walking-time suggestion: REQ-026 is Phase 2). */
 const NEARBY_STOP_M = 1000
@@ -44,7 +45,7 @@ function stopChoices(busStops: BusStop[], destination: Place | null, chosen: num
 export function DestinationScreen({ initial, busStops, myTags, onDone }: DestinationScreenProps) {
   const [destination, setDestination] = useState<Place | null>(initial?.destination ?? null)
   const [stopIds, setStopIds] = useState<number[]>(initial?.accepted_stop_ids ?? [])
-  const [filters, setFilters] = useState<TagFilter[]>(initial?.tag_filters ?? [])
+  const [filters, setFilters] = useState<TagFilter[]>(initial?.tag_filters ?? loadFilters())
   const tags = myTags.tags ?? []
   const choices = stopChoices(busStops, destination, stopIds)
   const selectedChips = choices.filter((c) => c.ids.some((id) => stopIds.includes(id))).map((c) => c.chipId)

@@ -17,6 +17,7 @@ import { LoadingScreen } from './LoadingScreen'
 import { PassengerDebugMode } from './PassengerDebugMode'
 import { useCurrentPosition } from './position'
 import { RequestFlow } from './RequestFlow'
+import { loadFilters, saveFilters } from './savedFilters'
 import { nearestPickup, searchFromProfile } from './search'
 import { SubmitSheet } from './SubmitSheet'
 import { SupplyScreen } from './SupplyScreen'
@@ -54,7 +55,8 @@ export function App() {
           api.get<PassengerRequestResponse>('/passenger/request'),
         ])
         if (cancelled) return
-        const habitual = searchFromProfile(profile)
+        const fromProfile = searchFromProfile(profile)
+        const habitual = fromProfile && { ...fromProfile, tag_filters: loadFilters() }
         setPickupPoints(points)
         setBusStops(stops)
         setSearch(habitual)
@@ -72,6 +74,12 @@ export function App() {
       cancelled = true
     }
   }, [])
+
+  // Whatever filters the passenger last used come back next time (7.1).
+  const filters = search?.tag_filters
+  useEffect(() => {
+    if (filters) saveFilters(filters)
+  }, [filters])
 
   // Moving the passenger (debug mode) picks the nearest pickup point again.
   useEffect(() => setChosenPickupId(null), [presetId])

@@ -1,5 +1,5 @@
 import type { PassengerProfile, PassengerRequest, PassengerRequestResponse, Supply } from '@carpool/shared'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { POLL_INTERVAL_MS } from './config'
@@ -209,6 +209,21 @@ describe('passenger App', () => {
     fireEvent.click(await screen.findByRole('button', { name: STOP.name }))
     fireEvent.click(screen.getByRole('button', { name: '查看接近的車' }))
     expect(await screen.findByText('到 瑞光路 513 巷')).toBeInTheDocument()
+  })
+
+  it('remembers the filters in this browser for next time (7.1)', async () => {
+    fakeBackend({})
+    const first = render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: '不抽菸的篩選' })).getByRole('radio', { name: '強制' }))
+    fireEvent.click(screen.getByRole('button', { name: '送出請求' }))
+    await screen.findByRole('heading', { name: '正在等駕駛確認' })
+    first.unmount()
+
+    const calls = fakeBackend({})
+    render(<App />)
+    await screen.findByText('3 台車接近中')
+    expect(calls.find((c) => c.path.startsWith('/passenger/supply'))?.path).toContain('required_tag_ids=1')
   })
 
   it('has no debug mode without ?debug=1 (DD-26)', async () => {
