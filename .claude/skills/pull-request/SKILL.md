@@ -1,0 +1,65 @@
+---
+name: pull-request
+description: 建立與合併 PR 的慣例——PR 描述的固定段落（摘要與目標、變更內容、驗證證據、受影響的工作單）、開 PR 後在 Slack #debugthon-carpool 公告、合併後在公告訊息加上 ✅。當要開 PR、更新 PR 描述、合併（approve、merge）PR，或其他 skill 要求開 PR 時使用。
+---
+
+# 建立與合併 PR
+
+- [原則](#原則)
+- [建立 PR](#建立-pr)
+- [PR 描述](#pr-描述)
+- [Slack 公告](#slack-公告)
+- [合併](#合併)
+
+## 原則
+
+- 開 PR 不是必要的：是否開 PR 由開發者決定；commit 與 push 仍須先取得開發者同意。
+- 審查不是必要的：PR 可以不經審查，由開發者決定直接合併。
+- 每個 PR 都要在 Slack 公告；合併後只在公告訊息加上 ✅，不在討論串回覆，也不另發訊息。
+
+## 建立 PR
+
+1. 從 `main` 開分支，commit 並 push（經開發者同意）。
+2. 以 `gh pr create --base main` 建立 PR，描述依〈[PR 描述](#pr-描述)〉的段落撰寫。
+3. 依〈[Slack 公告](#slack-公告)〉張貼公告，再把公告連結補進 PR 描述最後（`Slack 公告：<連結>`），讓之後的 session 找得到要加 ✅ 的訊息。
+4. 之後補 commit 時，若摘要、變更內容或證據因此改變，更新 PR 描述（`gh pr edit`）；不另發 Slack 訊息。
+
+## PR 描述
+
+PR 描述以繁體中文撰寫，依序包含以下段落：
+
+```markdown
+## 摘要與目標
+
+這個 PR 解決什麼問題、要達成什麼。
+
+## 變更內容
+
+- 逐項列出改了什麼（檔案、元件、需求或設計條目）。
+
+## 驗證證據
+
+- 證明這個 PR 可行的證據：執行過的指令與結果（單元測試、Karate、lint、建置）、手動驗證的步驟與觀察、截圖。
+- 只改文件時，列出做過的一致性檢查（例如引用的編號都存在、需求與設計的對應已同步）。
+- 沒有收集到的證據就不寫；有測試失敗或略過的步驟，照實寫出。
+
+## 受影響的工作單
+
+- 以 GitHub 連結列出，並說明影響，例如 [#12 T12](https://github.com/sohoffice/debugthon-carpool/issues/12)：範圍移除替代方案。
+- 沒有受影響的工作單時寫「無」。
+```
+
+描述最後加上 conversation 指定的 attribution 行。
+
+## Slack 公告
+
+- 頻道：`#debugthon-carpool`（`C0CACP87NKB`），直接發到頻道。
+- 內容：PR 標題、PR 連結、摘要與目標、主要變更、受影響的工作單（附連結）。
+- 記下訊息的 `message_ts`，並把訊息連結補進 PR 描述。
+
+## 合併
+
+1. 只在開發者要求時合併（`gh pr merge`）；開發者自行合併時，跳到下一步。
+2. 確認 PR 已合併（`gh pr view <編號> --json state`）。
+3. 在該 PR 的 Slack 公告訊息加上 `white_check_mark` 反應；不在討論串回覆。
+4. 更新本機 `main`（`git pull --ff-only`），並刪除已合併的本機分支。
