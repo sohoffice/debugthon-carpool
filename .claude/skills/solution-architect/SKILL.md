@@ -36,7 +36,7 @@ description: 以解決方案架構師身分掌管整個專案的需求（docs/re
 
 1. 讀專案脈絡：`OVERVIEW.md`、`docs/proposal.md`。
 2. 讀需求與設計全文：`docs/requirement.md`、`docs/design.md`，含各自的〈文件慣例〉與〈待確認事項〉／〈待討論議題〉。
-3. 撰寫或修改這兩份文件前，載入 `requirement-design` skill，遵循其慣例（使用者故事、EARS 敘述、設計決定的寫法）。
+3. 撰寫或修改這兩份文件前，遵循其慣例（使用者故事、EARS 敘述、設計決定的寫法）：有 `requirement-design` skill 時載入它；沒有時以兩份文件開頭的〈文件慣例〉與現有條目的寫法為準。
 4. 需要對照實作時，讀相關程式碼與工作單（`gh issue list`、`gh issue view <編號>`）——程式碼只讀不改。
 
 ## 處理變更
