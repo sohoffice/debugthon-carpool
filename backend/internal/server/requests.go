@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,7 +14,8 @@ import (
 
 // Ride request flow, submission half (REQ-034..REQ-036, REQ-047, REQ-048, REQ-022, DD-12,
 // DD-25). A request is answered at once: rejected, assigned to the first ranked car with a seat
-// held, confirmed (auto-accept), or "no car". Driver response, timeout and reassignment are T13.
+// held, confirmed (auto-accept), or "no car". Driver response, timeout, reassignment, boarding
+// and completion are in request_flow.go.
 
 // Request statuses, as in ride_requests.status.
 const (
@@ -22,6 +24,7 @@ const (
 	reqWaitingDriver = "waiting_driver"
 	reqNoMatch       = "no_match"
 	reqConfirmed     = "confirmed"
+	reqBoarded       = "boarded"
 	reqCompleted     = "completed"
 )
 
@@ -29,7 +32,8 @@ const (
 var requestTransitions = map[string][]string{
 	reqSubmitted:     {reqRejected, reqWaitingDriver, reqNoMatch},
 	reqWaitingDriver: {reqConfirmed, reqWaitingDriver, reqNoMatch}, // waiting -> waiting: declined or timed out, next car
-	reqConfirmed:     {reqCompleted},
+	reqConfirmed:     {reqBoarded, reqCompleted},                   // boarding is optional (DD-27, DD-23)
+	reqBoarded:       {reqCompleted},
 }
 
 func canTransition(from, to string) bool {
@@ -57,10 +61,13 @@ func transition(ctx context.Context, db DB, id int64, from, to, set string, args
 		return err
 	}
 	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("request %d is not %s", id, from)
+		return fmt.Errorf("request %d is not %s: %w", id, from, errStaleRequest)
 	}
 	return nil
 }
+
+// errStaleRequest means the request had already left the expected status: another caller won.
+var errStaleRequest = errors.New("request is no longer in the expected status")
 
 // requestLockNamespace is the first key of the advisory locks that serialise submissions.
 const requestLockNamespace = 1201
@@ -94,6 +101,8 @@ type requestView struct {
 	DropoffBusStopID   *int64     `json:"dropoff_bus_stop_id"` // null: the trip's destination
 	ResponseDeadlineAt *time.Time `json:"response_deadline_at"`
 	ConfirmedAt        *time.Time `json:"confirmed_at"`
+	BoardedAt          *time.Time `json:"boarded_at"`
+	CompletedAt        *time.Time `json:"completed_at"`
 	CreatedAt          time.Time  `json:"created_at"`
 }
 
@@ -318,28 +327,36 @@ func (s *Server) assign(ctx context.Context, id int64, rank int, r rankedTrip, r
 		return s.loadRequestView(ctx, id, "", "")
 	}
 
-	if ok, err := confirmSeat(ctx, s.db, r.TripID); err != nil || !ok {
+	if err := confirmRequest(ctx, s.db, id, r.TripID, passengerID, rank); err != nil {
+		return requestView{}, err
+	}
+	return s.loadRequestView(ctx, id, "", "")
+}
+
+// confirmRequest turns the held seat of a waiting request into a confirmed one and links the
+// passenger's latest activity to the trip (REQ-022, REQ-049, DD-25). It runs in the caller's
+// transaction: on any error the caller rolls back, so the status and the seat never diverge.
+func confirmRequest(ctx context.Context, db DB, id, tripID, passengerID int64, rank int) error {
+	if err := transition(ctx, db, id, reqWaitingDriver, reqConfirmed, `confirmed_at = now(), response_deadline_at = NULL`); err != nil {
+		return err
+	}
+	if ok, err := confirmSeat(ctx, db, tripID); err != nil || !ok {
 		if err == nil {
-			err = fmt.Errorf("trip %d lost the seat held for request %d", r.TripID, id)
+			err = fmt.Errorf("trip %d lost the seat held for request %d", tripID, id)
 		}
-		return requestView{}, err
+		return err
 	}
-	if err := transition(ctx, s.db, id, reqWaitingDriver, reqConfirmed, `confirmed_at = now(), response_deadline_at = NULL`); err != nil {
-		return requestView{}, err
-	}
-	if _, err := s.db.Exec(ctx, `UPDATE request_candidates SET outcome = 'accepted' WHERE request_id = $1 AND rank = $2`, id, rank); err != nil {
-		return requestView{}, err
+	if _, err := db.Exec(ctx, `UPDATE request_candidates SET outcome = 'accepted' WHERE request_id = $1 AND rank = $2`, id, rank); err != nil {
+		return err
 	}
 	// DD-25: the passenger's latest activity now belongs to this trip. Only a passenger activity
 	// not yet linked qualifies: a driver activity (an account with both roles) or an activity of
 	// an earlier ride must keep its trip.
-	if _, err := s.db.Exec(ctx, `
+	_, err := db.Exec(ctx, `
 		UPDATE activities SET trip_id = $2
 		 WHERE id = (SELECT id FROM activities WHERE user_id = $1 ORDER BY id DESC LIMIT 1)
-		   AND role = 'passenger' AND trip_id IS NULL`, passengerID, r.TripID); err != nil {
-		return requestView{}, err
-	}
-	return s.loadRequestView(ctx, id, "", "")
+		   AND role = 'passenger' AND trip_id IS NULL`, passengerID, tripID)
+	return err
 }
 
 // rankForRequest screens and ranks the cars at the pickup point with the matching engine
@@ -424,9 +441,10 @@ func (s *Server) loadRequestView(ctx context.Context, id int64, reason, message 
 	var v requestView
 	err := s.db.QueryRow(ctx, `
 		SELECT id, status, relaxed, pickup_point_id, submitted_lat, submitted_lng, trip_id, dropoff_bus_stop_id,
-		       response_deadline_at, confirmed_at, created_at
+		       response_deadline_at, confirmed_at, boarded_at, completed_at, created_at
 		  FROM ride_requests WHERE id = $1`, id).Scan(&v.ID, &v.Status, &v.Relaxed, &v.PickupPointID,
-		&v.SubmittedLat, &v.SubmittedLng, &v.TripID, &v.DropoffBusStopID, &v.ResponseDeadlineAt, &v.ConfirmedAt, &v.CreatedAt)
+		&v.SubmittedLat, &v.SubmittedLng, &v.TripID, &v.DropoffBusStopID, &v.ResponseDeadlineAt, &v.ConfirmedAt,
+		&v.BoardedAt, &v.CompletedAt, &v.CreatedAt)
 	if reason != "" {
 		v.Reason, v.Message = &reason, &message
 	}
