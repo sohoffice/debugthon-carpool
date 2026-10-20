@@ -50,11 +50,30 @@ Feature: supply and the request flow (GET /api/passenger/supply, /api/passenger/
     * status 200
     * match response == { pickup_point: '#(pickup)', wait_limit_min: 10, submit_distance_m: 200, vehicle_count: 1, fastest_eta_s: '#number', seats: 3, vehicles: [{ id: '#(r.response.id)', eta_s: '#number', simulated: true }], simulated: true }
 
+    # a required tag this driver does not carry leaves the car out (REQ-040)
+    * def otherTag = tags[(tags.indexOf(karate.filter(tags, function(t) { return t.id == tagId })[0]) + 1) % tags.length].id
     * path 'api', 'passenger', 'supply'
-    * params { destination_name: '#(dest.name)', destination_lat: '#(dest.lat)', destination_lng: '#(dest.lng)', accepted_stop_ids: '#(stopId)' }
+    * params { pickup_point_id: '#(pickup.id)', destination_name: '#(dest.name)', destination_lat: '#(dest.lat)', destination_lng: '#(dest.lng)', accepted_stop_ids: '#(stopId)', required_tag_ids: '#(otherTag)' }
+    * method get
+    * status 200
+    * match response.vehicles[*].id !contains r.response.id
+
+    # the pickup point, the destination and at least one stop are required
+    * def full = { pickup_point_id: '#(pickup.id)', destination_name: '#(dest.name)', destination_lat: '#(dest.lat)', destination_lng: '#(dest.lng)', accepted_stop_ids: '#(stopId)' }
+    * def without = function(key) { var q = JSON.parse(JSON.stringify(full)); delete q[key]; return q }
+    * path 'api', 'passenger', 'supply'
+    * params without('pickup_point_id')
     * method get
     * status 400
     * match response.error.code == 'invalid_request'
+    * path 'api', 'passenger', 'supply'
+    * params without('destination_lat')
+    * method get
+    * status 400
+    * path 'api', 'passenger', 'supply'
+    * params without('accepted_stop_ids')
+    * method get
+    * status 400
 
   Scenario Outline: a full ride: request, confirm, board (<first>, then <second>), end
     * def tagId = useTag(<tag>)

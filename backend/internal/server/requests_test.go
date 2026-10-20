@@ -452,6 +452,60 @@ func TestSupplyOfThePickupPoint(t *testing.T) {
 	wantStatus(t, call(t, tx, http.MethodGet, strings.Replace(q, "accepted_stop_ids="+itoa(anyStop(t, tx)), "accepted_stop_ids=", 1), token, ""), http.StatusBadRequest, "invalid_request")
 }
 
+// The timeline spans the wait limit setting, read on every query (REQ-030, DD-20), and a car whose
+// driver lacks a tag the passenger requires is left out (REQ-040).
+func TestSupplyFollowsWaitLimitAndRequiredTags(t *testing.T) {
+	tx := testTx(t)
+	trip := flowTrip(t, tx, 3, false, 900)
+	_, token := passengerAt(t, tx)
+	p := domePickup(t, tx)
+	var tagID int64
+	if err := tx.QueryRow(context.Background(), `SELECT min(id) FROM tags`).Scan(&tagID); err != nil {
+		t.Fatal(err)
+	}
+	q := func(required string) string {
+		return "/api/passenger/supply?pickup_point_id=" + itoa(p.id) + "&destination_name=x&destination_lat=" + ftoa(flowDest.Lat) +
+			"&destination_lng=" + ftoa(flowDest.Lng) + "&accepted_stop_ids=" + itoa(anyStop(t, tx)) + "&required_tag_ids=" + required
+	}
+	type supply struct {
+		WaitLimitMin float64 `json:"wait_limit_min"`
+		VehicleCount int     `json:"vehicle_count"`
+	}
+	get := func(path string) supply {
+		w := call(t, tx, http.MethodGet, path, token, "")
+		wantStatus(t, w, http.StatusOK, "")
+		return decode[supply](t, w)
+	}
+
+	if s := get(q("")); s.WaitLimitMin != 10 || s.VehicleCount != 1 {
+		t.Fatalf("supply = %+v, want the car within a 10-minute limit", s)
+	}
+	// The car is about 3.5 minutes away; a 2-minute limit leaves it out and shortens the timeline.
+	mustExec(t, tx, `UPDATE system_settings SET value = 2 WHERE key = 'wait_limit'`)
+	if s := get(q("")); s.WaitLimitMin != 2 || s.VehicleCount != 0 {
+		t.Fatalf("supply = %+v, want a 2-minute timeline without the car", s)
+	}
+	mustExec(t, tx, `UPDATE system_settings SET value = 10 WHERE key = 'wait_limit'`)
+
+	if s := get(q(itoa(tagID))); s.VehicleCount != 0 {
+		t.Fatalf("a required tag the driver lacks should exclude the car, got %+v", s)
+	}
+	mustExec(t, tx, `INSERT INTO user_tags (user_id, tag_id) VALUES ($1, $2)`, trip.driverID, tagID)
+	if s := get(q(itoa(tagID))); s.VehicleCount != 1 {
+		t.Fatalf("the driver now carries the tag, got %+v", s)
+	}
+
+	for name, path := range map[string]string{
+		"no destination": strings.Replace(q(""), "&destination_lat="+ftoa(flowDest.Lat), "", 1),
+		"no stops":       strings.Replace(q(""), "&accepted_stop_ids="+itoa(anyStop(t, tx)), "", 1),
+		"no pickup":      strings.Replace(q(""), "pickup_point_id="+itoa(p.id)+"&", "", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			wantStatus(t, call(t, tx, http.MethodGet, path, token, ""), http.StatusBadRequest, "invalid_request")
+		})
+	}
+}
+
 func TestPlacesAndRoutePreview(t *testing.T) {
 	tx := testTx(t)
 	_, token := newUser(t, tx, roleDriver)

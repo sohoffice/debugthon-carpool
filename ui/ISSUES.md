@@ -88,11 +88,35 @@
 - [x] 真人從駕駛介面出發後，模擬器開始替該行程回報位置
 - [x] 速度設定符合預期（測試：30 km/h 一分鐘約 500 公尺）
 - [x] 沒有 `?debug=1` 時看不到除錯模式
-- [x] 頁面在背景執行 10 分鐘以上，模擬駕駛仍被正確判定經過上車點（示範後端：連續執行 10.5 分鐘；把分頁的 JavaScript 完全暫停 6 分鐘，恢復後補報的位置仍被判定經過。Go 後端：`driver1`～`driver4` 都被 Go 判定經過上車點）
+- [x] 頁面在背景執行 10 分鐘以上，模擬駕駛仍被正確判定經過上車點（示範後端：連續執行 10.5 分鐘；把分頁的 JavaScript 完全暫停 6 分鐘，恢復後補報的位置仍被判定經過。Go 後端：模擬器在背景分頁跑完整條路徑，期間把分頁的 JavaScript 完全暫停 6 分鐘，恢復後 Go 在 2 秒內判定經過上車點，車開到目的地時行程自動結束，駕駛 App 顯示「已到達目的地／今天載了 1 位乘客」）
 
 ### 展示頁（UD-18）
 
 已完成：`ui/showcase`（`http://localhost:5170`），並排嵌入駕駛（`driver4`）與乘客（`passenger1`），「重設」按兩次才執行，執行後兩支手機一起重新載入。Go 後端還沒有 `POST /api/demo/reset`。
+
+### 後端 #11～#13 的驗收條件對照
+
+這次為了讓介面能接 Go 後端，在 `feat/ui` 分支上實作了 #11～#13 的範圍。下表把每張工作單的驗收條件對到驗證它的測試（Go 測試在 `backend/internal/server/requests_test.go`，Karate 在 `backend/karate/src/test/java/carpool/api/requests.feature`）。GitHub 上的工作單內容與狀態沒有改，交給工作單流程（審查）處理。
+
+| 工作單 | 驗收條件 | 驗證 |
+|---|---|---|
+| #11 | 同一情境下，供給清單與 T09 篩選結果一致 | 供給直接呼叫 T09 的 `eligible`（`supply.go`）；`TestSupplyOfThePickupPoint` |
+| #11 | 不符合雙方強制標籤的車不出現 | `TestSupplyFollowsWaitLimitAndRequiredTags`；Karate 供給情境 |
+| #11 | 修改等待上限後，時間軸範圍跟著改變 | `TestSupplyFollowsWaitLimitAndRequiredTags`（改設定後 `wait_limit_min` 與車輛都跟著變） |
+| #11 | Karate：時間軸範圍、缺上車點／目的地／公車站回 400、強制標籤排除 | Karate 供給情境（等待上限的改變只在 Go 測試：Karate 平行執行，改全域設定會影響其他情境） |
+| #12 | 兩位乘客同時搶最後一個座位，先送出者得到座位 | `TestLastSeatGoesToTheFirstSubmitted`（真的平行連線，重跑 10 次都通過） |
+| #12 | 沒有可分配的車時，送出後立即得到「目前沒有可搭的車」 | `TestNoCarAnswersAtOnceWithWalking` |
+| #12 | 狀態轉移測試涵蓋每一條轉移 | 送出→已拒絕 `TestTooFarIsRejectedWithTheDistance`；送出→等待駕駛→已確認 `TestRequestIsHeldThenConfirmedByTheDriver`；送出→已確認（自動接受）`TestAutoAcceptConfirmsAtOnce`；送出→無車可配 `TestNoCarAnswersAtOnceWithWalking`；等待駕駛→改配→無車可配 `TestDeclinesMoveOnUntilNoCarIsLeft`、`TestTimeoutMovesToTheNextCar`；已確認→已上車→已完成 `TestBoardingAndCompletingHappenOnce`；已確認→已完成 `TestCompleteWithoutBoarding`；等待駕駛／已確認→已取消 `TestCancelBeforeBoardingOnly` |
+| #12 | 請求附上的位置超過送出請求距離時被拒絕並說明原因 | `TestTooFarIsRejectedWithTheDistance`；Karate |
+| #12 | 自動接受確認後，乘客的參與主檔關聯到該行程 | `TestAutoAcceptConfirmsAtOnce` |
+| #13 | 逾時改配、連續婉拒直到無車可配 | `TestTimeoutMovesToTheNextCar`、`TestDeclinesMoveOnUntilNoCarIsLeft` |
+| #13 | 乘客與駕駛同時結束共乘時只完成一次 | `TestSimultaneousBoardAndCompleteTakeEffectOnce` |
+| #13 | 乘客與駕駛同時標記上車時只標記一次 | `TestSimultaneousBoardAndCompleteTakeEffectOnce` |
+| #13 | 從已上車與直接從已確認都能結束共乘 | `TestBoardingAndCompletingHappenOnce`、`TestCompleteWithoutBoarding` |
+| #13 | Karate：乘客先標記上車、駕駛先標記上車、雙方都標記 | Karate「a full ride」的四列 Examples |
+| #13 | 完成後常用資料更新，下次出發或查詢時帶入 | `TestBoardingAndCompletingHappenOnce`（駕駛與乘客的常用資料）；Karate 完成後讀乘客常用資料；接 Go 後端時，完成過共乘的帳號下次出發確認與乘客介面都帶入了這些資料 |
+| #13 | 服務紀錄欄位完整 | `TestBoardingAndCompletingHappenOnce`（含上車時間） |
+| #13 | 駕駛確認後，乘客的參與主檔關聯到該行程 | `TestRequestIsHeldThenConfirmedByTheDriver` |
 
 ## 2. 間接相關
 
