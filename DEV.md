@@ -107,6 +107,7 @@
 | GET | `/api/driver/trips/current` | 駕駛 | 進行中的行程；沒有回 `404` |
 | GET | `/api/trips/:id` | 任一 | 行程與其路線、沿途公車站；SQL 預先建立、尚無路線的行程在第一次讀取時補建並保存（DD-21） |
 | GET | `/api/passenger/supply` | 乘客 | 供給查詢（T11）：指定上車點的相關車輛。查詢參數 `pickup_point_id`（必填）、`dest_lat`＋`dest_lng`（選填 `dest_name`）、`stop_ids`（`bus_stops.id`，逗號分隔）、`required_tags`／`preferred_tags`（標籤 id，逗號分隔）；目的地與公車站沒帶時用乘客的常用資料（REQ-025）。回 `200`：`card`（`count`、`fastest_eta_s`、`seats_remaining`）、`cars`（`trip_id`、`eta_s`、`seats_available`，ETA 由近到遠）、`timeline_range_s`（等待上限，秒）與實際採用的 `destination`、`accepted_stop_ids`。篩選沿用媒合引擎的資格篩選，不排序、不提供選車。上車點缺漏回 `400 invalid_request`、不存在回 `400 invalid_pickup_point`、沒有目的地回 `400 destination_required`、沒有公車站回 `400 stops_required`、公車站或標籤不在清單回 `400 invalid_stop`／`invalid_tag`、參數格式錯誤回 `400 invalid_request` |
+| POST | `/api/passenger/requests` | 乘客 | 送出搭車請求（T12）：`pickup_point_id`、`location{lat,lng}`（乘客目前位置，必填）、選填 `destination{name,lat,lng}`、`stop_ids`、`tag_filters[{tag_id,intent}]`；目的地與公車站沒帶時用乘客的常用資料。一律回 `201` 與請求的當下結果：`status` 為 `rejected`（位置離上車點超過送出請求距離，`reason: too_far` 與 `message`）、`no_match`（`message` 為「目前沒有可搭的車」）、`waiting_driver`（已分配排序第一且還有座位的車並暫留座位，`trip_id`、`dropoff_bus_stop_id`、`response_deadline_at`），或 `confirmed`（該行程啟用自動接受，座位正式佔用，乘客最新的參與主檔關聯到該行程）。`relaxed` 表示分配的車未符合全部建議標籤。請求與位置（`submitted_lat`、`submitted_lng`）一律保存。位置缺漏回 `400 invalid_location`，其餘參數錯誤同供給查詢（`invalid_pickup_point`、`destination_required`、`stops_required`、`invalid_stop`、`invalid_tag`、`invalid_request`）。駕駛回應、逾時與改配、查詢請求狀態屬 T13 |
 
 - 除 `/api/ping` 外都需要 `Authorization: Bearer <角色>:<帳號>`：格式錯誤或帳號不存在回 `401`，帳號沒有該角色或角色不能使用該 API 回 `403`。
 - 行程路線目前由模擬的直線備援產生（`route.simulated` 為 `true`，距離為直線 × 1.3、時速 20 公里，DD-09）；T07 的真實來源完成後換進 `RouteProvider` 即可。園區範圍由後端啟動時載入 `backend/config/park/boundary.geojson`，可用環境變數 `PARK_BOUNDARY` 指定其他路徑。
@@ -125,6 +126,7 @@
 - 測試資料的原則：**有 REST API 可寫入就用 API**（例如以 `PUT`／`DELETE /api/me/tags/:id` 選擇與取消標籤，並在情境結束前還原）；**只有沒有 API 可用時才用 SQL**（目前是帳號與常用資料，見 DD-19），寫在 `profiles.feature`，由 `Db.java` 以 `carpool` 角色寫入。
 - SQL 建立的帳號名稱帶 `karate-` 前綴與隨機後綴；每個情境結束時由 `cleanup.feature` 刪除（常用資料隨帳號連動刪除），因此情境可平行執行，也不會留下資料。新增這類情境時沿用同一做法。
 - **新增或修改 API 的任務，一律要同時補上 Karate 情境**，覆蓋成功、被拒絕與未帶 token 的情況。
+- 請求（`requests.feature`）在最後一個上車點（大巨蛋）建立車輛，並讓每個情境各用一個專屬標籤隔離自己的車（乘客要求該標籤，只有該情境的車帶有），因此情境可平行執行；送出過請求的乘客帳號會留在資料庫（`ride_requests` 參照 `users`），行程由 `cleanup-tracking.feature` 結束。
 - 位置回報（`location.feature`）是例外：`location_reports` 只新增（DD-06），觸發器擋下 `DELETE`，且回報掛在 `activities` 之下、`activities.user_id` 的外鍵不連動刪除，所以表示過參與的帳號無法被刪除。做法：每個情境各用一個全新的 `karate-track-` 帳號（可平行、斷言精確）；目前沒有行程 API，進行中的行程以 SQL 建立；情境結束時由 `cleanup-tracking.feature` 將該帳號的行程設為 `completed`，並刪除從未表示過參與的帳號。表示過參與的 `karate-track-` 帳號會留在資料庫，不影響其他測試與供給查詢。
 - 行程（`trips.feature`）同理：出發會建立參與主檔，所以每個情境各用一個全新的 `karate-trip-` 駕駛帳號，結束時由 `cleanup-tracking.feature` 結束其行程；帳號本身會留在資料庫。
 - 以 `-DbaseUrl=...` 指定後端位址（預設 `http://localhost:8080`），以 `-DdbUrl=...`、`-DdbUser=...`、`-DdbPassword=...` 指定 JDBC 連線（預設 `jdbc:postgresql://localhost:5432/carpool`、`carpool`／`carpool`）；`just backend karate` 會依 `PORT`、`POSTGRES_PORT`、`POSTGRES_DB` 帶入。
