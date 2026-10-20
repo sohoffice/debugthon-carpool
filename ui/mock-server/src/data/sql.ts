@@ -58,7 +58,12 @@ function parseBare(token: string): SqlValue {
 
 /** The VALUES list that follows `marker`, up to `end`. Comment lines are dropped. Throws if missing. */
 export function valuesAfter(sql: string, marker: string, end: string): SqlValue[][] {
-  const up = sql.split('-- +goose Down')[0]
+  // Comment lines go first: a ';' inside one would end the list early.
+  const up = sql
+    .split('-- +goose Down')[0]
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n')
   const start = up.indexOf(marker)
   if (start < 0) throw new Error(`Seed SQL changed: "${marker}" not found`)
   const valuesAt = up.indexOf('VALUES', start)
@@ -67,8 +72,5 @@ export function valuesAfter(sql: string, marker: string, end: string): SqlValue[
   const body = up
     .slice(valuesAt + 'VALUES'.length, stop)
     .split('ON CONFLICT')[0]
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('--'))
-    .join('\n')
   return parseTuples(body)
 }

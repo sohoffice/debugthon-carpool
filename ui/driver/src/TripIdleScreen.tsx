@@ -1,20 +1,20 @@
-import type { DriverPassenger, DriverTrip } from '@carpool/shared'
+import type { DriverRequestItem } from '@carpool/shared'
 import { ConnectionNote } from './ConnectionNote'
 
 interface TripIdleScreenProps {
-  trip: DriverTrip
+  passengers: DriverRequestItem[]
   busy: boolean
   offline: boolean
   onBoarded: (requestId: number) => void
   onDropOff: (requestId: number) => void
 }
 
-function PassengerRow({ passenger, busy, onBoarded, onDropOff }: { passenger: DriverPassenger } & Omit<TripIdleScreenProps, 'trip' | 'offline'>) {
+function PassengerRow({ passenger, busy, onBoarded, onDropOff }: { passenger: DriverRequestItem } & Omit<TripIdleScreenProps, 'passengers' | 'offline'>) {
   const name = passenger.dropoff.name
   // One button per passenger: first "上車", then "下車" (DD-27, DD-23).
   const action = passenger.boarded
-    ? { label: '已下車', aria: `${name}的乘客已下車`, run: () => onDropOff(passenger.request_id) }
-    : { label: '已上車', aria: `${name}的乘客已上車`, run: () => onBoarded(passenger.request_id) }
+    ? { label: '已下車', aria: `${name}的乘客已下車`, run: () => onDropOff(passenger.id) }
+    : { label: '已上車', aria: `${name}的乘客已上車`, run: () => onBoarded(passenger.id) }
   return (
     <li className="flex items-center justify-between gap-4 border-b border-white/20 py-3">
       <span className="min-w-0">
@@ -35,7 +35,7 @@ function PassengerRow({ passenger, busy, onBoarded, onDropOff }: { passenger: Dr
 }
 
 /** 6.2: asphalt screen, one question answered. No map, stats, hints or animation (DD-04, REQ-066). */
-export function TripIdleScreen({ trip, busy, offline, onBoarded, onDropOff }: TripIdleScreenProps) {
+export function TripIdleScreen({ passengers, busy, offline, onBoarded, onDropOff }: TripIdleScreenProps) {
   return (
     <main className="flex h-full flex-col bg-ink px-6 pt-(--safe-top) pb-(--safe-bottom) text-white">
       <p className="mt-6 text-lg font-semibold text-white/60">行程中</p>
@@ -46,12 +46,12 @@ export function TripIdleScreen({ trip, busy, offline, onBoarded, onDropOff }: Tr
       </h1>
       {offline && <ConnectionNote />}
 
-      {trip.passengers.length > 0 && (
+      {passengers.length > 0 && (
         <section aria-label="乘客" className="mt-auto pb-6">
           <h2 className="text-lg font-semibold text-white/60">乘客</h2>
           <ul className="mt-3 border-t border-white/20">
-            {trip.passengers.map((p) => (
-              <PassengerRow key={p.request_id} passenger={p} busy={busy} onBoarded={onBoarded} onDropOff={onDropOff} />
+            {passengers.map((p) => (
+              <PassengerRow key={p.id} passenger={p} busy={busy} onBoarded={onBoarded} onDropOff={onDropOff} />
             ))}
           </ul>
         </section>

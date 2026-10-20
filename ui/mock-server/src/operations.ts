@@ -1,5 +1,4 @@
-import type { DepartureSettings, LatLngBody, RequestSubmission } from '../../shared/src/api/types.ts'
-import { findAlternatives } from './alternatives.ts'
+import type { DepartureSettings, LatLngBody, PassengerSearch } from '../../shared/src/api/types.ts'
 import { HUMAN_START_ETA_S, REASSIGN_TIMEOUT_S } from './config.ts'
 import { mustGet, type Lookups } from './context.ts'
 import { MockError } from './errors.ts'
@@ -36,14 +35,7 @@ function assignFrom(world: World, lookups: Lookups, requestId: number, from: num
     return i >= from && trip !== undefined && tripOpen(trip, lookups, now)
   })
   if (index < 0) {
-    const pickup = mustGet(lookups.pickupById, request.pickupPointId, 'pickup point')
-    return updateRequest(world, requestId, (r) => ({
-      ...r,
-      status: 'no_match',
-      candidateIndex: r.candidates.length,
-      deadlineMs: null,
-      alternatives: findAlternatives(lookups, pickup, r.search),
-    }))
+    return updateRequest(world, requestId, (r) => ({ ...r, status: 'no_match', candidateIndex: r.candidates.length, deadlineMs: null }))
   }
   const trip = findTrip(world, request.candidates[index].tripId)!
   const status = trip.autoAccept ? 'confirmed' : 'waiting_driver'
@@ -53,8 +45,8 @@ function assignFrom(world: World, lookups: Lookups, requestId: number, from: num
     ...r,
     status,
     candidateIndex: index,
-    reassigned: r.reassigned || from > 0,
     deadlineMs: trip.autoAccept ? null : now + confirmTimeoutMs(world, lookups),
+    confirmedAtMs: trip.autoAccept ? now : null,
   }))
 }
 
@@ -69,14 +61,15 @@ function linkActivity(world: World, passengerId: number, tripId: number): World 
 function reassign(world: World, lookups: Lookups, request: RideRequest, now: number): World {
   const tripId = assignedTripId(request)
   const released = tripId === null ? world : moveSeat(world, tripId, 'held', null)
-  return assignFrom(released, lookups, request.id, request.candidateIndex + 1, now)
+  const counted = updateRequest(released, request.id, (r) => ({ ...r, reassignedCount: r.reassignedCount + 1 }))
+  return assignFrom(counted, lookups, request.id, request.candidateIndex + 1, now)
 }
 
-function finishRide(world: World, request: RideRequest): World {
+function finishRide(world: World, request: RideRequest, now: number): World {
   const tripId = assignedTripId(request)!
   const trip = findTrip(world, tripId)!
   const freed = updateTrip(moveSeat(world, tripId, 'confirmed', null), tripId, (t) => ({ ...t, completedCount: t.completedCount + 1 }))
-  const done = updateRequest(freed, request.id, (r) => ({ ...r, status: 'completed' }))
+  const done = updateRequest(freed, request.id, (r) => ({ ...r, status: 'completed', completedAtMs: now }))
   // Habitual data is updated from completed rides (DD-19).
   return {
     ...done,
@@ -120,7 +113,7 @@ function endTrip(world: World, lookups: Lookups, tripId: number, now: number): W
   const ended = updateTrip(world, tripId, (t) => ({ ...t, status: 'completed', endedAtMs: now }))
   const onTrip = ended.requests.filter((r) => assignedTripId(r) === tripId)
   const settled = onTrip.reduce((w, r) => {
-    if (r.status === 'confirmed' || r.status === 'boarded') return finishRide(w, r)
+    if (r.status === 'confirmed' || r.status === 'boarded') return finishRide(w, r, now)
     if (r.status === 'waiting_driver') return reassign(w, lookups, r, now)
     return w
   }, ended)
@@ -178,57 +171,70 @@ function driverRequest(world: World, driverId: number, requestId: number): RideR
   return request
 }
 
-export function accept(world: World, driverId: number, requestId: number): World {
+const notWaiting = () => new MockError(409, 'not_waiting', '請求已不在等待駕駛回應')
+const invalidState = () => new MockError(409, 'invalid_state', '請求目前的狀態不能執行這個操作')
+
+export function accept(world: World, driverId: number, requestId: number, now: number): World {
   const request = driverRequest(world, driverId, requestId)
-  if (request.status !== 'waiting_driver') throw new MockError(409, 'request_not_pending', '這個請求已經不需要回應')
+  if (request.status !== 'waiting_driver') throw notWaiting()
   const moved = linkActivity(moveSeat(world, assignedTripId(request)!, 'held', 'confirmed'), request.passengerId, assignedTripId(request)!)
-  return updateRequest(moved, requestId, (r) => ({ ...r, status: 'confirmed', deadlineMs: null }))
+  return updateRequest(moved, requestId, (r) => ({ ...r, status: 'confirmed', deadlineMs: null, confirmedAtMs: now }))
 }
 
 export function decline(world: World, lookups: Lookups, driverId: number, requestId: number, now: number): World {
   const request = driverRequest(world, driverId, requestId)
-  if (request.status !== 'waiting_driver') throw new MockError(409, 'request_not_pending', '這個請求已經不需要回應')
+  if (request.status !== 'waiting_driver') throw notWaiting()
   return reassign(world, lookups, request, now)
 }
 
-/** Either side can mark boarding; the first one wins, the second is a no-op (DD-27). */
-export function boardRide(world: World, request: RideRequest): World {
+/** Either side can mark boarding; the first one wins, the second gets its result (DD-27). */
+export function boardRide(world: World, request: RideRequest, now: number): World {
   if (request.status === 'boarded') return world
-  if (request.status !== 'confirmed') throw new MockError(409, 'request_not_confirmed', '這個請求還沒有確認')
-  return updateRequest(world, request.id, (r) => ({ ...r, status: 'boarded' }))
+  if (request.status !== 'confirmed') throw invalidState()
+  return updateRequest(world, request.id, (r) => ({ ...r, status: 'boarded', boardedAtMs: now }))
 }
 
-/** Either side can end a ride, boarded or not; the first one wins, the second is a no-op (DD-23). */
-export function completeRide(world: World, request: RideRequest): World {
+/** Either side can end a ride, boarded or not; the first one wins, the second gets its result (DD-23). */
+export function completeRide(world: World, request: RideRequest, now: number): World {
   if (request.status === 'completed') return world
-  if (request.status !== 'confirmed' && request.status !== 'boarded') throw new MockError(409, 'request_not_confirmed', '這個請求還沒有確認')
-  return finishRide(world, request)
+  if (request.status !== 'confirmed' && request.status !== 'boarded') throw invalidState()
+  return finishRide(world, request, now)
 }
 
-export function driverBoardRide(world: World, driverId: number, requestId: number): World {
-  return boardRide(world, driverRequest(world, driverId, requestId))
+export function driverBoardRide(world: World, driverId: number, requestId: number, now: number): World {
+  return boardRide(world, driverRequest(world, driverId, requestId), now)
 }
 
-export function driverCompleteRide(world: World, driverId: number, requestId: number): World {
-  return completeRide(world, driverRequest(world, driverId, requestId))
+export function driverCompleteRide(world: World, driverId: number, requestId: number, now: number): World {
+  return completeRide(world, driverRequest(world, driverId, requestId), now)
 }
 
 // ---------------------------------------------------------------- passenger actions
 
 const isOpen = (r: RideRequest) => r.status === 'waiting_driver' || r.status === 'confirmed' || r.status === 'boarded'
 
+/** The passenger's latest request that is not over yet (REQ-069). */
 export function openRequestOf(world: World, passengerId: number): RideRequest | undefined {
-  return world.requests.find((r) => r.passengerId === passengerId && isOpen(r))
+  return world.requests.filter((r) => r.passengerId === passengerId && isOpen(r)).at(-1)
 }
 
-/** Decides at once: rejected, no_match, waiting_driver or confirmed (REQ-034, REQ-036). */
-export function submitRequest(world: World, lookups: Lookups, passengerId: number, submission: RequestSubmission, now: number): World {
-  if (openRequestOf(world, passengerId)) throw new MockError(409, 'request_active', '已經有進行中的請求')
-  const pickup = mustGet(lookups.pickupById, submission.pickup_point_id, 'pickup point')
-  const { location, pickup_point_id: _, ...search } = submission
+export interface Submission {
+  pickupPointId: number
+  location: LatLngBody
+  search: PassengerSearch
+}
+
+/**
+ * Decides at once: rejected, no_match, waiting_driver or confirmed (REQ-034, REQ-036). Like the
+ * Go backend it does not refuse a second open request; the UI does (REQ-069).
+ */
+export function submitRequest(world: World, lookups: Lookups, passengerId: number, submission: Submission, now: number): World {
+  const pickup = mustGet(lookups.pickupById, submission.pickupPointId, 'pickup point')
+  const { location, search } = submission
   // The distance is checked against the position sent with the request, not the reports (DD-25).
-  const distance = Math.round(distanceM(pickup, location))
-  const tooFar = distance > lookups.settings.submit_distance
+  const distance = distanceM(pickup, location)
+  const limit = lookups.settings.submit_distance
+  const tooFar = distance > limit
   const request: RideRequest = {
     id: world.nextRequestId,
     passengerId,
@@ -238,30 +244,16 @@ export function submitRequest(world: World, lookups: Lookups, passengerId: numbe
     status: 'rejected',
     candidates: tooFar ? [] : matchTrips(world, lookups, passengerId, pickup.id, search, now),
     candidateIndex: 0,
-    reassigned: false,
+    reassignedCount: 0,
     deadlineMs: null,
-    rejectDistanceM: tooFar ? distance : null,
-    alternatives: [],
+    rejectMessage: tooFar ? `你離上車點「${pickup.name}」約 ${Math.round(distance)} 公尺，超過送出請求距離 ${limit} 公尺` : null,
     createdAtMs: now,
+    confirmedAtMs: null,
+    boardedAtMs: null,
+    completedAtMs: null,
   }
   const added = { ...world, nextRequestId: world.nextRequestId + 1, requests: [...world.requests, request] }
   return tooFar ? added : assignFrom(added, lookups, request.id, 0, now)
-}
-
-export function canCancel(world: World, lookups: Lookups, request: RideRequest, now: number): boolean {
-  if (request.status === 'waiting_driver') return true
-  if (request.status !== 'confirmed') return false
-  return !passedPickup(findTrip(world, assignedTripId(request)!)!, now, lookups)
-}
-
-/** Before boarding only; the seat is released (UD-17). */
-export function cancelRequest(world: World, lookups: Lookups, request: RideRequest, now: number): World {
-  if (request.status === 'boarded') throw new MockError(409, 'cannot_cancel', '上車後不能取消請求')
-  if (request.status !== 'waiting_driver' && request.status !== 'confirmed') throw new MockError(409, 'request_closed', '這個請求已經結束')
-  if (!canCancel(world, lookups, request, now)) throw new MockError(409, 'cannot_cancel', '上車後不能取消請求')
-  const tripId = assignedTripId(request)!
-  const released = moveSeat(world, tripId, request.status === 'confirmed' ? 'confirmed' : 'held', null)
-  return updateRequest(released, request.id, (r) => ({ ...r, status: 'cancelled', deadlineMs: null }))
 }
 
 // ---------------------------------------------------------------- participation and positions (DD-25, DD-08)

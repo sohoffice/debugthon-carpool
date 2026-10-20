@@ -1,24 +1,21 @@
-import type {
-  DepartureSettings,
-  LatLngBody,
-  PassengerSearch,
-  Place,
-  RequestSubmission,
-  RoutePreviewRequest,
-  SupplyQuery,
-  TagFilter,
-} from '../../shared/src/api/types.ts'
+import type { DepartureSettings, LatLngBody, PassengerSearch, Place, RoutePreviewRequest, TagFilter } from '../../shared/src/api/types.ts'
 import type { Lookups } from './context.ts'
 import { MockError } from './errors.ts'
+import type { Submission } from './operations.ts'
 import { insidePark } from './places.ts'
+import type { PassengerProfileState } from './world.ts'
 
-const bad = (what: string) => new MockError(400, 'bad_request', `請求格式錯誤：${what}`)
+const bad = (what: string) => new MockError(400, 'invalid_request', `請求格式錯誤：${what}`)
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
-function place(v: unknown, lookups: Lookups): Place {
+function place(v: unknown): Place {
   if (!isObject(v) || typeof v.name !== 'string' || v.name.trim() === '' || !isNumber(v.lat) || !isNumber(v.lng)) throw bad('destination')
-  const p = { name: v.name.trim(), lat: v.lat, lng: v.lng }
+  return { name: v.name.trim(), lat: v.lat, lng: v.lng }
+}
+
+function parkPlace(v: unknown, lookups: Lookups): Place {
+  const p = place(v)
   if (!insidePark(lookups, p)) throw new MockError(400, 'destination_outside_park', '目的地必須在內湖科學園區內')
   return p
 }
@@ -41,9 +38,8 @@ function pickupPointId(v: unknown, lookups: Lookups): number {
 }
 
 function stops(v: unknown, lookups: Lookups): number[] {
-  if (!Array.isArray(v) || !v.every(isNumber)) throw bad('accepted_stop_ids')
-  if (v.length === 0) throw new MockError(400, 'no_accepted_stops', '至少選一個可以下車的公車站')
-  if (!v.every((id) => lookups.busStopById.has(id))) throw new MockError(400, 'unknown_bus_stop', '公車站不在清單中')
+  if (!Array.isArray(v) || !v.every(isNumber)) throw bad('stop_ids')
+  if (!v.every((id) => lookups.busStopById.has(id))) throw new MockError(400, 'invalid_stop', '公車站不在清單中')
   return v
 }
 
@@ -56,7 +52,7 @@ function latLng(v: unknown, what: string): LatLngBody {
 
 export function routePreviewRequest(body: unknown, lookups: Lookups): RoutePreviewRequest {
   if (!isObject(body)) throw bad('body')
-  return { pickup_point_id: pickupPointId(body.pickup_point_id, lookups), destination: place(body.destination, lookups) }
+  return { pickup_point_id: pickupPointId(body.pickup_point_id, lookups), destination: parkPlace(body.destination, lookups) }
 }
 
 /** Same checks and codes as the Go backend's depart. */
@@ -68,42 +64,75 @@ export function departureSettings(body: unknown, lookups: Lookups): DepartureSet
   }
   return {
     pickup_point_id: pickupPointId(body.pickup_point_id, lookups),
-    destination: place(body.destination, lookups),
+    destination: parkPlace(body.destination, lookups),
     capacity,
     auto_accept: body.auto_accept === true,
     tag_filters: body.tag_filters === undefined ? [] : tagFilters(body.tag_filters, lookups),
   }
 }
 
-function passengerSearch(body: Record<string, unknown>, lookups: Lookups): PassengerSearch {
-  return { destination: place(body.destination, lookups), accepted_stop_ids: stops(body.accepted_stop_ids, lookups), tag_filters: tagFilters(body.tag_filters, lookups) }
+/**
+ * Destination, stops and filters of a supply query or a request, like the Go backend: destination
+ * and stops fall back to the passenger's habitual data (REQ-025).
+ */
+function passengerSearch(
+  given: { destination?: unknown; stopIds?: unknown; tagFilters: TagFilter[] },
+  lookups: Lookups,
+  profile: PassengerProfileState | undefined,
+): PassengerSearch {
+  const destination = given.destination !== undefined ? place(given.destination) : profile?.destination
+  if (!destination) throw new MockError(400, 'destination_required', '需要目的地')
+  const ids = given.stopIds !== undefined ? stops(given.stopIds, lookups) : (profile?.acceptedStopIds ?? [])
+  if (ids.length === 0) throw new MockError(400, 'stops_required', '至少選一個可以下車的公車站')
+  return { destination, accepted_stop_ids: ids, tag_filters: given.tagFilters }
 }
 
-const ids = (raw: string | null) => (raw ? raw.split(',').map((x) => Number(x.trim())) : [])
-
-/** GET /api/passenger/supply query (types.ts SupplyQuery). */
-export function supplyQuery(query: URLSearchParams, lookups: Lookups): SupplyQuery {
-  const number = (key: string) => (query.get(key) === null || query.get(key) === '' ? Number.NaN : Number(query.get(key)))
-  const filters = [
-    ...ids(query.get('required_tag_ids')).map((tag_id) => ({ tag_id, intent: 'required' })),
-    ...ids(query.get('preferred_tag_ids')).map((tag_id) => ({ tag_id, intent: 'preferred' })),
-  ]
-  return {
-    pickup_point_id: pickupPointId(number('pickup_point_id'), lookups),
-    ...passengerSearch(
-      {
-        destination: { name: query.get('destination_name') ?? '', lat: number('destination_lat'), lng: number('destination_lng') },
-        accepted_stop_ids: ids(query.get('accepted_stop_ids')),
-        tag_filters: filters,
-      },
-      lookups,
-    ),
-  }
+function idList(raw: string | null, what: string): number[] {
+  if (raw === null || raw === '') return []
+  const list = raw.split(',').map((x) => Number(x.trim()))
+  if (!list.every(Number.isInteger)) throw bad(what)
+  return list
 }
 
-export function requestSubmission(body: unknown, lookups: Lookups): RequestSubmission {
+/** GET /api/passenger/supply query (types.ts Supply). */
+export function supplyQuery(query: URLSearchParams, lookups: Lookups, profile: PassengerProfileState | undefined): { pickupPointId: number; search: PassengerSearch } {
+  const raw = query.get('pickup_point_id')
+  if (raw === null || raw === '') throw bad('pickup_point_id')
+  const pickupPointId = Number(raw)
+  if (!Number.isInteger(pickupPointId)) throw bad('pickup_point_id')
+  if (!lookups.pickupById.has(pickupPointId)) throw new MockError(400, 'invalid_pickup_point', '上車點必須是預先定義的上車點之一')
+  const lat = query.get('dest_lat')
+  const lng = query.get('dest_lng')
+  const filters = tagFilters(
+    [
+      ...idList(query.get('required_tags'), 'required_tags').map((tag_id) => ({ tag_id, intent: 'required' })),
+      ...idList(query.get('preferred_tags'), 'preferred_tags').map((tag_id) => ({ tag_id, intent: 'preferred' })),
+    ],
+    lookups,
+  )
+  const search = passengerSearch(
+    {
+      destination: lat === null && lng === null ? undefined : { name: query.get('dest_name') || '目的地', lat: Number(lat), lng: Number(lng) },
+      stopIds: query.has('stop_ids') ? idList(query.get('stop_ids'), 'stop_ids') : undefined,
+      tagFilters: filters,
+    },
+    lookups,
+    profile,
+  )
+  return { pickupPointId, search }
+}
+
+/** Body of POST /api/passenger/requests (types.ts RequestSubmission). */
+export function requestSubmission(body: unknown, lookups: Lookups, profile: PassengerProfileState | undefined): Submission {
   if (!isObject(body)) throw bad('body')
-  return { pickup_point_id: pickupPointId(body.pickup_point_id, lookups), ...passengerSearch(body, lookups), location: latLng(body.location, 'location') }
+  const location = latLng(body.location, 'location')
+  const pickupPoint = pickupPointId(body.pickup_point_id, lookups)
+  const search = passengerSearch(
+    { destination: body.destination, stopIds: body.stop_ids, tagFilters: body.tag_filters === undefined ? [] : tagFilters(body.tag_filters, lookups) },
+    lookups,
+    profile,
+  )
+  return { pickupPointId: pickupPoint, location, search }
 }
 
 export function locationBody(body: unknown): LatLngBody {

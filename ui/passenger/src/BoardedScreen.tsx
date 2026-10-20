@@ -1,30 +1,37 @@
-import { Button, RouteStrip, routeStripItems, type PassengerRequest, type Ride } from '@carpool/shared'
+import { Button, RouteStrip, routeStripItems, type TripView, type Vehicle } from '@carpool/shared'
+import { CancelButton } from './CancelButton'
 import { Plate } from './Plate'
 
 interface BoardedScreenProps {
-  request: PassengerRequest & { ride: Ride }
+  dropoffName: string | null
+  dropoffStopId: number | null
+  /** The backend sends the car and trip only while confirmed; these are what the screen kept or fetched. */
+  vehicle: Vehicle | null
+  trip: TripView | null
   busy: boolean
   onDone: () => void
 }
 
-/** 7.4 boarded: no ETA or pickup any more, only where to get off and "結束共乘" (DD-27, REQ-068). */
-export function BoardedScreen({ request, busy, onDone }: BoardedScreenProps) {
-  const { ride } = request
-  const strip = routeStripItems(request.pickup_point.name, ride.route.bus_stops, request.destination.name, { dropoffStopId: ride.dropoff.bus_stop_id })
+/** 7.6 boarded: no ETA, pickup or map any more, only where to get off and "結束共乘" (DD-27, REQ-068). */
+export function BoardedScreen({ dropoffName, dropoffStopId, vehicle, trip, busy, onDone }: BoardedScreenProps) {
+  const strip = trip?.route && routeStripItems(trip.pickup_point.name, trip.route.bus_stops, trip.destination.name, { dropoffStopId })
   return (
     <main className="flex h-full flex-col bg-paper px-6 pt-[calc(var(--safe-top)+24px)] pb-(--safe-bottom)">
       <p className="text-lg font-semibold text-ink-soft">在車上</p>
-      <h1 className="mt-2 text-[36px]/tight font-bold">在{ride.dropoff.name}下車</h1>
-      <div className="mt-4 flex items-center gap-4">
-        <Plate plate={ride.vehicle.plate} />
-        <span className="min-w-0 text-lg">{ride.vehicle.description}</span>
-      </div>
-      <div className="mt-8 min-h-0 flex-1 overflow-y-auto border-t border-rule pt-4">
-        <RouteStrip items={strip.items} label="這趟的路線" />
-      </div>
-      <Button className="mb-4 h-16 w-full text-xl" disabled={busy} onClick={onDone}>
+      <h1 className="mt-2 text-[36px]/tight font-bold">{dropoffName ? `在${dropoffName}下車` : '在車上了'}</h1>
+      {vehicle && (
+        <div className="mt-4 flex items-center gap-4">
+          <Plate plate={vehicle.plate} />
+          <span className="min-w-0 text-lg">{vehicle.description}</span>
+        </div>
+      )}
+      <div className="mt-8 min-h-0 flex-1 overflow-y-auto border-t border-rule pt-4">{strip && <RouteStrip items={strip.items} label="這趟的路線" />}</div>
+      <Button className="h-16 w-full text-xl" disabled={busy} onClick={onDone}>
         我已下車，結束共乘
       </Button>
+      <div className="flex h-12 justify-center">
+        <CancelButton />
+      </div>
     </main>
   )
 }

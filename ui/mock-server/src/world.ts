@@ -1,13 +1,4 @@
-import type {
-  Alternative,
-  MockScenario,
-  Place,
-  RequestStatus,
-  Route,
-  TagFilter,
-  TripStatus,
-  PassengerSearch,
-} from '../../shared/src/api/types.ts'
+import type { MockScenario, PassengerSearch, Place, RequestStatus, Route, TagFilter, TripStatus } from '../../shared/src/api/types.ts'
 import { ARRIVAL_RADIUS_M, PASSENGER_PROFILES, PREVIOUS_TRIPS, SIMULATED_START_ETA_S, SPEED_MPS } from './config.ts'
 import { mustGet, type Lookups } from './context.ts'
 import { MockError } from './errors.ts'
@@ -61,11 +52,15 @@ export interface RideRequest {
   candidates: Candidate[]
   /** The candidate currently assigned (waiting, confirmed or completed). */
   candidateIndex: number
-  reassigned: boolean
+  /** Drivers that declined or timed out (REQ-053). */
+  reassignedCount: number
   deadlineMs: number | null
-  rejectDistanceM: number | null
-  alternatives: Alternative[]
+  /** Set when rejected for being too far (REQ-034). */
+  rejectMessage: string | null
   createdAtMs: number
+  confirmedAtMs: number | null
+  boardedAtMs: number | null
+  completedAtMs: number | null
 }
 
 export interface DriverProfileState {

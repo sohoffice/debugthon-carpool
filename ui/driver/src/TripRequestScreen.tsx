@@ -1,9 +1,10 @@
-import type { DriverPendingRequest, DriverTrip } from '@carpool/shared'
+import type { DriverRequestItem } from '@carpool/shared'
 import { ConnectionNote } from './ConnectionNote'
 
 interface TripRequestScreenProps {
-  trip: DriverTrip
-  request: DriverPendingRequest
+  /** Already confirmed, to say where else the car stops. */
+  passengers: DriverRequestItem[]
+  request: DriverRequestItem
   busy: boolean
   offline: boolean
   onAccept: () => void
@@ -14,8 +15,8 @@ interface TripRequestScreenProps {
  * 6.3: the whole screen turns road-marking yellow, no animation or popup (UD-04). Confirm is the
  * biggest target, at the bottom where the thumb is; decline is smaller, below it (UD-05).
  */
-export function TripRequestScreen({ trip, request, busy, offline, onAccept, onDecline }: TripRequestScreenProps) {
-  const others = trip.passengers.map((p) => p.dropoff.name)
+export function TripRequestScreen({ passengers, request, busy, offline, onAccept, onDecline }: TripRequestScreenProps) {
+  const others = passengers.map((p) => p.dropoff.name)
   return (
     <main className="flex h-full flex-col bg-signal px-6 pt-(--safe-top) pb-(--safe-bottom) text-ink">
       <h1 className="mt-6 text-[32px]/tight font-bold">有乘客要搭車</h1>

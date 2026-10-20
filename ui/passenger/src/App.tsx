@@ -3,11 +3,12 @@ import {
   PhoneShell,
   useMyTags,
   type BusStop,
+  type CurrentRequest,
   type PassengerProfile,
-  type PassengerRequest,
-  type PassengerRequestResponse,
   type PassengerSearch,
   type PickupPoint,
+  type RequestStatusView,
+  type RequestView,
   type TagFilter,
 } from '@carpool/shared'
 import { useCallback, useEffect, useState } from 'react'
@@ -27,9 +28,9 @@ type View =
   | { kind: 'loading'; failed: boolean; missing?: string }
   | { kind: 'setup' }
   | { kind: 'supply'; notice: string | null }
-  | { kind: 'request'; request: PassengerRequest; fresh: boolean }
+  | { kind: 'request'; request: RequestStatusView; fresh: boolean }
 
-const isOpen = (r: PassengerRequest | null) => r !== null && (r.status === 'waiting_driver' || r.status === 'confirmed' || r.status === 'boarded')
+const fetchCurrent = () => api.get<CurrentRequest>('/passenger/requests/current')
 
 export function App() {
   const [view, setView] = useState<View>({ kind: 'loading', failed: false })
@@ -48,11 +49,11 @@ export function App() {
     let cancelled = false
     async function boot() {
       try {
-        const [points, stops, profile, latest] = await Promise.all([
+        const [points, stops, profile, current] = await Promise.all([
           api.get<PickupPoint[]>('/pickup-points'),
           api.get<BusStop[]>('/bus-stops'),
           api.get<PassengerProfile>('/passenger/profile'),
-          api.get<PassengerRequestResponse>('/passenger/request'),
+          fetchCurrent(),
         ])
         if (cancelled) return
         const fromProfile = searchFromProfile(profile)
@@ -60,8 +61,8 @@ export function App() {
         setPickupPoints(points)
         setBusStops(stops)
         setSearch(habitual)
-        // An open request comes back after a reload; habitual data skips the setup (5, REQ-025).
-        if (latest.request && isOpen(latest.request)) setView({ kind: 'request', request: latest.request, fresh: false })
+        // An open request comes back after a reload, with no way to send another (REQ-069); habitual data skips the setup (5, REQ-025).
+        if (current.request) setView({ kind: 'request', request: current.request, fresh: false })
         else setView(habitual ? { kind: 'supply', notice: null } : { kind: 'setup' })
       } catch (err) {
         const missing = err instanceof ApiError && err.status === 404 ? err.message : undefined
@@ -93,19 +94,28 @@ export function App() {
     setSubmitting(true)
     setSubmitError(null)
     try {
+      // The backend takes a second request; the UI does not send one while another is open (REQ-069).
+      const { request: open } = await fetchCurrent()
+      if (open) {
+        setSheetOpen(false)
+        setView({ kind: 'request', request: open, fresh: false })
+        return
+      }
       await api.post('/activities')
       api.post('/location', position).catch(() => undefined)
-      const { request } = await api.post<PassengerRequestResponse>('/passenger/requests', { ...next, pickup_point_id: pickup.id, location: position })
+      const sent = await api.post<RequestView>('/passenger/requests', {
+        pickup_point_id: pickup.id,
+        location: position,
+        destination: next.destination,
+        stop_ids: next.accepted_stop_ids,
+        tag_filters: next.tag_filters,
+      })
+      // The answer is already decided (REQ-036); the status view adds the car and trip.
+      const request = await api.get<RequestStatusView>(`/passenger/requests/${sent.id}`)
       setSheetOpen(false)
-      if (request) setView({ kind: 'request', request, fresh: true })
+      setView({ kind: 'request', request, fresh: true })
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'request_active') {
-        const { request } = await api.get<PassengerRequestResponse>('/passenger/request')
-        setSheetOpen(false)
-        if (request) setView({ kind: 'request', request, fresh: false })
-      } else {
-        setSubmitError(err instanceof ApiError && err.status < 500 ? err.message : '沒有送出成功，請再按一次。')
-      }
+      setSubmitError(err instanceof ApiError && err.status < 500 ? err.message : '沒有送出成功，請再按一次。')
     } finally {
       setSubmitting(false)
     }
@@ -118,7 +128,18 @@ export function App() {
     screen = <LoadingScreen failed={view.failed} missing={view.missing} />
   } else if (view.kind === 'request') {
     // Before the search checks: an open request comes back even without habitual data.
-    screen = <RequestFlow key={view.request.id} initial={view.request} fresh={view.fresh} position={position} onBack={backToSupply} onOpenChange={setReporting} />
+    screen = (
+      <RequestFlow
+        key={view.request.id}
+        initial={view.request}
+        fresh={view.fresh}
+        position={position}
+        pickupPoints={pickupPoints}
+        busStops={busStops}
+        onBack={backToSupply}
+        onOpenChange={setReporting}
+      />
+    )
   } else if (view.kind === 'setup' || search === null || pickup === null) {
     screen = (
       <DestinationScreen

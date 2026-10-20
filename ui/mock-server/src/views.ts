@@ -1,11 +1,12 @@
 import type {
   DriverProfile,
-  DriverTrip,
+  DriverRequestItem,
+  DriverRequests,
   PassengerProfile,
-  PassengerRequest,
-  Ride,
+  PassengerSearch,
+  RequestStatusView,
+  RequestView,
   Supply,
-  SupplyQuery,
   Tag,
   TripDefaults,
   TripView,
@@ -13,8 +14,7 @@ import type {
 import { mustGet, type Lookups } from './context.ts'
 import { pointAlong } from './geo.ts'
 import { matchTrips } from './matching.ts'
-import { canCancel } from './operations.ts'
-import { alongAt, assignedTripId, etaToPickupS, findTrip, passedPickup, seatsFree, type RideRequest, type Trip, type World } from './world.ts'
+import { activeTripOf, alongAt, assignedTripId, etaToPickupS, findTrip, passedPickup, seatsFree, type RideRequest, type Trip, type World } from './world.ts'
 
 const iso = (ms: number) => new Date(ms).toISOString()
 
@@ -74,84 +74,94 @@ export function tripDefaultsView(trip: Trip | undefined): TripDefaults {
   }
 }
 
-export function driverTripView(world: World, lookups: Lookups, trip: Trip): DriverTrip {
-  const onTrip = world.requests.filter((r) => assignedTripId(r) === trip.id)
-  const pending = onTrip.find((r) => r.status === 'waiting_driver')
-  return {
-    ...tripView(lookups, trip),
-    ended_at: trip.endedAtMs === null ? null : iso(trip.endedAtMs),
-    pending_request: pending
-      ? {
-          id: pending.id,
-          pickup_point: mustGet(lookups.pickupById, pending.pickupPointId, 'pickup point'),
-          dropoff: pending.candidates[pending.candidateIndex].dropoff.place,
-        }
-      : null,
-    passengers: onTrip
-      .filter((r) => r.status === 'confirmed' || r.status === 'boarded')
-      .map((r) => ({ request_id: r.id, dropoff: r.candidates[r.candidateIndex].dropoff.place, boarded: r.status === 'boarded' })),
-    completed_count: trip.completedCount,
-  }
-}
+const isoOrNull = (ms: number | null) => (ms === null ? null : iso(ms))
 
-function rideView(world: World, lookups: Lookups, request: RideRequest, now: number): Ride | null {
-  if (request.status !== 'confirmed' && request.status !== 'boarded' && request.status !== 'completed') return null
+/** The request as the Go backend's requestView. */
+export function requestView(request: RideRequest): RequestView {
   const candidate = request.candidates[request.candidateIndex]
-  const trip = findTrip(world, candidate.tripId)!
-  const driver = mustGet(lookups.userById, trip.driverId, 'user')
-  const passed = passedPickup(trip, now, lookups)
-  const waiting = request.status === 'confirmed' && !passed
-  const { position, heading } = pointAlong(trip.path, alongAt(trip, now))
-  return {
-    vehicle: lookups.data.seed.vehicles[driver.username] ?? { plate: '—', description: '' },
-    // After boarding the passenger no longer sees the ETA (REQ-068).
-    eta_s: waiting ? Math.round(etaToPickupS(trip, now)) : null,
-    dropoff: { ...candidate.dropoff.place, bus_stop_id: candidate.dropoff.busStopId },
-    route: trip.route,
-    position: request.status === 'confirmed' ? { ...position, heading: Math.round(heading), reported_at: iso(now) } : null,
-    passed_pickup: passed,
-    simulated: true,
-  }
-}
-
-export function passengerRequestView(world: World, lookups: Lookups, request: RideRequest, now: number): PassengerRequest {
-  const pickup = mustGet(lookups.pickupById, request.pickupPointId, 'pickup point')
-  const hasRide = request.status === 'confirmed' || request.status === 'boarded' || request.status === 'completed'
+  const assigned = request.status !== 'rejected' && request.status !== 'no_match' && candidate !== undefined
   return {
     id: request.id,
     status: request.status,
-    pickup_point: pickup,
-    destination: request.search.destination,
-    reassigned: request.reassigned,
-    relaxed: hasRide ? request.candidates[request.candidateIndex].relaxed : false,
-    reject_reason:
-      request.rejectDistanceM === null
-        ? null
-        : {
-            code: 'too_far',
-            message: `你離${pickup.name}約 ${request.rejectDistanceM} 公尺，走到 ${lookups.settings.submit_distance} 公尺內再送出。`,
-            distance_m: request.rejectDistanceM,
-          },
-    ride: rideView(world, lookups, request, now),
-    alternatives: request.alternatives,
-    can_cancel: canCancel(world, lookups, request, now),
+    reason: request.status === 'rejected' ? 'too_far' : null,
+    message: request.rejectMessage,
+    relaxed: assigned ? candidate.relaxed : false,
+    pickup_point_id: request.pickupPointId,
+    submitted_lat: request.location.lat,
+    submitted_lng: request.location.lng,
+    trip_id: assigned ? candidate.tripId : null,
+    dropoff_bus_stop_id: assigned ? candidate.dropoff.busStopId : null,
+    response_deadline_at: isoOrNull(request.deadlineMs),
+    confirmed_at: isoOrNull(request.confirmedAtMs),
+    boarded_at: isoOrNull(request.boardedAtMs),
+    completed_at: isoOrNull(request.completedAtMs),
     created_at: iso(request.createdAtMs),
   }
 }
 
-/** The chosen pickup point's card and timeline (REQ-029, REQ-030). */
-export function supplyView(world: World, lookups: Lookups, passengerId: number, query: SupplyQuery, now: number): Supply {
-  const pickup = mustGet(lookups.pickupById, query.pickup_point_id, 'pickup point')
-  const matches = matchTrips(world, lookups, passengerId, pickup.id, query, now)
-  const vehicles = matches.map((m) => ({ id: m.tripId, eta_s: Math.round(m.etaS), simulated: true })).sort((a, b) => a.eta_s - b.eta_s)
+/**
+ * GET /api/passenger/requests/:id, like the Go backend: the pickup point, car, ETA and trip only
+ * while confirmed (DD-27). The car's position and passed_pickup are the UI's proposal for T22 (DD-31).
+ */
+export function requestStatusView(world: World, lookups: Lookups, request: RideRequest, now: number): RequestStatusView {
+  const base = { ...requestView(request), reassigned_count: request.reassignedCount }
+  if (request.status === 'no_match') return { ...base, reason: 'no_match', message: '目前沒有可搭的車', pickup_point: null, vehicle: null, eta_s: null, trip: null }
+  if (request.status !== 'confirmed') return { ...base, pickup_point: null, vehicle: null, eta_s: null, trip: null }
+  const trip = findTrip(world, assignedTripId(request)!)!
+  const driver = mustGet(lookups.userById, trip.driverId, 'user')
+  const passed = passedPickup(trip, now, lookups)
+  const { position, heading } = pointAlong(trip.path, alongAt(trip, now))
   return {
-    pickup_point: pickup,
-    wait_limit_min: lookups.settings.wait_limit,
-    submit_distance_m: lookups.settings.submit_distance,
-    vehicle_count: vehicles.length,
-    fastest_eta_s: vehicles[0]?.eta_s ?? null,
-    seats: matches.reduce((sum, m) => sum + seatsFree(findTrip(world, m.tripId)!), 0),
-    vehicles,
-    simulated: true,
+    ...base,
+    pickup_point: mustGet(lookups.pickupById, request.pickupPointId, 'pickup point'),
+    vehicle: lookups.data.seed.vehicles[driver.username] ?? { plate: '', description: '' },
+    eta_s: passed ? null : Math.round(etaToPickupS(trip, now)),
+    trip: tripView(lookups, trip),
+    vehicle_position: { ...position, heading: Math.round(heading), reported_at: iso(now) },
+    passed_pickup: passed,
+  }
+}
+
+function driverRequestItem(lookups: Lookups, request: RideRequest): DriverRequestItem {
+  const candidate = request.candidates[request.candidateIndex]
+  const { place, busStopId } = candidate.dropoff
+  return {
+    id: request.id,
+    status: request.status as DriverRequestItem['status'],
+    passenger_name: mustGet(lookups.userById, request.passengerId, 'user').display_name,
+    pickup_point: mustGet(lookups.pickupById, request.pickupPointId, 'pickup point'),
+    dropoff: { bus_stop_id: busStopId, ...place },
+    relaxed: candidate.relaxed,
+    response_deadline_at: isoOrNull(request.deadlineMs),
+    boarded: request.status === 'boarded',
+    boarded_at: isoOrNull(request.boardedAtMs),
+  }
+}
+
+/** GET /api/driver/requests: the running trip's requests, like the Go backend (REQ-049, REQ-066). */
+export function driverRequestsView(world: World, lookups: Lookups, driverId: number): DriverRequests {
+  const trip = activeTripOf(world, driverId)
+  if (!trip) return { trip_id: null, pending: [], passengers: [] }
+  const onTrip = world.requests.filter((r) => assignedTripId(r) === trip.id)
+  return {
+    trip_id: trip.id,
+    pending: onTrip.filter((r) => r.status === 'waiting_driver').map((r) => driverRequestItem(lookups, r)),
+    passengers: onTrip.filter((r) => r.status === 'confirmed' || r.status === 'boarded').map((r) => driverRequestItem(lookups, r)),
+  }
+}
+
+/** GET /api/passenger/supply: the chosen pickup point's card and timeline, like the Go backend (REQ-029, REQ-030). */
+export function supplyView(world: World, lookups: Lookups, passengerId: number, pickupPointId: number, search: PassengerSearch, now: number): Supply {
+  const matches = matchTrips(world, lookups, passengerId, pickupPointId, search, now)
+  const cars = matches
+    .map((m) => ({ trip_id: m.tripId, eta_s: Math.round(m.etaS), seats_available: seatsFree(findTrip(world, m.tripId)!) }))
+    .sort((a, b) => a.eta_s - b.eta_s)
+  return {
+    pickup_point: mustGet(lookups.pickupById, pickupPointId, 'pickup point'),
+    destination: search.destination,
+    accepted_stop_ids: search.accepted_stop_ids,
+    card: { count: cars.length, fastest_eta_s: cars[0]?.eta_s ?? null, seats_remaining: cars.reduce((sum, c) => sum + c.seats_available, 0) },
+    timeline_range_s: lookups.settings.wait_limit * 60,
+    cars,
   }
 }

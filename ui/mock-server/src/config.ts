@@ -15,8 +15,6 @@ export const SIMULATED_START_ETA_S: Record<string, number> = { driver1: 180, dri
 export const REASSIGN_TIMEOUT_S = 15
 
 export const WALK_SPEED_MPS = 1.25
-export const BUS_SPEED_MPS = 5
-export const BUS_WAIT_S = 300
 
 /** Demo passengers' habitual data (seed note in DEV.md): passenger1 skips destination setup (UD-18). */
 export const PASSENGER_PROFILES: Record<string, { arrival: string; destination: Place; acceptedStopIds: number[] }> = {
@@ -38,6 +36,3 @@ export const PREVIOUS_TRIPS: Record<string, { pickup: string; destination: Place
     preferredTags: ['不抽菸'],
   },
 }
-
-/** Walking alternative description per pickup point (REQ-051). */
-export const WALK_VIA: Record<string, string> = { 松山車站: '塔悠路、堤頂大道' }

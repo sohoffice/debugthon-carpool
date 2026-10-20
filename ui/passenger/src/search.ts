@@ -1,4 +1,4 @@
-import { distanceM, type BusStop, type LatLng, type PassengerProfile, type PassengerSearch, type PickupPoint, type SupplyQuery } from '@carpool/shared'
+import { distanceM, type BusStop, type LatLng, type PassengerProfile, type PassengerSearch, type PickupPoint } from '@carpool/shared'
 
 /** Habitual destination and stops prefill the search (REQ-025); filters start empty. */
 export function searchFromProfile(profile: PassengerProfile | null): PassengerSearch | null {
@@ -6,17 +6,17 @@ export function searchFromProfile(profile: PassengerProfile | null): PassengerSe
   return { destination: profile.usual_destination, accepted_stop_ids: profile.accepted_stops.map((s) => s.id), tag_filters: [] }
 }
 
-/** GET /api/passenger/supply query string (types.ts SupplyQuery). */
-export function supplyQueryString(query: SupplyQuery): string {
-  const tagIds = (intent: string) => query.tag_filters.filter((f) => f.intent === intent).map((f) => f.tag_id).join(',')
+/** GET /api/passenger/supply query string (T11, types.ts Supply). */
+export function supplyQueryString(pickupPointId: number, search: PassengerSearch): string {
+  const tagIds = (intent: string) => search.tag_filters.filter((f) => f.intent === intent).map((f) => f.tag_id).join(',')
   return new URLSearchParams({
-    pickup_point_id: String(query.pickup_point_id),
-    destination_name: query.destination.name,
-    destination_lat: String(query.destination.lat),
-    destination_lng: String(query.destination.lng),
-    accepted_stop_ids: query.accepted_stop_ids.join(','),
-    required_tag_ids: tagIds('required'),
-    preferred_tag_ids: tagIds('preferred'),
+    pickup_point_id: String(pickupPointId),
+    dest_name: search.destination.name,
+    dest_lat: String(search.destination.lat),
+    dest_lng: String(search.destination.lng),
+    stop_ids: search.accepted_stop_ids.join(','),
+    required_tags: tagIds('required'),
+    preferred_tags: tagIds('preferred'),
   }).toString()
 }
 

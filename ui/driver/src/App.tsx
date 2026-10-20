@@ -1,4 +1,4 @@
-import { ApiError, PhoneShell, usePolling, type DriverTripResponse, type StatusBarTone, type TripView } from '@carpool/shared'
+import { ApiError, PhoneShell, usePolling, type DriverRequests, type StatusBarTone, type TripView } from '@carpool/shared'
 import { useEffect, useState } from 'react'
 import { api, DEBUG, POLL_INTERVAL_MS } from './config'
 import { DriverDebugMode } from './DriverDebugMode'
@@ -8,39 +8,36 @@ import { TripEndedScreen } from './TripEndedScreen'
 import { TripIdleScreen } from './TripIdleScreen'
 import { TripRequestScreen } from './TripRequestScreen'
 
-const fetchTrip = () => api.get<DriverTripResponse>('/driver/trip')
-
-/** A trip that just started has no requests or passengers yet. */
-const justDeparted = (trip: TripView): DriverTripResponse => ({
-  trip: { ...trip, ended_at: null, pending_request: null, passengers: [], completed_count: 0 },
-})
+const fetchRequests = () => api.get<DriverRequests>('/driver/requests')
 
 export function App() {
-  const polling = usePolling(fetchTrip, POLL_INTERVAL_MS)
-  const trip = polling.data?.trip ?? null
+  const polling = usePolling(fetchRequests, POLL_INTERVAL_MS)
+  const tripId = polling.data?.trip_id ?? null
   // The ended screen only follows a trip this session saw running; after a reload it's the departure screen.
   const [runningId, setRunningId] = useState<number | null>(null)
-  const [endedId, setEndedId] = useState<number | null>(null)
+  const [ended, setEnded] = useState<TripView | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (trip?.status === 'active' && trip.id !== runningId) setRunningId(trip.id)
-    if (trip?.status === 'completed' && trip.id === runningId) {
-      setEndedId(trip.id)
+    if (tripId !== null && tripId !== runningId) setRunningId(tripId)
+    if (tripId === null && runningId !== null) {
+      // The running trip is gone: it ended by itself at the destination (UD-16, DD-30).
       setRunningId(null)
+      api.get<TripView>(`/trips/${runningId}`).then((t) => t.status === 'completed' && setEnded(t), () => undefined)
     }
-  }, [trip, runningId])
+  }, [tripId, runningId])
 
   async function act(path: string) {
     setBusy(true)
     try {
-      polling.mutate(await api.post<DriverTripResponse>(path))
+      await api.post(path)
     } catch (err) {
-      // The request timed out or was cancelled meanwhile: show the current state.
-      if (err instanceof ApiError && err.status === 409) polling.mutate(await fetchTrip().catch(() => polling.data!))
+      // 409 not_waiting / invalid_state: answered elsewhere or timed out; the refresh shows the outcome.
+      if (!(err instanceof ApiError && err.status === 409)) return
     } finally {
       setBusy(false)
     }
+    polling.mutate(await fetchRequests().catch(() => polling.data!))
   }
 
   const offline = polling.error !== undefined
@@ -51,12 +48,12 @@ export function App() {
     // 404: the backend answers but does not have this API yet (not a connection problem).
     const missing = polling.error instanceof ApiError && polling.error.status === 404 ? polling.error.message : undefined
     screen = <LoadingScreen failed={offline} missing={missing} />
-  } else if (trip?.status === 'active' && trip.pending_request) {
+  } else if (tripId !== null && polling.data.pending.length > 0) {
     tone = 'dark'
-    const request = trip.pending_request
+    const request = polling.data.pending[0]
     screen = (
       <TripRequestScreen
-        trip={trip}
+        passengers={polling.data.passengers}
         request={request}
         busy={busy}
         offline={offline}
@@ -64,25 +61,25 @@ export function App() {
         onDecline={() => act(`/driver/requests/${request.id}/decline`)}
       />
     )
-  } else if (trip?.status === 'active') {
+  } else if (tripId !== null) {
     screen = (
       <TripIdleScreen
-        trip={trip}
+        passengers={polling.data.passengers}
         busy={busy}
         offline={offline}
         onBoarded={(id) => act(`/driver/requests/${id}/board`)}
         onDropOff={(id) => act(`/driver/requests/${id}/complete`)}
       />
     )
-  } else if (trip && trip.id === endedId) {
-    screen = <TripEndedScreen trip={trip} onDone={() => setEndedId(null)} />
+  } else if (ended) {
+    screen = <TripEndedScreen trip={ended} onDone={() => setEnded(null)} />
   } else {
     tone = 'dark'
     screen = (
       <DepartureScreen
-        key={trip?.id ?? 'none'}
-        onDeparted={(started) => polling.mutate(justDeparted(started))}
-        onAlreadyActive={() => fetchTrip().then(polling.mutate, () => undefined)}
+        // A trip that just started has no requests or passengers yet.
+        onDeparted={(started) => polling.mutate({ trip_id: started.id, pending: [], passengers: [] })}
+        onAlreadyActive={() => fetchRequests().then(polling.mutate, () => undefined)}
       />
     )
   }

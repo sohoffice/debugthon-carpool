@@ -1,43 +1,59 @@
 import {
   Button,
-  ConfirmTextButton,
   RouteMap,
   RouteStrip,
   routeStripItems,
   SimulatedBadge,
   VehicleMarker,
-  type PassengerRequest,
-  type Ride,
+  type PickupPoint,
+  type RequestStatusView,
+  type TripView,
+  type Vehicle,
 } from '@carpool/shared'
+import { CancelButton } from './CancelButton'
 import { POLL_INTERVAL_MS } from './config'
 import { Plate } from './Plate'
 import { minutesOf } from './search'
 
 interface ConfirmedScreenProps {
-  request: PassengerRequest & { ride: Ride }
+  request: RequestStatusView & { pickup_point: PickupPoint; vehicle: Vehicle; trip: TripView }
   /** True right after the driver confirmed in this session: play the one choreographed transition (UD-10). */
   celebrate: boolean
   busy: boolean
   onBoarded: () => void
-  onCancel: () => void
 }
 
-/** 7.4 confirmed: minutes first, then where, then which car, then the route (UD-09). */
-export function ConfirmedScreen({ request, celebrate, busy, onBoarded, onCancel }: ConfirmedScreenProps) {
-  const { ride } = request
-  const strip = routeStripItems(request.pickup_point.name, ride.route.bus_stops, request.destination.name, { dropoffStopId: ride.dropoff.bus_stop_id })
+/** The big line: minutes, or that the car is there (UD-09, DD-31). */
+function Arrival({ request }: { request: ConfirmedScreenProps['request'] }) {
+  // Judged by whether the car passed the pickup, never by a missing ETA: that also means "no position yet" (DD-31).
+  if (request.passed_pickup) return <h1 className="text-[36px]/tight font-bold">車已到上車點</h1>
+  if (request.eta_s === null) return <h1 className="text-[36px]/tight font-bold">車子正在來</h1>
+  return (
+    <h1 className="flex items-end gap-3">
+      <span className="font-board text-board-sm font-semibold tabular-nums">{minutesOf(request.eta_s)}</span>
+      <span className="pb-2 text-xl font-semibold">分鐘後到</span>
+    </h1>
+  )
+}
+
+/** 7.5 confirmed: minutes first, then where, then which car, then the route (UD-09). */
+export function ConfirmedScreen({ request, celebrate, busy, onBoarded }: ConfirmedScreenProps) {
+  const { trip, vehicle } = request
+  const dropoffStopId = request.dropoff_bus_stop_id
+  const strip = trip.route && routeStripItems(request.pickup_point.name, trip.route.bus_stops, trip.destination.name, { dropoffStopId })
   return (
     <div className="relative h-full bg-white">
       <div className="absolute inset-x-0 top-0 h-[46%]">
         <RouteMap
           pickup={request.pickup_point}
-          destination={request.destination}
-          route={ride.route}
-          dropoffStopId={ride.dropoff.bus_stop_id}
+          destination={trip.destination}
+          route={trip.route}
+          dropoffStopId={dropoffStopId}
           // The sheet starts at 34% and covers the map's lower part; keep the route above it.
           padding={{ top: 56, right: 48, bottom: 112, left: 48 }}
         >
-          <VehicleMarker position={ride.position} pollIntervalMs={POLL_INTERVAL_MS} title={ride.vehicle.plate} />
+          {/* The car's position comes with T22 (DD-31); until then only the mock backend sends it. */}
+          <VehicleMarker position={request.vehicle_position ?? null} pollIntervalMs={POLL_INTERVAL_MS} title={vehicle.plate} />
         </RouteMap>
       </div>
 
@@ -45,24 +61,17 @@ export function ConfirmedScreen({ request, celebrate, busy, onBoarded, onCancel 
         <div className="h-[34%]" />
         <section className="pointer-events-auto min-h-[68%] rounded-t-sheet bg-white px-6 pt-7 pb-[calc(var(--safe-bottom)+148px)] shadow-[0_-12px_32px_-16px_color-mix(in_srgb,var(--color-ink)_40%,transparent)]">
           <div className={celebrate ? 'after-route-draw' : ''}>
-            {ride.eta_s !== null ? (
-              <h1 className="flex items-end gap-3">
-                <span className="font-board text-board-sm font-semibold tabular-nums">{minutesOf(ride.eta_s)}</span>
-                <span className="pb-2 text-xl font-semibold">分鐘後到</span>
-              </h1>
-            ) : (
-              <h1 className="text-[36px]/tight font-bold">車已到上車點</h1>
-            )}
+            <Arrival request={request} />
             <p className="mt-2 text-xl font-semibold">在{request.pickup_point.name}上車</p>
             <div className="mt-5 flex items-center gap-4">
-              <Plate plate={ride.vehicle.plate} />
-              <span className="min-w-0 text-lg">{ride.vehicle.description}</span>
+              <Plate plate={vehicle.plate} />
+              <span className="min-w-0 text-lg">{vehicle.description}</span>
             </div>
             {request.relaxed && <p className="mt-3 text-sm text-ink-soft">這台車不完全符合你的建議標籤</p>}
           </div>
 
           <div className={`mt-6 border-t border-rule pt-4 ${celebrate ? 'route-draw' : ''}`}>
-            <RouteStrip items={strip.items} label="這趟的路線" />
+            {strip && <RouteStrip items={strip.items} label="這趟的路線" />}
           </div>
           <p className="mt-3 flex items-center gap-2 text-sm text-ink-soft">
             <SimulatedBadge label="模擬車輛" /> 位置與到站時間由模擬器產生
@@ -76,7 +85,7 @@ export function ConfirmedScreen({ request, celebrate, busy, onBoarded, onCancel 
           我已上車
         </Button>
         <div className="flex h-12 justify-center">
-          {request.can_cancel && <ConfirmTextButton label="取消請求" confirmLabel="再按一次確定取消" disabled={busy} onConfirm={onCancel} />}
+          <CancelButton />
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 // API shapes shared by the apps and the mock backend (docs/ui-design.md 10.1, UD-14).
-// "Existing" types mirror the Go backend exactly; "Proposed" types are defined by the UI
-// (ui-oi-10) and are to be agreed with the backend. All field names are snake_case like Go.
+// "Existing" types mirror the Go backend on main exactly (DEV.md); "Proposed" types cover APIs
+// the Go backend does not have yet and switch to its format once their ticket lands.
+// All field names are snake_case like Go.
 // Times are RFC 3339 strings; distances in metres; durations in seconds unless named _min.
 
 // ---------------------------------------------------------------- Existing (Go backend)
@@ -166,161 +167,165 @@ export interface Vehicle {
   description: string
 }
 
+/** A passenger's drop-off: a bus stop along the route, or the trip's destination when bus_stop_id is null. */
+export interface Dropoff {
+  bus_stop_id: number | null
+  name: string
+  lat: number
+  lng: number
+}
+
+/** One request on the driver's running trip (T13). */
+export interface DriverRequestItem {
+  id: number
+  status: 'waiting_driver' | 'confirmed' | 'boarded'
+  passenger_name: string
+  pickup_point: PickupPoint
+  dropoff: Dropoff
+  relaxed: boolean
+  /** Not shown: the driver sees no countdown (ui-oi-02). */
+  response_deadline_at: string | null
+  /** Marked by either side (DD-27, REQ-068). */
+  boarded: boolean
+  boarded_at: string | null
+}
+
+/**
+ * GET /api/driver/requests — polled while driving (REQ-049, REQ-066). trip_id is null and both
+ * lists are empty when the driver has no running trip.
+ */
+export interface DriverRequests {
+  trip_id: number | null
+  /** Waiting for this driver's answer. */
+  pending: DriverRequestItem[]
+  /** Confirmed or boarded. */
+  passengers: DriverRequestItem[]
+}
+
+// POST /api/driver/requests/:id/accept   → RequestView (409 not_waiting once answered or timed out)
+// POST /api/driver/requests/:id/decline  → RequestView (409 not_waiting)
+// POST /api/driver/requests/:id/board    → RequestView ("已上車", DD-27; 409 invalid_state unless confirmed or boarded)
+// POST /api/driver/requests/:id/complete → RequestView ("已下車", DD-23; 409 invalid_state)
+
+/** One car the passenger could be assigned at the pickup point. Not selectable (REQ-031). */
+export interface SupplyCar {
+  trip_id: number
+  eta_s: number
+  seats_available: number
+}
+
+/**
+ * GET /api/passenger/supply (T11, REQ-029, REQ-030). Query: pickup_point_id (required),
+ * dest_lat + dest_lng (+ dest_name), stop_ids, required_tags, preferred_tags (ids, comma
+ * separated); destination and stops fall back to the passenger's habitual data.
+ */
+export interface Supply {
+  pickup_point: PickupPoint
+  destination: Place
+  accepted_stop_ids: number[]
+  card: { count: number; fastest_eta_s: number | null; seats_remaining: number }
+  /** The wait limit: the timeline runs from now to then (REQ-030). */
+  timeline_range_s: number
+  /** Soonest first. */
+  cars: SupplyCar[]
+}
+
+/**
+ * Body of POST /api/passenger/requests (T12): where to board and where the passenger is now
+ * (DD-25). Destination and stops fall back to the habitual data.
+ */
+export interface RequestSubmission {
+  pickup_point_id: number
+  location: LatLngBody
+  destination?: Place
+  stop_ids?: number[]
+  tag_filters?: TagFilter[]
+}
+
+export type RequestStatus = 'rejected' | 'waiting_driver' | 'no_match' | 'confirmed' | 'boarded' | 'completed'
+
+/**
+ * A ride request: POST /api/passenger/requests (201, already decided: rejected, no_match,
+ * waiting_driver or confirmed, REQ-036) and every request action. The backend does not refuse a
+ * second open request; the UI does (REQ-069).
+ */
+export interface RequestView {
+  id: number
+  status: RequestStatus
+  /** too_far when rejected, no_match when no car. */
+  reason: string | null
+  message: string | null
+  /** The car does not match all preferred tags (REQ-047). */
+  relaxed: boolean
+  pickup_point_id: number
+  submitted_lat: number
+  submitted_lng: number
+  trip_id: number | null
+  /** Null: the trip's destination. */
+  dropoff_bus_stop_id: number | null
+  response_deadline_at: string | null
+  confirmed_at: string | null
+  boarded_at: string | null
+  completed_at: string | null
+  created_at: string
+}
+
+// ---------------------------------------------------------------- Request status (vehicle position proposed until T22, DD-31)
+
+export interface VehiclePosition {
+  lat: number
+  lng: number
+  /** Degrees clockwise from north, computed by the backend; null when unknown (UD-15, DD-31). */
+  heading: number | null
+  reported_at: string
+}
+
+/**
+ * GET /api/passenger/requests/:id — polled (REQ-052, REQ-053). pickup_point, vehicle, eta_s and
+ * trip are set only while confirmed (DD-27). GET /api/passenger/requests/current returns
+ * { request } with the open one (waiting, confirmed or boarded), or null (REQ-069).
+ */
+export interface RequestStatusView extends RequestView {
+  /** Drivers that declined or timed out (REQ-053). */
+  reassigned_count: number
+  pickup_point: PickupPoint | null
+  vehicle: Vehicle | null
+  /** Null until the car has reported a position. */
+  eta_s: number | null
+  trip: TripView | null
+  /** Proposed until T22 (DD-31): only the mock backend sends these; field names follow DEV.md once T22 lands. */
+  vehicle_position?: VehiclePosition | null
+  passed_pickup?: boolean
+}
+
+export interface CurrentRequest {
+  request: RequestStatusView | null
+}
+
+// POST /api/passenger/requests/:id/board    → RequestView ("我已上車", DD-27; already boarded is fine)
+// POST /api/passenger/requests/:id/complete → RequestView ("我已下車，結束共乘", DD-23; already done is fine)
+
 // ---------------------------------------------------------------- Proposed: shared
 
-/** GET /api/places?q=… — destinations inside the park, for the address field. */
+/** GET /api/places?q=… — destinations inside the park, for the address field (DD-28, T20). */
 export type PlaceSearchResult = Place[]
 
 // ---------------------------------------------------------------- Proposed: driver
 
-/** Body of POST /api/driver/route-preview; returns Route (422 destination_outside_park). */
+/** Body of POST /api/driver/route-preview; returns Route (400 destination_outside_park; DD-21, T20). */
 export interface RoutePreviewRequest {
   pickup_point_id: number
   destination: Place
 }
 
-/** A request waiting for this driver's answer. No deadline: the driver sees no countdown (ui-oi-02). */
-export interface DriverPendingRequest {
-  id: number
-  pickup_point: PickupPoint
-  dropoff: Place
-}
+// ---------------------------------------------------------------- UI state (not an API shape)
 
-/** A confirmed passenger who has not finished the ride yet. */
-export interface DriverPassenger {
-  request_id: number
-  dropoff: Place
-  /** Marked by either side (DD-27, REQ-068). */
-  boarded: boolean
-}
-
-/** The Go trip plus what the driver polls for while driving (DD-04). */
-export interface DriverTrip extends TripView {
-  ended_at: string | null
-  pending_request: DriverPendingRequest | null
-  passengers: DriverPassenger[]
-  /** Rides finished on this trip ("今天載了 2 位乘客"). */
-  completed_count: number
-}
-
-/**
- * GET /api/driver/trip — the latest trip, active or completed; null if the driver never departed.
- * Polled while driving; also returned by the request actions below.
- */
-export interface DriverTripResponse {
-  trip: DriverTrip | null
-}
-
-// POST /api/driver/requests/:id/accept   → DriverTripResponse (409 request_not_pending when it timed out or was cancelled)
-// POST /api/driver/requests/:id/decline  → DriverTripResponse
-// POST /api/driver/requests/:id/board    → DriverTripResponse ("已上車", DD-27; no error if already boarded)
-// POST /api/driver/requests/:id/complete → DriverTripResponse ("已下車": end a passenger's ride, DD-23)
-
-// ---------------------------------------------------------------- Proposed: passenger
-
-/** What the passenger is looking for: destination, acceptable stops and filters. */
+/** What the passenger is looking for; kept by the passenger UI and by the mock backend. */
 export interface PassengerSearch {
   destination: Place
   accepted_stop_ids: number[]
   tag_filters: TagFilter[]
 }
-
-/**
- * Query of GET /api/passenger/supply (REQ-029, T11): pickup_point_id, destination_name,
- * destination_lat, destination_lng, accepted_stop_ids (comma separated), required_tag_ids and
- * preferred_tag_ids (comma separated, may be empty). 400 when the pickup point, destination or
- * stops are missing.
- */
-export interface SupplyQuery extends PassengerSearch {
-  pickup_point_id: number
-}
-
-/** One approaching vehicle on the timeline. Not selectable (REQ-031). */
-export interface SupplyVehicle {
-  /** Stable while the vehicle approaches, so the timeline can animate it. */
-  id: number
-  eta_s: number
-  simulated: boolean
-}
-
-/** GET /api/passenger/supply — the chosen pickup point's card and timeline, polled while browsing (REQ-029, REQ-030). */
-export interface Supply {
-  pickup_point: PickupPoint
-  wait_limit_min: number
-  /** How close to the pickup point a request may be sent (REQ-034). */
-  submit_distance_m: number
-  vehicle_count: number
-  fastest_eta_s: number | null
-  seats: number
-  /** Within the wait limit, nearest first. */
-  vehicles: SupplyVehicle[]
-  simulated: boolean
-}
-
-/** Body of POST /api/passenger/requests: the search, where to board and where the passenger is now (DD-25). */
-export interface RequestSubmission extends SupplyQuery {
-  location: LatLngBody
-}
-
-export type RequestStatus = 'rejected' | 'waiting_driver' | 'no_match' | 'confirmed' | 'boarded' | 'completed' | 'cancelled'
-
-export interface VehiclePosition {
-  lat: number
-  lng: number
-  /** Degrees clockwise from north; null when unknown (UD-15). */
-  heading: number | null
-  reported_at: string
-}
-
-/** The assigned car, once the driver confirmed. */
-export interface Ride {
-  vehicle: Vehicle
-  /** Seconds until the car reaches the pickup point; null once it has passed or the passenger boarded. */
-  eta_s: number | null
-  /** Where the passenger gets off: a bus stop on the route, or the driver's destination. */
-  dropoff: Place & { bus_stop_id: number | null }
-  route: Route
-  /** Only while confirmed: the car on its way to the pickup point (UD-15). */
-  position: VehiclePosition | null
-  passed_pickup: boolean
-  simulated: boolean
-}
-
-export type Alternative =
-  | { mode: 'bus'; route_name: string; board_stop_name: string; alight_stop_name: string; duration_min: number; simulated: boolean }
-  | { mode: 'walk'; via: string | null; duration_min: number; simulated: boolean }
-
-export interface PassengerRequest {
-  id: number
-  status: RequestStatus
-  pickup_point: PickupPoint
-  destination: Place
-  /** A driver declined or timed out and the request moved to the next car (REQ-050). */
-  reassigned: boolean
-  /** The car does not match all preferred tags (REQ-047). */
-  relaxed: boolean
-  reject_reason: { code: 'too_far'; message: string; distance_m: number } | null
-  /** Set when confirmed, boarded or completed. */
-  ride: Ride | null
-  /** Set when no_match (REQ-051). */
-  alternatives: Alternative[]
-  /** Before boarding only (UD-17). */
-  can_cancel: boolean
-  created_at: string
-}
-
-/**
- * GET /api/passenger/request — the latest request, null if none.
- * POST /api/passenger/requests returns it too (201), already decided: rejected, no_match,
- * waiting_driver or confirmed (REQ-036). 409 request_active if one is still open.
- */
-export interface PassengerRequestResponse {
-  request: PassengerRequest | null
-}
-
-// POST /api/passenger/requests/:id/cancel   → PassengerRequestResponse (409 cannot_cancel after boarding)
-// POST /api/passenger/requests/:id/board    → PassengerRequestResponse ("我已上車", DD-27; no error if already boarded)
-// POST /api/passenger/requests/:id/complete → PassengerRequestResponse ("我已下車，結束共乘"; no error if already done)
 
 // ---------------------------------------------------------------- Demo control
 

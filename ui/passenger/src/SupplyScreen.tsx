@@ -10,7 +10,7 @@ import {
   type PickupPoint,
   type Supply,
 } from '@carpool/shared'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback } from 'react'
 import { ArrivalTimeline } from './ArrivalTimeline'
 import { api, POLL_INTERVAL_MS } from './config'
 import { formatDistance, minutesOf, stopNames, supplyQueryString } from './search'
@@ -30,43 +30,35 @@ interface SupplyScreenProps {
 }
 
 /** The chosen pickup point's arrival board, polled (REQ-029, REQ-030). Remounted per pickup point. */
-function PickupBoard({ search, pickup, distance, onSubmitDistance }: {
-  search: PassengerSearch
-  pickup: PickupPoint
-  distance: number | null
-  onSubmitDistance: (m: number) => void
-}) {
-  const query = supplyQueryString({ ...search, pickup_point_id: pickup.id })
+function PickupBoard({ search, pickup, distance }: { search: PassengerSearch; pickup: PickupPoint; distance: number | null }) {
+  const query = supplyQueryString(pickup.id, search)
   const fetchSupply = useCallback(() => api.get<Supply>(`/passenger/supply?${query}`), [query])
   const { data: supply, error } = usePolling(fetchSupply, POLL_INTERVAL_MS)
-  const within = supply && distance !== null ? distance <= supply.submit_distance_m : true
-  const submitDistance = supply?.submit_distance_m
-  useEffect(() => {
-    if (submitDistance !== undefined) onSubmitDistance(submitDistance)
-  }, [submitDistance, onSubmitDistance])
+  const waitLimitMin = supply ? Math.round(supply.timeline_range_s / 60) : 0
 
   return (
     <section aria-label={`${pickup.name}的接近車輛`}>
-      <StationSign name={pickup.name} note={within ? '你在這裡' : distance !== null ? `距離 ${formatDistance(distance)}` : undefined} />
+      {/* Only a hint: the backend checks the distance on submit (REQ-034, DD-25). */}
+      <StationSign name={pickup.name} note={distance !== null ? `距離 ${formatDistance(distance)}` : undefined} />
       {!supply ? (
         <p className="mt-8 px-6 text-lg text-ink-soft">{error ? '讀不到接近的車，正在重試。' : '正在找接近的車…'}</p>
       ) : (
         <>
-          {supply.fastest_eta_s === null ? (
-            <h1 className="mt-8 px-6 text-[40px]/tight font-bold">{supply.wait_limit_min} 分鐘內沒有車</h1>
+          {supply.card.fastest_eta_s === null ? (
+            <h1 className="mt-8 px-6 text-[40px]/tight font-bold">{waitLimitMin} 分鐘內沒有車</h1>
           ) : (
             <h1 className="mt-8 flex items-end gap-3 px-6">
               <span className="pb-3 text-lg font-semibold">最快</span>
-              <span className="font-board text-board font-semibold tabular-nums">{minutesOf(supply.fastest_eta_s)}</span>
+              <span className="font-board text-board font-semibold tabular-nums">{minutesOf(supply.card.fastest_eta_s)}</span>
               <span className="pb-3 text-lg font-semibold">分鐘到</span>
             </h1>
           )}
           <p className="mt-4 flex gap-6 px-6 text-lg font-semibold">
-            <span>{supply.vehicle_count} 台車接近中</span>
-            <span>空位 {supply.seats}</span>
+            <span>{supply.card.count} 台車接近中</span>
+            <span>空位 {supply.card.seats_remaining}</span>
           </p>
           <div className="mt-5">
-            <ArrivalTimeline vehicles={supply.vehicles} waitLimitMin={supply.wait_limit_min} />
+            <ArrivalTimeline cars={supply.cars} rangeS={supply.timeline_range_s} />
           </div>
           {error && (
             <div className="mt-3 px-6">
@@ -85,9 +77,6 @@ export function SupplyScreen({ search, pickupPoints, pickup, position, busStops,
   const distance = distanceTo(pickup)
   const others = pickupPoints.filter((p) => p.id !== pickup.id)
   const alsoAt = stopNames(busStops, search.accepted_stop_ids)
-  // The submit distance (REQ-034) comes with the supply; the backend checks it again on submit.
-  const [submitDistance, setSubmitDistance] = useState<number | null>(null)
-  const far = distance !== null && submitDistance !== null && distance > submitDistance
 
   return (
     <div className="relative h-full bg-paper">
@@ -104,7 +93,7 @@ export function SupplyScreen({ search, pickupPoints, pickup, position, busStops,
         {notice && <p className="mt-4 px-6 text-base font-semibold text-ink-soft">{notice}</p>}
 
         <div className="mt-6">
-          <PickupBoard key={pickup.id} search={search} pickup={pickup} distance={distance} onSubmitDistance={setSubmitDistance} />
+          <PickupBoard key={pickup.id} search={search} pickup={pickup} distance={distance} />
         </div>
 
         <h2 className="mt-10 px-6 text-base font-semibold text-ink-soft">換一個上車點</h2>
@@ -132,7 +121,7 @@ export function SupplyScreen({ search, pickupPoints, pickup, position, busStops,
         <Button className="h-16 w-full text-xl" onClick={onRide}>
           今天我要搭
         </Button>
-        <p className="mt-2 text-center text-sm text-ink-soft">{far ? '走到上車點附近才能送出' : '由平台替你分配車，不能自選'}</p>
+        <p className="mt-2 text-center text-sm text-ink-soft">由平台替你分配車，不能自選</p>
       </div>
     </div>
   )
