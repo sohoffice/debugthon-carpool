@@ -244,6 +244,17 @@ describe('passenger App', () => {
     expect(screen.queryByRole('button', { name: '今天我要搭' })).not.toBeInTheDocument()
   })
 
+  it('boarded: the route starts at the passenger’s stop, without the pickup point (SC-P6, REQ-068)', async () => {
+    fakeBackend({ current: [BOARDED], statuses: [BOARDED] })
+    render(<App />)
+    const route = await screen.findByRole('list', { name: '這趟的路線' })
+    await waitFor(() => expect(within(route).getAllByRole('listitem')).toHaveLength(2))
+    const rows = within(route).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent(`${STOP.name}下車`)
+    expect(rows[1]).toHaveTextContent(`${DESTINATION.name}終點`)
+    expect(within(route).queryByText(SONGSHAN.name)).not.toBeInTheDocument()
+  })
+
   it('boarded after a reload: the route comes from the trip', async () => {
     const calls = fakeBackend({ current: [BOARDED], statuses: [BOARDED] })
     render(<App />)
