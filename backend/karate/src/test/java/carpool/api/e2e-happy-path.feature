@@ -16,6 +16,8 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * def driver = 'karate-trip-e2e-' + suffix
     * def tagId = Db.queryLong('INSERT INTO tags (name) VALUES (?) RETURNING id', 'karate-e2e-' + suffix)
     * Db.exec('INSERT INTO users (username, display_name, is_passenger) VALUES (?, ?, true)', passenger, passenger)
+    # the driver exists before the departure so that the same driver previews the route and departs
+    * Db.exec('INSERT INTO users (username, display_name, is_driver) VALUES (?, ?, true)', driver, driver)
     * def afterAll = function() { Db.exec('DELETE FROM request_tag_filters WHERE tag_id = ?', tagId); Db.exec('DELETE FROM trip_tag_filters WHERE tag_id = ?', tagId); Db.exec('DELETE FROM tags WHERE id = ?', tagId); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: passenger }); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: driver }) }
     * configure afterScenario = afterAll
     * def pt = 'passenger:' + passenger
@@ -37,8 +39,8 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match parkCheck('driver:driver4', inPark) == { inside: true }
     * match parkCheck(pt, inPark) == { inside: true }
 
-    # 0b. DD-21: the driver previews the route to that destination before departing; nothing is created
-    * configure headers = { Authorization: 'Bearer driver:driver4' }
+    # 0b. DD-21: the driver who departs below previews the route to that destination before departing; nothing is created
+    * configure headers = { Authorization: 'Bearer ' + dt }
     * url baseUrl
     * path 'api', 'driver', 'route-preview'
     * request { pickup_point_id: '#(pickup.id)', destination: { lat: '#(inPark.lat)', lng: '#(inPark.lng)' } }
@@ -53,7 +55,7 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * def trip = doGet(dt, 'api/driver/trips/current')
     * match trip.responseStatus == 200
     * match trip.response contains { id: '#(tripId)', status: 'active', capacity: 3, auto_accept: false }
-    # DD-21: the departure keeps the route that was previewed
+    # TODO T26 (#61): depart with the preview id; without it the route is re-planned, so this equality does not yet prove reuse
     * match trip.response.route == previewed
 
     # 2. REQ-029: the passenger sees the approaching car, with all seats free
