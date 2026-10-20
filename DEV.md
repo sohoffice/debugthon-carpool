@@ -144,6 +144,7 @@
 - 錯誤一律回 `{"error":{"code":"...","message":"..."}}`。
 - 系統設定（`system_settings`）只供後端元件透過 `internal/settings` 讀取，每次都查資料庫，改 SQL 後不需重啟即可生效；沒有對外 API（DD-20）。
 - 後端測試（`cd backend && go test ./...`）連線本機資料庫（需先 `just infra up`、`just backend db-apply`），每個測試在交易中執行並回滾；可用 `TEST_DATABASE_URL` 覆寫連線字串。
+- 自動測試一律不呼叫真實的 Google Routes：轉接器只對 `httptest` 假伺服器或假來源測試，不讀 `MAP_API_KEY`。開發時要用真實 API 手動確認轉接器，執行預設不跑的 `googlelive` 測試（每種估算各呼叫一次）：`MAP_API_KEY=<金鑰> go test -tags googlelive -run TestGoogleLive -v ./internal/server/`（在 `backend/` 下）。
 
 啟動後可用 `curl -i localhost:8080/api/ping` 驗證。
 

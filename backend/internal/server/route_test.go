@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"math"
 	"testing"
 )
 
@@ -56,5 +57,59 @@ func TestStopsAlong(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("stops along = %v, want ids %v in travel order", got, want)
 		}
+	}
+}
+
+func TestDecodePolyline(t *testing.T) {
+	// The worked example from Google's documentation, decoded and encoded back.
+	const example = "_p~iF~ps|U_ulLnnqC_mqNvxq`@"
+	got, err := decodePolyline(example)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []latLng{{38.5, -120.2}, {40.7, -120.95}, {43.252, -126.453}}
+	if len(got) != len(want) {
+		t.Fatalf("decoded %v, want %v", got, want)
+	}
+	for i := range want {
+		if math.Abs(got[i].Lat-want[i].Lat) > 1e-9 || math.Abs(got[i].Lng-want[i].Lng) > 1e-9 {
+			t.Errorf("point %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+	if again := encodePolyline(got); again != example {
+		t.Errorf("encode(decode(%q)) = %q", example, again)
+	}
+
+	// Points in the park, to five decimals, survive the round trip.
+	points := []latLng{{25.05003, 121.57821}, {25.0601, 121.5801}, {25.0768, 121.5738}}
+	back, err := decodePolyline(encodePolyline(points))
+	if err != nil || len(back) != len(points) {
+		t.Fatalf("decode(encode(%v)) = %v, %v", points, back, err)
+	}
+	for i := range points {
+		if math.Abs(back[i].Lat-points[i].Lat) > 1e-9 || math.Abs(back[i].Lng-points[i].Lng) > 1e-9 {
+			t.Errorf("point %d = %v, want %v", i, back[i], points[i])
+		}
+	}
+
+	if got, err := decodePolyline(""); err != nil || len(got) != 0 {
+		t.Errorf("empty polyline = %v, %v; want no points", got, err)
+	}
+	for _, bad := range []string{"_p~iF", "_p~iF~ps|", "_p~iF\x01ps|U", "FAKE_ENCODED_POLYLINE"} {
+		if _, err := decodePolyline(bad); err == nil {
+			t.Errorf("decodePolyline(%q): want an error", bad)
+		}
+	}
+}
+
+func TestStraightDriveTimeMatchesStraightRoute(t *testing.T) {
+	from, to := latLng{25.0500, 121.5780}, latLng{25.0768, 121.5738}
+	r, _ := straightRoute{}.Route(context.Background(), from, to)
+	d, err := straightRoute{}.DriveTime(context.Background(), from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d != (Travel{DurationS: r.DurationS, Simulated: true}) {
+		t.Errorf("drive time = %v, want the route's %d s, simulated", d, r.DurationS)
 	}
 }
