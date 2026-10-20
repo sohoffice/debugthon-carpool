@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -921,11 +922,22 @@ func TestETAsAreMarkedSimulated(t *testing.T) {
 	}
 
 	// A real provider: the same views say not simulated.
-	real := &Server{db: e.tx, routes: realRoutes{}}
-	vtrip := e.addTrip(t, tripSpec{northM: 1200})
-	eta, err := real.vehicleETA(context.Background(), vtrip)
-	if err != nil || eta == nil || eta.Simulated {
-		t.Fatalf("real-route eta = %+v, %v; want an ETA not marked simulated", eta, err)
+	deps := testDeps(t)
+	deps.Routes = realRoutes{}
+	get := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+e.token)
+		NewRouter(e.tx, deps).ServeHTTP(w, req)
+		wantStatus(t, w, http.StatusOK, "")
+		return w
+	}
+	if st := decode[statusResp](t, get(fmt.Sprintf("/api/passenger/requests/%d", id))); st.ETAS == nil || st.ETASimulated == nil || *st.ETASimulated {
+		t.Errorf("real-route status eta %v simulated %v, want an ETA not marked simulated", st.ETAS, st.ETASimulated)
+	}
+	real := decode[supplyResp](t, get(e.query(nil)))
+	if len(real.Cars) != 1 || real.Cars[0].ETASimulated || real.Card.FastestSimulated == nil || *real.Card.FastestSimulated {
+		t.Errorf("real-route supply = %+v, want the car and the fastest ETA not marked simulated", real)
 	}
 }
 
