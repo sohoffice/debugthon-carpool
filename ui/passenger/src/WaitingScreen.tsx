@@ -17,7 +17,7 @@ export function WaitingScreen({ pickupName, reassigned }: WaitingScreenProps) {
         <span className="waiting-light block h-full w-1/4 rounded-full bg-brand" />
       </div>
       <p className="mt-4 px-6 text-lg text-ink-soft">駕駛確認後，這裡會顯示車牌和到達時間。</p>
-      {reassigned && <p className="mx-6 mt-8 border-l-4 border-brand pl-3 text-lg font-semibold">上一位駕駛沒有回應，已改配下一台車。</p>}
+      {reassigned && <p className="mx-6 mt-8 border-l-4 border-brand pl-3 text-lg font-semibold">上一位駕駛無法載你，已改配下一台車。</p>}
       <div className="mt-auto flex justify-end px-3 pb-4">
         <CancelButton />
       </div>

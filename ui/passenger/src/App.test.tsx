@@ -276,11 +276,20 @@ describe('passenger App', () => {
     expect(await screen.findByText(message)).toBeInTheDocument()
   })
 
-  it('a driver timing out shows the request was reassigned (REQ-053)', async () => {
+  it('a driver declining or timing out shows the request was reassigned (REQ-053)', async () => {
     fakeBackend({ statuses: [request({}), request({ reassigned_count: 1 })] })
     render(<App />)
     await sendRequest()
-    expect(await screen.findByText('上一位駕駛沒有回應，已改配下一台車。')).toBeInTheDocument()
+    expect(await screen.findByText('上一位駕駛無法載你，已改配下一台車。')).toBeInTheDocument()
+  })
+
+  it('does not claim why it was reassigned: the status only has a count (REQ-053)', async () => {
+    fakeBackend({ statuses: [request({}), request({ reassigned_count: 2 })] })
+    render(<App />)
+    await sendRequest()
+    await screen.findByText(/已改配下一台車/)
+    // reassigned_count does not say whether the driver declined or timed out.
+    expect(screen.queryByText(/沒有回應|婉拒|逾時/)).not.toBeInTheDocument()
   })
 
   it('"取消請求" is only a placeholder: it calls no API and the request stays (UD-17)', async () => {
