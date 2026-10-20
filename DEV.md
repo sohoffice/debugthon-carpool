@@ -112,7 +112,7 @@
 | POST | `/api/driver/requests/:id/accept` | 駕駛 | 確認請求：暫留的座位轉為正式佔用，乘客最新的參與主檔關聯到該行程（DD-25）。回 `200` 與請求；請求不是這位駕駛行程的回 `404 not_found`，已不在等待回應（已回應、已逾時改配）回 `409 not_waiting` |
 | POST | `/api/driver/requests/:id/decline` | 駕駛 | 婉拒請求：釋放座位並改配給排序中下一台還有座位的車（該車自動接受則直接確認），沒有車可配為 `no_match`。錯誤同 `accept` |
 | POST | `/api/driver/requests/:id/board` | 駕駛 | 標記乘客已上車（DD-27）。回 `200` 與請求；乘客已先標記則直接回已上車的請求（`boarded_at` 為先到者的時間），座位計數不變。請求不是已確認或已上車回 `409 invalid_state`，不是這位駕駛行程的回 `404 not_found` |
-| POST | `/api/driver/requests/:id/complete` | 駕駛 | 替乘客結束共乘（REQ-067、DD-23），已確認或已上車皆可：釋放座位並建立服務紀錄。已完成則直接回已完成的請求。錯誤同 `board` |
+| POST | `/api/driver/requests/:id/complete` | 駕駛 | 替乘客結束共乘（REQ-067、DD-23），已確認或已上車皆可：釋放座位、建立服務紀錄，並在同一個交易中依該駕駛與乘客累積的服務紀錄重新計算常用資料（DD-19：各欄位取最常出現的值，次數相同取最近一趟；乘客平常抵達時間取完成時間（台北時間）的中位數，可接受的下車公車站為實際用過的公車站）。已完成則直接回已完成的請求。錯誤同 `board` |
 | GET | `/api/passenger/requests/current` | 乘客 | 乘客尚未結束（等待駕駛、已確認、已上車）的請求狀態，沒有則回 `{"request": null}`；乘客介面開啟時帶出（REQ-069） |
 | GET | `/api/passenger/requests/:id` | 乘客 | 請求狀態（輪詢用，REQ-052、REQ-053）：送出請求的欄位加上 `boarded_at`、`completed_at`、`reassigned_count`（婉拒或逾時而改配的次數）。已確認時另含 `pickup_point`、`vehicle{plate,description}`、`eta_s`（尚無駕駛位置為 `null`）與 `trip`（含路線與沿途公車站）；等待、已上車與之後這四項皆為 `null`。`no_match` 帶 `reason`、`message`。不是自己的請求回 `404 not_found` |
 | POST | `/api/passenger/requests/:id/board` | 乘客 | 乘客標記自己已上車，行為同駕駛的 `board` |

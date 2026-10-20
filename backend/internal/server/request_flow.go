@@ -403,5 +403,13 @@ func (s *Server) complete(ctx context.Context, q lockedRequest) error {
 		       q.boarded_at, q.completed_at
 		  FROM ride_requests q JOIN trips t ON t.id = q.trip_id LEFT JOIN bus_stops b ON b.id = q.dropoff_bus_stop_id
 		 WHERE q.id = $1`, q.ID)
-	return err
+	if err != nil {
+		return err
+	}
+	// REQ-006, REQ-007, DD-19: the finished ride feeds the usual data, in the same transaction.
+	var driverID int64
+	if err := s.db.QueryRow(ctx, `SELECT driver_id FROM trips WHERE id = $1`, *q.TripID).Scan(&driverID); err != nil {
+		return err
+	}
+	return recomputeUsualData(ctx, s.db, driverID, q.PassengerID)
 }

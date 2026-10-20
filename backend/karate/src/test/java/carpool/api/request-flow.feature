@@ -147,6 +147,13 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * def record = Db.queryLong('SELECT count(*) FROM service_records WHERE request_id = ? AND passenger_id IS NOT NULL AND driver_id IS NOT NULL AND trip_id = ? AND pickup_point_id = ? AND dropoff_name <> \'\' AND completed_at IS NOT NULL AND (picked_up_at IS NOT NULL) = ?', req.id, tripId, pickup.id, '<boarded>' == 'yes')
     * match record == 1
     * match Db.queryLong('SELECT count(*) FROM service_records WHERE request_id = ?', req.id) == 1
+    # REQ-006, REQ-007, DD-19: the ride feeds the usual data both sides get next time
+    * def driverProfile = doGet(d, 'api/driver/profile').response
+    * match driverProfile contains deep { usual_pickup_point: { id: '#(pickup.id)' }, usual_destination: { name: '#(inPark.name)' }, capacity: 3 }
+    * def passengerProfile = doGet(pt, 'api/passenger/profile').response
+    * match passengerProfile.usual_destination == inPark
+    * match passengerProfile.usual_arrival_time == '#regex \\d{2}:\\d{2}'
+    * match passengerProfile.accepted_stops == '#[]'
 
     Examples:
       | how                          | boarded | by        |
