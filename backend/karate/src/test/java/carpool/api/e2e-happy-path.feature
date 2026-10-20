@@ -16,6 +16,8 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * def driver = 'karate-trip-e2e-' + suffix
     * def tagId = Db.queryLong('INSERT INTO tags (name) VALUES (?) RETURNING id', 'karate-e2e-' + suffix)
     * Db.exec('INSERT INTO users (username, display_name, is_passenger) VALUES (?, ?, true)', passenger, passenger)
+    # the driver exists before the departure so that the same driver previews the route and departs
+    * Db.exec('INSERT INTO users (username, display_name, is_driver) VALUES (?, ?, true)', driver, driver)
     * def afterAll = function() { Db.exec('DELETE FROM request_tag_filters WHERE tag_id = ?', tagId); Db.exec('DELETE FROM trip_tag_filters WHERE tag_id = ?', tagId); Db.exec('DELETE FROM tags WHERE id = ?', tagId); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: passenger }); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: driver }) }
     * configure afterScenario = afterAll
     * def pt = 'passenger:' + passenger
@@ -37,11 +39,24 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match parkCheck('driver:driver4', inPark) == { inside: true }
     * match parkCheck(pt, inPark) == { inside: true }
 
+    # 0b. DD-21: the driver who departs below previews the route to that destination before departing; nothing is created
+    * configure headers = { Authorization: 'Bearer ' + dt }
+    * url baseUrl
+    * path 'api', 'driver', 'route-preview'
+    * request { pickup_point_id: '#(pickup.id)', destination: { lat: '#(inPark.lat)', lng: '#(inPark.lng)' } }
+    * method post
+    * status 200
+    * match response.route == { polyline: '#string', distance_m: '#number', duration_s: '#number', simulated: '#boolean', bus_stops: '#array' }
+    * def previewed = response.route
+    * configure headers = { Authorization: '#("Bearer " + pt)' }
+
     # 1. REQ-015: the driver departs (auto_accept off, so the driver must confirm) and reports a position
     * def tripId = karate.call('classpath:carpool/api/supply-car.feature', { user: driver, pickup: pickup, northM: 500, tagIds: [tagId], body: { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: false, tag_filters: [] } }).tripId
     * def trip = doGet(dt, 'api/driver/trips/current')
     * match trip.responseStatus == 200
     * match trip.response contains { id: '#(tripId)', status: 'active', capacity: 3, auto_accept: false }
+    # TODO T26 (#61): depart with the preview id; without it the route is re-planned, so this equality does not yet prove reuse
+    * match trip.response.route == previewed
 
     # 2. REQ-029: the passenger sees the approaching car, with all seats free
     * def supply = function() { return karate.http(baseUrl + '/api/passenger/supply').header('Authorization', 'Bearer ' + pt).params({ pickup_point_id: pickup.id, dest_lat: inPark.lat, dest_lng: inPark.lng, stop_ids: stop.id, required_tags: tagId }).get().body }
