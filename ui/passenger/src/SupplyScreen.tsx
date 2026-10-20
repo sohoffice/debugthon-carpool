@@ -51,6 +51,12 @@ function PickupBoard({ search, pickup, distance }: { search: PassengerSearch; pi
               <span className="pb-3 text-lg font-semibold">最快</span>
               <span className="font-board text-board font-semibold tabular-nums">{minutesOf(supply.card.fastest_eta_s)}</span>
               <span className="pb-3 text-lg font-semibold">分鐘到</span>
+              {/* REQ-063: the ETA came from the simulated route fallback (DD-09). */}
+              {supply.card.fastest_eta_simulated && (
+                <span className="pb-3">
+                  <SimulatedBadge label="估算" />
+                </span>
+              )}
             </h1>
           )}
           <p className="mt-4 flex gap-6 px-6 text-lg font-semibold">

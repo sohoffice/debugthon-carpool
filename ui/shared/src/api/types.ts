@@ -211,6 +211,8 @@ export interface DriverRequests {
 export interface SupplyCar {
   trip_id: number
   eta_s: number
+  /** The ETA comes from the simulated route fallback (REQ-063, DD-09). */
+  eta_simulated: boolean
   seats_available: number
 }
 
@@ -223,7 +225,8 @@ export interface Supply {
   pickup_point: PickupPoint
   destination: Place
   accepted_stop_ids: number[]
-  card: { count: number; fastest_eta_s: number | null; seats_remaining: number }
+  /** fastest_eta_simulated is null without a car (REQ-063). */
+  card: { count: number; fastest_eta_s: number | null; fastest_eta_simulated: boolean | null; seats_remaining: number }
   /** The wait limit: the timeline runs from now to then (REQ-030). */
   timeline_range_s: number
   /** Soonest first. */
@@ -270,13 +273,14 @@ export interface RequestView {
   created_at: string
 }
 
-// ---------------------------------------------------------------- Request status (vehicle position proposed until T22, DD-31)
+// ---------------------------------------------------------------- Request status
 
+/** The assigned car's latest report (DD-31). */
 export interface VehiclePosition {
   lat: number
   lng: number
-  /** Degrees clockwise from north, computed by the backend; null when unknown (UD-15, DD-31). */
-  heading: number | null
+  /** Degrees clockwise from north, from the last two different reports; null after only one (UD-15, DD-31). */
+  heading_deg: number | null
   reported_at: string
 }
 
@@ -290,12 +294,15 @@ export interface RequestStatusView extends RequestView {
   reassigned_count: number
   pickup_point: PickupPoint | null
   vehicle: Vehicle | null
-  /** Null until the car has reported a position. */
+  /** Null until the car has reported a position, and once it has passed the pickup point. */
   eta_s: number | null
+  /** The ETA comes from the simulated route fallback; null without an ETA (REQ-063). */
+  eta_simulated: boolean | null
   trip: TripView | null
-  /** Proposed until T22 (DD-31): only the mock backend sends these; field names follow DEV.md once T22 lands. */
-  vehicle_position?: VehiclePosition | null
-  passed_pickup?: boolean
+  /** Null before the car's first report, and unless confirmed (DD-31). */
+  vehicle_position: VehiclePosition | null
+  /** Whether the car has passed the pickup point; null unless confirmed (DD-31, DD-06). */
+  passed_pickup: boolean | null
 }
 
 export interface CurrentRequest {
@@ -305,17 +312,25 @@ export interface CurrentRequest {
 // POST /api/passenger/requests/:id/board    → RequestView ("我已上車", DD-27; already boarded is fine)
 // POST /api/passenger/requests/:id/complete → RequestView ("我已下車，結束共乘", DD-23; already done is fine)
 
-// ---------------------------------------------------------------- Proposed: shared
+// ---------------------------------------------------------------- Destinations (DD-32, DD-21)
 
-/** Mock-only stand-in for Google Places search (DD-32): the Go backend has no places API, only GET /api/park/check?lat=&lng= → { inside: boolean } (T20). */
-export type PlaceSearchResult = Place[]
+/**
+ * GET /api/park/check?lat=&lng= — whether a place chosen with Google Places is inside the park
+ * (DD-32). 400 invalid_location for a bad coordinate.
+ */
+export interface ParkCheck {
+  inside: boolean
+}
 
-// ---------------------------------------------------------------- Proposed: driver
-
-/** Body of POST /api/driver/route-preview; returns Route (400 destination_outside_park; DD-21, T20). */
+/** Body of POST /api/driver/route-preview; 400 destination_outside_park (DD-21, T20). */
 export interface RoutePreviewRequest {
   pickup_point_id: number
-  destination: Place
+  destination: LatLngBody
+}
+
+/** POST /api/driver/route-preview: the same route a departure to this destination would get. */
+export interface RoutePreview {
+  route: Route
 }
 
 // ---------------------------------------------------------------- UI state (not an API shape)

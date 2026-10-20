@@ -2,7 +2,7 @@ import type { DepartureSettings, LatLngBody, PassengerSearch, Place, RoutePrevie
 import type { Lookups } from './context.ts'
 import { MockError } from './errors.ts'
 import type { Submission } from './operations.ts'
-import { insidePark } from './places.ts'
+import { insidePark } from './park.ts'
 import type { PassengerProfileState } from './world.ts'
 
 const bad = (what: string) => new MockError(400, 'invalid_request', `請求格式錯誤：${what}`)
@@ -50,9 +50,25 @@ function latLng(v: unknown, what: string): LatLngBody {
   return { lat: v.lat, lng: v.lng }
 }
 
+/** Like the Go backend's preview: the destination needs only a position, no name. */
 export function routePreviewRequest(body: unknown, lookups: Lookups): RoutePreviewRequest {
   if (!isObject(body)) throw bad('body')
-  return { pickup_point_id: pickupPointId(body.pickup_point_id, lookups), destination: parkPlace(body.destination, lookups) }
+  const pickup = pickupPointId(body.pickup_point_id, lookups)
+  const d = body.destination
+  if (!isObject(d) || !isNumber(d.lat) || !isNumber(d.lng)) throw bad('destination')
+  const destination = { lat: d.lat, lng: d.lng }
+  if (!insidePark(lookups, destination)) throw new MockError(400, 'destination_outside_park', '目的地必須在內湖科學園區內')
+  return { pickup_point_id: pickup, destination }
+}
+
+/** GET /api/park/check?lat=&lng=, with the Go backend's checks. */
+export function parkCheckQuery(query: URLSearchParams): LatLngBody {
+  const lat = Number(query.get('lat') ?? 'x')
+  const lng = Number(query.get('lng') ?? 'x')
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    throw new MockError(400, 'invalid_location', '需要有效的 lat（-90～90）與 lng（-180～180）')
+  }
+  return { lat, lng }
 }
 
 /** Same checks and codes as the Go backend's depart. */

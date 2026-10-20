@@ -101,12 +101,14 @@ export function requestView(request: RideRequest): RequestView {
 
 /**
  * GET /api/passenger/requests/:id, like the Go backend: the pickup point, car, ETA and trip only
- * while confirmed (DD-27). The car's position and passed_pickup are the UI's proposal for T22 (DD-31).
+ * while confirmed (DD-27), with the car's position and whether it passed the pickup (DD-31). Every
+ * mock ETA is simulated (REQ-063).
  */
 export function requestStatusView(world: World, lookups: Lookups, request: RideRequest, now: number): RequestStatusView {
   const base = { ...requestView(request), reassigned_count: request.reassignedCount }
-  if (request.status === 'no_match') return { ...base, reason: 'no_match', message: '目前沒有可搭的車', pickup_point: null, vehicle: null, eta_s: null, trip: null }
-  if (request.status !== 'confirmed') return { ...base, pickup_point: null, vehicle: null, eta_s: null, trip: null }
+  const none = { pickup_point: null, vehicle: null, eta_s: null, eta_simulated: null, trip: null, vehicle_position: null, passed_pickup: null }
+  if (request.status === 'no_match') return { ...base, ...none, reason: 'no_match', message: '目前沒有可搭的車' }
+  if (request.status !== 'confirmed') return { ...base, ...none }
   const trip = findTrip(world, assignedTripId(request)!)!
   const driver = mustGet(lookups.userById, trip.driverId, 'user')
   const passed = passedPickup(trip, now, lookups)
@@ -116,8 +118,9 @@ export function requestStatusView(world: World, lookups: Lookups, request: RideR
     pickup_point: mustGet(lookups.pickupById, request.pickupPointId, 'pickup point'),
     vehicle: lookups.data.seed.vehicles[driver.username] ?? { plate: '', description: '' },
     eta_s: passed ? null : Math.round(etaToPickupS(trip, now)),
+    eta_simulated: passed ? null : true,
     trip: tripView(lookups, trip),
-    vehicle_position: { ...position, heading: Math.round(heading), reported_at: iso(now) },
+    vehicle_position: { ...position, heading_deg: heading, reported_at: iso(now) },
     passed_pickup: passed,
   }
 }
@@ -154,13 +157,18 @@ export function driverRequestsView(world: World, lookups: Lookups, driverId: num
 export function supplyView(world: World, lookups: Lookups, passengerId: number, pickupPointId: number, search: PassengerSearch, now: number): Supply {
   const matches = matchTrips(world, lookups, passengerId, pickupPointId, search, now)
   const cars = matches
-    .map((m) => ({ trip_id: m.tripId, eta_s: Math.round(m.etaS), seats_available: seatsFree(findTrip(world, m.tripId)!) }))
+    .map((m) => ({ trip_id: m.tripId, eta_s: Math.round(m.etaS), eta_simulated: true, seats_available: seatsFree(findTrip(world, m.tripId)!) }))
     .sort((a, b) => a.eta_s - b.eta_s)
   return {
     pickup_point: mustGet(lookups.pickupById, pickupPointId, 'pickup point'),
     destination: search.destination,
     accepted_stop_ids: search.accepted_stop_ids,
-    card: { count: cars.length, fastest_eta_s: cars[0]?.eta_s ?? null, seats_remaining: cars.reduce((sum, c) => sum + c.seats_available, 0) },
+    card: {
+      count: cars.length,
+      fastest_eta_s: cars[0]?.eta_s ?? null,
+      fastest_eta_simulated: cars[0]?.eta_simulated ?? null,
+      seats_remaining: cars.reduce((sum, c) => sum + c.seats_available, 0),
+    },
     timeline_range_s: lookups.settings.wait_limit * 60,
     cars,
   }

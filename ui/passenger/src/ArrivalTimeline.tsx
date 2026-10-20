@@ -12,7 +12,8 @@ interface ArrivalTimelineProps {
  * new place after each poll; they are not buttons (REQ-031).
  */
 export function ArrivalTimeline({ cars, rangeS }: ArrivalTimelineProps) {
-  const summary = cars.length ? `接近中的車：${cars.map((c) => minutesOf(c.eta_s)).join('、')} 分鐘後到` : '目前沒有接近中的車'
+  const minutes = (c: SupplyCar) => `${minutesOf(c.eta_s)}${c.eta_simulated ? '（估算）' : ''}`
+  const summary = cars.length ? `接近中的車：${cars.map(minutes).join('、')} 分鐘後到` : '目前沒有接近中的車'
   return (
     <figure className="px-6">
       <figcaption className="sr-only">{summary}</figcaption>
@@ -29,7 +30,12 @@ export function ArrivalTimeline({ cars, rangeS }: ArrivalTimelineProps) {
               className="absolute top-0 flex -translate-x-1/2 flex-col items-center transition-[left] duration-[2400ms] ease-linear motion-reduce:transition-none"
               style={{ left }}
             >
-              <span className="font-board text-xl font-semibold tabular-nums">{minutesOf(c.eta_s)}</span>
+              {/* A simulated ETA gets the simulated outline, the same as SimulatedBadge (REQ-063, 8.3). */}
+              <span
+                className={`font-board text-xl font-semibold tabular-nums ${c.eta_simulated ? 'rounded-[4px] border border-dashed border-simulated px-1 text-simulated' : ''}`}
+              >
+                {minutesOf(c.eta_s)}
+              </span>
               <span className="mt-1 size-[18px] rounded-full border-[3px] border-white bg-brand shadow" />
             </span>
           )

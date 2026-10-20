@@ -92,6 +92,23 @@ describe('trips, activities and positions match the Go backend', () => {
     })
   })
 
+  it('checks the park and previews the route like the Go backend, without a places search (DD-32, DD-21)', () => {
+    expect(json('GET', '/api/park/check?lat=25.0765&lng=121.5742', PASSENGER)).toEqual({ inside: true })
+    expect(json('GET', '/api/park/check?lat=25.0339&lng=121.5645', DRIVER)).toEqual({ inside: false })
+    expect(call('GET', '/api/park/check?lat=91&lng=121', DRIVER)).toMatchObject({ status: 400, body: { error: { code: 'invalid_location' } } })
+    expect(call('GET', '/api/park/check?lng=121', DRIVER)).toMatchObject({ status: 400, body: { error: { code: 'invalid_location' } } })
+    expect(call('GET', '/api/places?q=瑞光', DRIVER).status).toBe(404)
+
+    // The preview needs only a position, and is the route a departure gets.
+    const preview = json<{ route: TripView['route'] }>('POST', '/api/driver/route-preview', DRIVER, { pickup_point_id: 1, destination: { lat: 25.0765, lng: 121.5742 } })
+    expect(preview.route?.bus_stops.length).toBeGreaterThan(0)
+    expect(json<TripView>('POST', '/api/driver/trips', DRIVER, DEPARTURE).route).toEqual(preview.route)
+    expect(call('POST', '/api/driver/route-preview', DRIVER, { pickup_point_id: 1, destination: { lat: 25.0339, lng: 121.5645 } })).toMatchObject({
+      status: 400,
+      body: { error: { code: 'destination_outside_park' } },
+    })
+  })
+
   it('accepts positions only after taking part (DD-25)', () => {
     expect(call('POST', '/api/location', PASSENGER, SONGSHAN)).toMatchObject({ status: 409, body: { error: { code: 'no_activity' } } })
     expect(call('POST', '/api/activities', PASSENGER)).toMatchObject({ status: 201, body: { role: 'passenger', trip_id: null } })
@@ -122,7 +139,7 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     const submitted = call('POST', '/api/passenger/requests', PASSENGER, SUBMIT)
     expect(submitted).toMatchObject({ status: 201, body: { status: 'waiting_driver', pickup_point_id: 1, submitted_lat: near(25).lat } })
     const id = (submitted.body as RequestView).id
-    expect(current()).toMatchObject({ id, status: 'waiting_driver', reassigned_count: 0, vehicle: null, trip: null })
+    expect(current()).toMatchObject({ id, status: 'waiting_driver', reassigned_count: 0, vehicle: null, trip: null, vehicle_position: null, passed_pickup: null, eta_simulated: null })
 
     const pending = driverRequests().pending
     expect(pending).toEqual([expect.objectContaining({ id, passenger_name: '乘客 小美', pickup_point: expect.objectContaining({ name: '松山車站' }), boarded: false })])
@@ -133,12 +150,14 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     const confirmed = statusOf(id)
     expect(confirmed).toMatchObject({ status: 'confirmed', vehicle: { plate: 'DEF-4567', description: '藍色 Mazda 3' }, pickup_point: { name: '松山車站' } })
     expect(confirmed.eta_s).toBeGreaterThan(0)
+    // Every mock ETA is simulated; the car's position and heading as DD-31 names them.
+    expect(confirmed).toMatchObject({ eta_simulated: true, passed_pickup: false, vehicle_position: { heading_deg: expect.any(Number), reported_at: expect.any(String) } })
     expect(confirmed.trip?.route?.bus_stops.length).toBeGreaterThan(0)
     expect(driverRequests()).toMatchObject({ pending: [], passengers: [expect.objectContaining({ id, status: 'confirmed', boarded: false })] })
 
     expect(json<RequestView>('POST', `/api/passenger/requests/${id}/board`, PASSENGER)).toMatchObject({ status: 'boarded' })
     // After boarding the pickup, car, ETA and trip are gone (DD-27, REQ-068).
-    expect(statusOf(id)).toMatchObject({ status: 'boarded', vehicle: null, eta_s: null, trip: null, trip_id: confirmed.trip_id })
+    expect(statusOf(id)).toMatchObject({ status: 'boarded', vehicle: null, eta_s: null, eta_simulated: null, vehicle_position: null, trip: null, trip_id: confirmed.trip_id })
     expect(driverRequests().passengers[0].boarded).toBe(true)
     expect(call('POST', `/api/driver/requests/${id}/board`, DRIVER)).toMatchObject({ status: 200, body: { status: 'boarded' } })
 
@@ -174,7 +193,7 @@ describe('request flow matches the Go backend (T11-T13)', () => {
 
   it('no_cars: answers at once that there is no car, without alternatives (REQ-036)', () => {
     scenario('no_cars')
-    expect(json<Supply>('GET', SUPPLY, PASSENGER)).toMatchObject({ card: { count: 0, fastest_eta_s: null }, cars: [], pickup_point: { id: 1 } })
+    expect(json<Supply>('GET', SUPPLY, PASSENGER)).toMatchObject({ card: { count: 0, fastest_eta_s: null, fastest_eta_simulated: null }, cars: [], pickup_point: { id: 1 } })
     const request = submit()
     expect(request).toMatchObject({ status: 'no_match', trip_id: null })
     expect(statusOf(request.id)).toMatchObject({ reason: 'no_match', message: '目前沒有可搭的車' })
@@ -191,6 +210,8 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     expect(supply).toMatchObject({ pickup_point: { name: '松山車站' }, card: { count: 3 }, timeline_range_s: 600, accepted_stop_ids: [9, 23] })
     expect(supply.cars.map((c) => c.eta_s)).toEqual([...supply.cars.map((c) => c.eta_s)].sort((a, b) => a - b))
     expect(supply.card.seats_remaining).toBe(supply.cars.reduce((sum, c) => sum + c.seats_available, 0))
+    expect(supply.card.fastest_eta_simulated).toBe(true)
+    expect(supply.cars.every((c) => c.eta_simulated)).toBe(true)
     expect(json<Supply>('GET', SUPPLY.replace('pickup_point_id=1', 'pickup_point_id=2'), PASSENGER).card.count).toBe(0)
     expect(call('GET', SUPPLY.replace('pickup_point_id=1&', ''), PASSENGER)).toMatchObject({ status: 400, body: { error: { code: 'invalid_request' } } })
     expect(call('GET', SUPPLY.replace('stop_ids=9,23', 'stop_ids=99999'), PASSENGER)).toMatchObject({ status: 400, body: { error: { code: 'invalid_stop' } } })

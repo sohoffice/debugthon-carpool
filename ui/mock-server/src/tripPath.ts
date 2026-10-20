@@ -1,4 +1,4 @@
-import type { BusStop, PickupPoint, Place, Route } from '../../shared/src/api/types.ts'
+import type { BusStop, PickupPoint, Route } from '../../shared/src/api/types.ts'
 import { SPEED_MPS } from './config.ts'
 import { mustGet, type Lookups } from './context.ts'
 import { CORRIDORS, type Waypoint } from './corridors.ts'
@@ -23,7 +23,7 @@ function resolve(lookups: Lookups, pickup: PickupPoint, waypoint: Waypoint): { p
  * The car's line for a trip: the corridor into the pickup point, then the corridor onward,
  * cut where it comes closest to the destination, then straight to the destination.
  */
-export function buildTripPath(lookups: Lookups, pickup: PickupPoint, destination: Place): TripPath {
+export function buildTripPath(lookups: Lookups, pickup: PickupPoint, destination: LatLng): TripPath {
   const corridor = CORRIDORS[pickup.name]
   if (!corridor) throw new Error(`No corridor for pickup point ${pickup.name}`)
 
