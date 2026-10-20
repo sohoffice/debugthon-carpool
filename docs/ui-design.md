@@ -857,23 +857,26 @@ Go 後端已有的 API（介面照抄後端格式）：
 | POST | `/api/activities` | 任一 | `201 Activity` | 乘客按「送出請求」時先建立參與主檔（DD-25）；駕駛的主檔由出發時建立 |
 | POST | `/api/location` | 任一 | `201 LocationReport` | 乘客的位置回報（DD-26）、模擬器的駕駛位置回報（DD-14）；沒有參與主檔時回 `409 no_activity` |
 | POST | `/api/passenger/requests` | 乘客 | `201 RequestView` | 「送出請求」（T12）：`pickup_point_id`、`location`（目前位置，DD-25），選填 `destination`、`stop_ids`、`tag_filters`。立即回傳結果：`rejected`（`reason: too_far` 與 `message`）、`no_match`、`waiting_driver` 或 `confirmed`。後端不檢查重複送出（REQ-069 只由介面防止）。完整格式見 `DEV.md` |
+| GET | `/api/driver/requests` | 駕駛 | `DriverRequests` | 駕駛行程中的輪詢（T13）：`trip_id`、`pending`（待回應的請求：上車點、下車點 `dropoff`、`relaxed`）、`passengers`（已確認乘客的下車點與 `boarded`）。沒有進行中的行程時 `trip_id` 為 `null`。**不含**行程結束與完成人數（SC-D4 要等 T21） |
+| POST | `/api/driver/requests/:id/accept`、`/decline` | 駕駛 | `200 RequestView` | 確認、婉拒（T13）；已不在等待回應時回 `409 not_waiting` |
+| POST | `/api/driver/requests/:id/board`、`/complete` | 駕駛 | `200 RequestView` | 「已上車」「已下車」（T13，DD-27、DD-23）；重複操作直接回先到者的結果，狀態不對時回 `409 invalid_state` |
+| GET | `/api/passenger/requests/current` | 乘客 | `{ request }` | 乘客尚未結束的請求，沒有時 `request` 為 `null`；打開 App 時帶出（REQ-069） |
+| GET | `/api/passenger/requests/:id` | 乘客 | `RequestView` | 請求狀態的輪詢（T13）：已確認時含 `pickup_point`、`vehicle`、`eta_s`、`trip`（路線與沿途公車站）；改配次數是 `reassigned_count`。**不含**車輛位置與行進方向（UD-15） |
+| POST | `/api/passenger/requests/:id/board`、`/complete` | 乘客 | `200 RequestView` | 「我已上車」「我已下車，結束共乘」（T13） |
 | GET | `/api/passenger/supply` | 乘客 | `Supply` | 供給看板（T11）。查詢參數 `pickup_point_id`（必填）、`dest_lat`＋`dest_lng`（選填 `dest_name`）、`stop_ids`、`required_tags`、`preferred_tags`（id 以逗號分隔）；目的地與公車站沒帶時後端用常用資料。回傳 `card`（`count`、`fastest_eta_s`、`seats_remaining`）、`cars`（`trip_id`、`eta_s`、`seats_available`，由近到遠）、`timeline_range_s`（等待上限，秒）與實際採用的 `destination`、`accepted_stop_ids`。完整的錯誤碼見 `DEV.md` |
 
-前端提案的 API：`main` 的後端還沒有，只有示範後端提供。後端工作單（T13 等）完成後一律改用後端的格式；接 Go 後端時，用到這些 API 的畫面不能用：
+前端提案的 API：`main` 的後端還沒有，只有示範後端提供。對應的工作單完成後一律改用後端的格式；接 Go 後端時，用到這些 API 的畫面不能用：
 
 | 方法 | 路徑 | 角色 | 回傳 | 說明 |
 |---|---|---|---|---|
 | GET | `/api/places?q=` | 任一 | `Place[]` | 搜尋園區內的目的地，供地址輸入使用（最多 8 筆）；DD-28，T20 |
-| GET | `/api/driver/trip` | 駕駛 | `{ trip }` | 駕駛的輪詢：最近一趟行程（進行中或已結束，格式是 `TripView` 加上下列欄位），沒有出發過時為 `null`。含待回應的請求、已確認乘客（下車點、是否已上車）、結束時間與這趟完成的人數 |
 | POST | `/api/driver/route-preview` | 駕駛 | `Route` | 指定上車點與目的地的行程路線與沿途公車站，出發前顯示在地圖上；目的地不在園區內時回 `400 destination_outside_park`；DD-21，T20 |
-| POST | `/api/driver/requests/:id/accept` | 駕駛 | `{ trip }` | 確認請求；請求已逾時或改配時回 `409 request_not_pending` |
-| POST | `/api/driver/requests/:id/decline` | 駕駛 | `{ trip }` | 婉拒請求，後端改配下一台車 |
-| POST | `/api/driver/requests/:id/board` | 駕駛 | `{ trip }` | 「已上車」：標記乘客已上車（DD-27）；已標記時不報錯 |
-| POST | `/api/driver/requests/:id/complete` | 駕駛 | `{ trip }` | 「已下車」：替乘客結束共乘（DD-23）；已結束時不報錯 |
-| GET | `/api/passenger/request` | 乘客 | `{ request }` | 最近一筆請求與狀態；已確認時含車輛、ETA、下車點、行程路線與車輛位置、行進方向（UD-15） |
-| POST | `/api/passenger/requests/:id/board` | 乘客 | `{ request }` | 「我已上車」（DD-27）；已標記時不報錯 |
-| POST | `/api/passenger/requests/:id/complete` | 乘客 | `{ request }` | 「我已下車，結束共乘」；已結束時不報錯 |
 | POST | `/api/demo/reset` | 免身分 | `204` | 重設 Demo 資料（UD-18）；DD-29，T17 |
+
+介面需要、但 `main` 的後端 API 和工作單都還沒有的資料：
+
+- **行程結束與這趟完成的人數**（SC-D4）：`GET /api/driver/requests` 沒有；T21（DD-30）實作行程自動結束時一併提供（#31 範圍已列）。
+- **車輛的目前位置與行進方向**（UD-15，SC-P5 地圖上的車）：`GET /api/passenger/requests/:id` 沒有，也沒有工作單；`design.md` 第 12 節已列為差異，要交給架構師決定。
 
 - 時間一律是 RFC 3339 字串；距離以公尺、時間長度以秒為單位（欄位名稱以 `_min` 結尾的除外）。
 - 行程路線用 Google 的 encoded polyline（和 `trips.route_polyline` 相同），`RoutePolyline` 可以直接畫；沿途公車站的欄位是 `bus_stops`（和 Go 的 `routeView` 相同）。
@@ -1024,7 +1027,7 @@ flowchart LR
 
 | 項目 | 在 ui-design 的位置 | 和 design.md 的關係 |
 |---|---|---|
-| 車輛的行進方向 | UD-15；10.1 `GET /api/passenger/request` | DD-08 的位置回報與 `location_reports` 只有經緯度；後端另外回傳行進方向（正北為 0 度、順時針） |
+| 車輛的目前位置與行進方向 | UD-15；10.1 | DD-08 的位置回報與 `location_reports` 只有經緯度；T13 的 `GET /api/passenger/requests/:id` 不回傳車輛位置與方向，也沒有工作單，待架構師決定 |
 | Demo 重設 `POST /api/demo/reset` | UD-18；10.2 | [PR #29](https://github.com/sohoffice/debugthon-carpool/pull/29) 提案為 DD-29，實作在 [#17 T17](https://github.com/sohoffice/debugthon-carpool/issues/17)；Go 後端還沒有 |
 | 展示頁 | UD-18 | DD-24 寫「開兩個瀏覽器視窗」；展示頁只是把兩個 App 並排嵌入，兩個視窗的做法仍然可用 |
 | 行程抵達目的地時自動結束 | UD-16 | PR #29 提案為 REQ-070、DD-30，實作在 [#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31)；Go 後端還沒有 |
