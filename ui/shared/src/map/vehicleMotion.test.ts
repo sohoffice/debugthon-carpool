@@ -11,10 +11,10 @@ describe('vehicle motion (UD-15)', () => {
     expect(shortestTurn(90, 270)).toBe(-180)
   })
 
-  it('uses the reported heading, else the direction of travel, and ignores tiny moves', () => {
-    expect(nextHeading(A, metresNorth(50), 135, 0)).toBe(135)
-    expect(nextHeading(A, metresNorth(50), null, 200)).toBeCloseTo(0, 0)
-    expect(nextHeading(A, metresNorth(3), null, 200)).toBe(200)
+  it('uses the backend’s heading and keeps the old one without it, never working it out itself (DD-31)', () => {
+    expect(nextHeading(135, 0)).toBe(135)
+    expect(nextHeading(0, 200)).toBe(0)
+    expect(nextHeading(null, 200)).toBe(200)
   })
 
   it('jumps instead of animating over long distances or after missed polls', () => {

@@ -1,7 +1,5 @@
 import type { LatLng } from './config'
 
-/** Moves shorter than this keep the old heading, so GPS noise at a red light does not spin the car (UD-15). */
-export const MIN_HEADING_MOVE_M = 5
 /** Farther jumps, or this many missed polls, are drawn as a jump, not a line through buildings. */
 export const MAX_ANIMATED_MOVE_M = 300
 export const MAX_MISSED_POLLS = 3
@@ -16,17 +14,12 @@ export function distanceM(a: LatLng, b: LatLng): number {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h))
 }
 
-/** Degrees clockwise from north. */
-export function bearingDeg(a: LatLng, b: LatLng): number {
-  const y = Math.sin(rad(b.lng - a.lng)) * Math.cos(rad(b.lat))
-  const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(rad(b.lng - a.lng))
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
-}
-
-/** The API's heading, else the direction of travel, else the old heading when barely moved. */
-export function nextHeading(from: LatLng, to: LatLng, reported: number | null, previous: number): number {
-  if (reported !== null) return reported
-  return distanceM(from, to) < MIN_HEADING_MOVE_M ? previous : bearingDeg(from, to)
+/**
+ * The heading the backend computed; without one (a single report so far) the car keeps the old one.
+ * The UI never works it out from positions itself (DD-31, UD-15).
+ */
+export function nextHeading(reported: number | null, previous: number): number {
+  return reported ?? previous
 }
 
 /** Signed turn in degrees, always the shorter way round: 350 → 10 is +20, not −340. */

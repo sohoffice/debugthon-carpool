@@ -35,7 +35,7 @@ export function useSmoothVehicle(target: VehiclePosition | null, pollIntervalMs:
     last.current = { position: to, at: now }
 
     const rotationNow = from?.rotation ?? target.heading ?? 0
-    const heading = nextHeading(previous?.position ?? to, to, target.heading, ((rotationNow % 360) + 360) % 360)
+    const heading = nextHeading(target.heading, ((rotationNow % 360) + 360) % 360)
     const rotation = rotationNow + shortestTurn(rotationNow, heading)
 
     const missedPolls = previous ? Math.floor((now - previous.at) / pollIntervalMs) - 1 : 0
