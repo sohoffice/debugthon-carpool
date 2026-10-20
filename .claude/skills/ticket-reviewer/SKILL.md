@@ -30,6 +30,7 @@ description: 以審查者身分審查某張工作單（GitHub issue，如 T06A�
 ## 審查前準備
 
 1. 讀工作單：`gh issue view <編號>`——範圍、驗收條件、追溯（`REQ-xxx`、`DD-xx`）。
+   工作單編號由實作 session 的交付訊息提供；訊息沒有寫明時，先向實作 session 確認，不要猜。
 2. 讀追溯到的條目：需求在 `docs/requirement.md`（含「驗證方式」），設計決策與元件在 `docs/design.md`。
 3. 看變更：實作 session 交付的 PR（`gh pr view <編號>`、`gh pr diff <編號>`），並確認 PR 描述符合 `pull-request` skill 的段落；
    沒有 PR 時看 `git status`、`git diff`（含未追蹤檔案），或指定的 commit／分支。

@@ -24,7 +24,7 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
 | 修改程式碼與測試（工作單範圍內） | 可以自行處理 |
 | 修改設計（`docs/design.md`）或需求（`docs/requirement.md`） | **必須**先經開發者同意 |
 | 變更工作單的交付內容（範圍、驗收條件）、勾選驗收條件或關閉工作單 | 不做；範圍變更請開發者決定，勾選由審查者處理 |
-| commit、push、開 PR | 交付審查時可自行處理，包括依審查意見補 commit（見〈[交付審查](#交付審查)〉）；其他時候**必須**先取得開發者同意 |
+| commit、push、開 PR | 可以自行處理；所有變更都經 PR 交付審查（見〈[交付審查](#交付審查)〉） |
 | Slack 公告、合併 PR | 不做；審查通過後由審查者公告，取得開發者同意後合併 |
 
 ## 開發前準備
@@ -62,12 +62,11 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
 
 ## 交付審查
 
-交付審查即代表開發者同意 commit、push 與開 PR，不需再問。
-
 1. 依 `pull-request` skill 開 PR：從 `main` 開分支、commit、push、`gh pr create`，描述依該 skill 的段落撰寫。
    **不要**在 Slack 公告；公告由審查者在審查通過後張貼。
 2. 用 `ListAgents` 找審查 session。無法確定是哪一個（沒有、或有多個候選）時，先問開發者。
 3. 用 `SendMessage` 交給審查者，第一行寫明工作單、PR 與目的（如「T09 PR #30 ready for review」），內容包括：
+   - 工作單編號與連結（如 [#9 T09](https://github.com/sohoffice/debugthon-carpool/issues/9)）
    - PR 連結
    - 需求 → 測試的對照（檔案與測試名稱）
    - 已執行的測試指令與結果

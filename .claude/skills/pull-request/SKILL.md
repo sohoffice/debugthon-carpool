@@ -14,7 +14,7 @@ description: 建立與合併 PR 的慣例——PR 描述的固定段落（摘要
 ## 原則
 
 - 開 PR 不是必要的：是否開 PR 由開發者決定；commit 與 push 仍須先取得開發者同意。
-  其他 skill 明定的授權（如 `ticket-developer` 交付審查時開 PR）視同開發者同意。
+  其他 skill 明定的授權（如 `ticket-developer` 自行 commit、push 並開 PR）視同開發者同意。
 - 審查不是必要的：PR 可以不經審查，由開發者決定直接合併。
 - 每個 PR 都要在 Slack 公告，時機見〈[Slack 公告](#slack-公告)〉；合併後只在公告訊息加上 ✅，不在討論串回覆，也不另發訊息。
 
