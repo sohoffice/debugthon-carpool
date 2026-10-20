@@ -63,14 +63,16 @@ type locationReport struct {
 	Lng        float64   `json:"lng"`
 	ReportedAt time.Time `json:"reported_at"`
 	// Only set on a driver's report that belongs to a trip: whether the trip has
-	// passed its pickup point.
+	// passed its pickup point, and whether the trip is over (DD-30).
 	PassedPickup *bool `json:"passed_pickup,omitempty"`
+	TripEnded    *bool `json:"trip_ended,omitempty"`
 }
 
 // reportLocation is the single position API for drivers and passengers (DD-08).
 // Every accepted report is stored as sent and never discarded (DD-06), under the
 // caller's latest activity; with none the report is refused (409). A driver's
-// report may flip passed_pickup on the activity's trip, which never flips back.
+// report may flip passed_pickup on the activity's trip, which never flips back,
+// and after that may end the trip on arrival at its destination (DD-30).
 func (s *Server) reportLocation(c *gin.Context) {
 	var body locationBody
 	if err := c.ShouldBindJSON(&body); err != nil || body.Lat == nil || body.Lng == nil ||
@@ -108,6 +110,12 @@ func (s *Server) reportLocation(c *gin.Context) {
 			return
 		}
 		r.PassedPickup = &passed
+		ended, err := s.checkArrival(c, *act.TripID, latLng{r.Lat, r.Lng})
+		if err != nil {
+			s.internalError(c, err)
+			return
+		}
+		r.TripEnded = &ended
 	}
 	c.JSON(http.StatusCreated, r)
 }
