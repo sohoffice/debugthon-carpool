@@ -1,10 +1,17 @@
 import { distanceM, type BusStop, type LatLng, type PassengerProfile, type PassengerSearch, type PickupPoint } from '@carpool/shared'
 
-/** Habitual destination and stops prefill the search (REQ-025); filters start empty. */
+/**
+ * Habitual destination and stops prefill the search (REQ-025); filters start empty. The stops can
+ * be empty, e.g. after rides that ended at the driver's destination (DD-19): the destination is
+ * still prefilled and the setup asks for the stops.
+ */
 export function searchFromProfile(profile: PassengerProfile | null): PassengerSearch | null {
-  if (!profile?.usual_destination || profile.accepted_stops.length === 0) return null
+  if (!profile?.usual_destination) return null
   return { destination: profile.usual_destination, accepted_stop_ids: profile.accepted_stops.map((s) => s.id), tag_filters: [] }
 }
+
+/** The supply query and the request need at least one stop (`stops_required`). */
+export const isComplete = (search: PassengerSearch | null): search is PassengerSearch => search !== null && search.accepted_stop_ids.length > 0
 
 /** GET /api/passenger/supply query string (T11, types.ts Supply). */
 export function supplyQueryString(pickupPointId: number, search: PassengerSearch): string {

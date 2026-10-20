@@ -19,7 +19,7 @@ import { PassengerDebugMode } from './PassengerDebugMode'
 import { useCurrentPosition } from './position'
 import { RequestFlow } from './RequestFlow'
 import { loadFilters, saveFilters } from './savedFilters'
-import { nearestPickup, searchFromProfile } from './search'
+import { isComplete, nearestPickup, searchFromProfile } from './search'
 import { SubmitSheet } from './SubmitSheet'
 import { SupplyScreen } from './SupplyScreen'
 
@@ -31,6 +31,12 @@ type View =
   | { kind: 'request'; request: RequestStatusView; fresh: boolean }
 
 const fetchCurrent = () => api.get<CurrentRequest>('/passenger/requests/current')
+
+/** The habitual search with the filters this browser last used (REQ-025, 7.1). */
+function habitualSearch(profile: PassengerProfile): PassengerSearch | null {
+  const fromProfile = searchFromProfile(profile)
+  return fromProfile && { ...fromProfile, tag_filters: loadFilters() }
+}
 
 export function App() {
   const [view, setView] = useState<View>({ kind: 'loading', failed: false })
@@ -56,14 +62,13 @@ export function App() {
           fetchCurrent(),
         ])
         if (cancelled) return
-        const fromProfile = searchFromProfile(profile)
-        const habitual = fromProfile && { ...fromProfile, tag_filters: loadFilters() }
+        const habitual = habitualSearch(profile)
         setPickupPoints(points)
         setBusStops(stops)
         setSearch(habitual)
         // An open request comes back after a reload, with no way to send another (REQ-069); habitual data skips the setup (5, REQ-025).
         if (current.request) setView({ kind: 'request', request: current.request, fresh: false })
-        else setView(habitual ? { kind: 'supply', notice: null } : { kind: 'setup' })
+        else setView(isComplete(habitual) ? { kind: 'supply', notice: null } : { kind: 'setup' })
       } catch (err) {
         const missing = err instanceof ApiError && err.status === 404 ? err.message : undefined
         if (!cancelled) setView({ kind: 'loading', failed: true, missing })
@@ -122,7 +127,14 @@ export function App() {
     }
   }
 
-  const backToSupply = useCallback((notice: string | null) => (setReporting(false), setView({ kind: 'supply', notice })), [])
+  const backToSupply = useCallback((notice: string | null) => {
+    setReporting(false)
+    // Opened on a request without a search (reloaded mid-ride): the finished ride has just updated the habitual data (DD-19).
+    api
+      .get<PassengerProfile>('/passenger/profile')
+      .then((profile) => setSearch((s) => s ?? habitualSearch(profile)), () => undefined)
+      .finally(() => setView({ kind: 'supply', notice }))
+  }, [])
 
   let screen
   if (view.kind === 'loading') {
@@ -141,7 +153,7 @@ export function App() {
         onOpenChange={setReporting}
       />
     )
-  } else if (view.kind === 'setup' || search === null || pickup === null) {
+  } else if (view.kind === 'setup' || !isComplete(search) || pickup === null) {
     screen = (
       <DestinationScreen
         initial={search}

@@ -97,7 +97,8 @@ const BOARDED = request({ status: 'boarded' })
 const COMPLETED = request({ status: 'completed' })
 
 interface Backend {
-  profile?: PassengerProfile
+  /** Served in order for GET /passenger/profile; the last one repeats. */
+  profile?: PassengerProfile | PassengerProfile[]
   /** Which cars' ETAs are simulated, in ETA order. */
   simulated?: boolean[]
   /** Answer POST /passenger/requests with 400 destination_outside_park. */
@@ -110,6 +111,8 @@ interface Backend {
 }
 
 function fakeBackend({ profile = PROFILE, simulated, outsidePark = false, current = [null], statuses = [request({})], actions = {} }: Backend) {
+  const profiles = Array.isArray(profile) ? profile : [profile]
+  let profileIndex = 0
   const calls: { method: string; path: string; body: unknown }[] = []
   let currentIndex = 0
   let statusIndex = 0
@@ -125,7 +128,7 @@ function fakeBackend({ profile = PROFILE, simulated, outsidePark = false, curren
       if (pathname === '/pickup-points') return reply([SONGSHAN, WTC])
       if (pathname === '/bus-stops') return reply([STOP])
       if (pathname === '/tags') return reply([{ id: 1, name: '不抽菸', issuer: 'self', selected: false }])
-      if (pathname === '/passenger/profile') return reply(profile)
+      if (pathname === '/passenger/profile') return reply(profiles[Math.min(profileIndex++, profiles.length - 1)])
       if (pathname === '/passenger/requests/current') return reply({ request: current[Math.min(currentIndex++, current.length - 1)] })
       if (pathname === '/passenger/requests/7') return reply(acted ?? statuses[Math.min(statusIndex++, statuses.length - 1)])
       if (pathname === '/trips/4') return reply(TRIP)
@@ -320,6 +323,18 @@ describe('passenger App', () => {
     expect(within(route).queryByText(SONGSHAN.name)).not.toBeInTheDocument()
   })
 
+  it('boarded at the driver’s destination: one row, marked 下車 (SC-P6)', async () => {
+    const atDestination = request({ status: 'boarded', dropoff_bus_stop_id: null })
+    fakeBackend({ current: [atDestination], statuses: [atDestination] })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: `在${DESTINATION.name}下車` })).toBeInTheDocument()
+    const route = await screen.findByRole('list', { name: '這趟的路線' })
+    const rows = within(route).getAllByRole('listitem')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toHaveTextContent(`${DESTINATION.name}下車`)
+    expect(within(route).queryByText('終點')).not.toBeInTheDocument()
+  })
+
   it('boarded after a reload: the route comes from the trip', async () => {
     const calls = fakeBackend({ current: [BOARDED], statuses: [BOARDED] })
     render(<App />)
@@ -361,6 +376,26 @@ describe('passenger App', () => {
     expect(await screen.findByText('台北 101不在內湖科學園區內，請換一個地點。')).toBeInTheDocument()
     expect(screen.getByText('先填目的地，這裡會列出附近的公車站。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '查看接近的車' })).toBeDisabled()
+  })
+
+  it('habitual destination without stops is prefilled; the setup asks for a stop (REQ-025, DD-19)', async () => {
+    fakeBackend({ profile: { ...PROFILE, accepted_stops: [] } })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '要去內科哪裡？' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: '目的地地址' })).toHaveValue(DESTINATION.name)
+    expect(screen.getByRole('button', { name: '查看接近的車' })).toBeDisabled()
+    fireEvent.click(await screen.findByRole('button', { name: STOP.name }))
+    fireEvent.click(screen.getByRole('button', { name: '查看接近的車' }))
+    expect(await screen.findByText(`到 ${DESTINATION.name}`)).toBeInTheDocument()
+  })
+
+  it('reloaded mid-ride without habitual data: back home uses what the finished ride left (REQ-025, DD-19)', async () => {
+    fakeBackend({ profile: [NO_PROFILE, { ...PROFILE, accepted_stops: [] }], current: [BOARDED], statuses: [BOARDED], actions: { complete: COMPLETED } })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '我已下車，結束共乘' }))
+    fireEvent.click(await screen.findByRole('button', { name: '回到首頁' }))
+    expect(await screen.findByRole('heading', { name: '要去內科哪裡？' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('searchbox', { name: '目的地地址' })).toHaveValue(DESTINATION.name))
   })
 
   it('remembers the filters in this browser for next time (7.1)', async () => {
