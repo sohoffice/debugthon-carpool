@@ -8,7 +8,7 @@
    - [#14 T14 前端共用基礎](#14-t14-前端共用基礎)
    - [#15 T15 駕駛介面](#15-t15-駕駛介面)
    - [#16 T16 乘客介面](#16-t16-乘客介面)
-   - [#57 T24 介面改用 T20、T22 的後端格式](#57-t24-介面改用-t20t22-的後端格式)
+   - [#57 T25 介面改用 T20、T22 的後端格式](#57-t25-介面改用-t20t22-的後端格式)
    - [#8 T08 模擬器（駕駛介面除錯模式）](#8-t08-模擬器駕駛介面除錯模式)
    - [#35 T18B UI 端對端測試](#35-t18b-ui-端對端測試)
    - [展示頁（UD-18）](#展示頁ud-18)
@@ -20,7 +20,7 @@
 
 進度（2026-10-20）：下列畫面都已完成，在示範後端上可以完整操作（`just ui dev-mock`），並以 390px 寬度與展示頁實際操作驗證過，包括設定地圖金鑰與 Map ID 後的地圖；`npm test` 77 個測試、型別檢查與建置都通過。
 
-接 Go 後端：介面與示範後端已改用 `main` 的 T11 供給查詢、T12 送出請求、T13 請求流程，以及 T20 地點檢查與路線預覽、T22 車輛位置與模擬標示的格式（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)），接 Go 後端（`just ui dev`）實際走完「出發 → 送出 → 確認 → 已上車 → 結束共乘」，T24 另外實測了以 Google Places 搜尋目的地、路線預覽、車輛轉向與模擬標示。目的地搜尋需要地圖金鑰開啟 Places API (New)；沒有金鑰時只能沿用預先帶入的目的地。接 Go 後端時還不能用的部分（後端還沒有）：
+接 Go 後端：介面與示範後端已改用 `main` 的 T11 供給查詢、T12 送出請求、T13 請求流程，以及 T20 地點檢查與路線預覽、T22 車輛位置與模擬標示的格式（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)），接 Go 後端（`just ui dev`）實際走完「出發 → 送出 → 確認 → 已上車 → 結束共乘」，T25 另外實測了以 Google Places 搜尋目的地、路線預覽、車輛轉向與模擬標示。目的地搜尋需要地圖金鑰開啟 Places API (New)；沒有金鑰時只能沿用預先帶入的目的地。接 Go 後端時還不能用的部分（後端還沒有）：
 
 - 行程自動結束（T21）：接 Go 後端時行程不會結束；「行程結束」畫面的載客人數也等 T21。
 - Demo 重設（T17）。
@@ -55,8 +55,8 @@
 | 行程中：沒有請求／有請求（變黃） | ✅ 已完成 | |
 | 標記乘客已上車（DD-27） | ✅ 已完成 | 每位乘客一次一個按鈕：「已上車」→「已下車」（UD-20） |
 | 改用 `main` 的 T13 格式 | ✅ 已完成 | 行程中輪詢 `GET /api/driver/requests`（`pending`、`passengers`）；確認、婉拒、上車、結束共乘後重新輪詢，`409 not_waiting`／`invalid_state` 時顯示目前的狀態 |
-| 目的地以 Google Places 搜尋，選定後提示不在園區內的地點 | ✅ 已完成 | DD-32；Google Places 加 `GET /api/park/check`，不在園區內的地點提示且不採用（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
-| 出發前的路線預覽 | ✅ 已完成 | DD-21；讀 Go 的 `{route}`，路線為模擬時才標示「路線為估算」（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
+| 目的地以 Google Places 搜尋，選定後提示不在園區內的地點 | ✅ 已完成 | DD-32；Google Places 加 `GET /api/park/check`，不在園區內的地點提示且不採用（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
+| 出發前的路線預覽 | ✅ 已完成 | DD-21；讀 Go 的 `{route}`，路線為模擬時才標示「路線為估算」（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)）；出發時帶預覽編號等 [#61 T26](https://github.com/sohoffice/debugthon-carpool/issues/61) |
 | 行程結束 | ⚠️ 只有示範後端 | 抵達目的地自動結束（UD-16）：輪詢的 `trip_id` 變成 `null` 時，以 `GET /api/trips/:id` 確認行程已結束並顯示目的地；載客人數等 T21 提供。後端規則見 REQ-070、DD-30，實作在 [#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31) |
 
 驗收條件：
@@ -76,19 +76,19 @@
 | 項目 | 狀態 | 說明 |
 |---|---|---|
 | 目的地設定（地址、可接受公車站、篩選、我的標籤） | ✅ 已完成 | 有常用資料時直接進供給看板 |
-| 目的地以 Google Places 搜尋，選定後提示不在園區內的地點 | ✅ 已完成 | DD-32；和駕駛共用 `PlaceSearch`；送出被拒（`destination_outside_park`）時顯示中文訊息（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
+| 目的地以 Google Places 搜尋，選定後提示不在園區內的地點 | ✅ 已完成 | DD-32；和駕駛共用 `PlaceSearch`；送出被拒（`destination_outside_park`）時顯示中文訊息（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
 | 供給看板：選定上車點的看板與時間軸，可改選上車點 | ✅ 已完成 | REQ-029：預設最近的上車點（UD-07） |
 | 送出前確認（可調整篩選） | ✅ 已完成 | UD-08 |
 | 「今天我要搭」：先建立參與主檔，再附上位置送出，並回報位置 | ✅ 已完成 | DD-25；之後每 10 秒回報一次 |
 | 除錯模式：設定目前位置 | ✅ 已完成 | DD-26；同一帳號的其他分頁即時跟著改 |
-| 請求狀態：等待中、已確認、已上車、已放寬、改配、無車可配、已拒絕、完成 | ✅ 已完成 | 配到車時的模擬推播（UD-12）與轉場（UD-10）；地圖上平滑移動的車（UD-15）；ETA 為模擬時標示「估算」（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
+| 請求狀態：等待中、已確認、已上車、已放寬、改配、無車可配、已拒絕、完成 | ✅ 已完成 | 配到車時的模擬推播（UD-12）與轉場（UD-10）；地圖上平滑移動的車（UD-15）；ETA 為模擬時標示「估算」（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
 | 供給看板改用 `main` 的 T11 格式 | ✅ 已完成 | 查詢參數 `dest_lat`／`dest_lng`／`dest_name`、`stop_ids`、`required_tags`、`preferred_tags`；讀 `card`、`cars`、`timeline_range_s` |
 | 拿掉送出前的距離檢查 | ✅ 已完成 | 站名牌只顯示距離作為提示；「今天我要搭」一律可按，太遠時顯示後端的 `message`（SC-P2、SC-P8） |
 | 拿掉無車時的替代方案 | ✅ 已完成 | 只顯示「目前沒有可搭的車」（REQ-051 不在 PoC 範圍）；示範後端的 `alternatives.ts` 已刪除 |
 | 取消請求改成示意按鈕 | ✅ 已完成 | `CancelButton`：等駕駛確認、已確認、已上車都顯示，按下不呼叫 API（UD-17）；示範後端的取消已刪除 |
-| 請求狀態改用 `main` 的 T13 格式 | ✅ 已完成 | 打開 App 用 `GET /api/passenger/requests/current`，輪詢 `GET /api/passenger/requests/:id`；改配看 `reassigned_count`。上車點、公車站名稱由清單對照；已上車後狀態不再帶車輛與行程，介面保留確認時的車輛，行程以 `GET /api/trips/:id` 補上。車輛位置讀 T22 的 `vehicle_position.heading_deg` 與 `passed_pickup`（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)）；「車已到上車點」依是否已經過上車點判斷，不用 `eta_s` 為 `null` 判斷 |
+| 請求狀態改用 `main` 的 T13 格式 | ✅ 已完成 | 打開 App 用 `GET /api/passenger/requests/current`，輪詢 `GET /api/passenger/requests/:id`；改配看 `reassigned_count`。上車點、公車站名稱由清單對照；已上車後狀態不再帶車輛與行程，介面保留確認時的車輛，行程以 `GET /api/trips/:id` 補上。車輛位置讀 T22 的 `vehicle_position.heading_deg` 與 `passed_pickup`（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)）；「車已到上車點」依是否已經過上車點判斷，不用 `eta_s` 為 `null` 判斷 |
 | 送出請求改用 `main` 的 T12 格式 | ✅ 已完成 | 本文 `pickup_point_id`、`location`、`destination`、`stop_ids`、`tag_filters`；回傳的 `RequestView` 已是結果，再讀一次請求狀態取得車輛與行程 |
-| 地圖上的車改用後端的方向 | ✅ 已完成 | DD-31：行進方向由後端計算，介面不自己算；`nextHeading` 只用 API 的方向，沒有方向時保持原來的方向（UD-15）。欄位照 [#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33) 改成 `heading_deg`（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
+| 地圖上的車改用後端的方向 | ✅ 已完成 | DD-31：行進方向由後端計算，介面不自己算；`nextHeading` 只用 API 的方向，沒有方向時保持原來的方向（UD-15）。欄位照 [#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33) 改成 `heading_deg`（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
 | 已有尚未結束的請求時不能再送出（REQ-069） | ✅ 已完成 | 後端不檢查，只由介面防止：打開 App 時以 `GET /api/passenger/requests/current` 帶出該請求、沒有送出入口；送出前也再查一次，有就直接顯示該請求 |
 
 驗收條件：
@@ -98,7 +98,7 @@
 - [x] 已有尚未結束的請求時，開啟乘客介面直接顯示該請求，無法再送出
 - [x] 除錯模式設定的位置會附在請求上，且參與主檔建立後持續回報位置（測試：`passenger/src/useLocationReporting.test.ts`）
 
-### #57 T24 介面改用 T20、T22 的後端格式
+### #57 T25 介面改用 T20、T22 的後端格式
 
 [#57](https://github.com/sohoffice/debugthon-carpool/issues/57) · 尺寸 M · 依賴 #30、#33（都已合併）
 
@@ -113,6 +113,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 | 車輛方向改用 `vehicle_position.heading_deg` | ✅ 已完成 | DD-31；經過上車點後不再畫車 |
 | ETA 的模擬標示 | ✅ 已完成 | `fastest_eta_simulated`、每台車的 `eta_simulated`、請求狀態的 `eta_simulated`（REQ-063） |
 | 型別與示範後端照 `main` 修改，刪除 `GET /api/places` | ✅ 已完成 | 示範後端新增 `GET /api/park/check` |
+| 出發時送出預覽編號；`400 invalid_route_preview` 時重新預覽並提示再按一次 | ⏳ 等後端 | DD-21；`main` 的 Go 後端還沒有預覽編號，等 [#61 T26](https://github.com/sohoffice/debugthon-carpool/issues/61) 合併後再改（第 2 條驗收條件），T25 在那之前保持開啟 |
 
 ### #8 T08 模擬器（駕駛介面除錯模式）
 
@@ -161,9 +162,9 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 | [#11](https://github.com/sohoffice/debugthon-carpool/issues/11) T11 供給查詢 API | 已合併；介面已改用它的格式 |
 | [#12](https://github.com/sohoffice/debugthon-carpool/issues/12) T12 送出請求 | 已合併（PR #25）；介面已改用它的格式 |
 | [#13](https://github.com/sohoffice/debugthon-carpool/issues/13) T13 請求流程 | 已合併（PR #28）；介面已改用它的格式 |
-| [#30](https://github.com/sohoffice/debugthon-carpool/issues/30) T20 路線預覽與園區範圍檢查 | 已合併（PR #53）。DD-28 已撤回，改為 DD-32：目的地由介面以 Google Places 搜尋，後端提供 `GET /api/park/check` 與 `POST /api/driver/route-preview`；介面已照它修改（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
+| [#30](https://github.com/sohoffice/debugthon-carpool/issues/30) T20 路線預覽與園區範圍檢查 | 已合併（PR #53）。DD-28 已撤回，改為 DD-32：目的地由介面以 Google Places 搜尋，後端提供 `GET /api/park/check` 與 `POST /api/driver/route-preview`；介面已照它修改（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
 | [#31](https://github.com/sohoffice/debugthon-carpool/issues/31) T21 行程抵達目的地自動結束 | 未完成；駕駛介面的「行程結束」畫面與載客人數要用到 |
-| [#33](https://github.com/sohoffice/debugthon-carpool/issues/33) T22 請求狀態：車輛位置、行進方向與模擬標示 | 已合併（PR #48）；乘客已確認畫面的地圖上的車（UD-15）與「車已到上車點」（UD-09）要用到，介面已照 `DEV.md` 的欄位修改（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
+| [#33](https://github.com/sohoffice/debugthon-carpool/issues/33) T22 請求狀態：車輛位置、行進方向與模擬標示 | 已合併（PR #48）；乘客已確認畫面的地圖上的車（UD-15）與「車已到上車點」（UD-09）要用到，介面已照 `DEV.md` 的欄位修改（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
 | [#49](https://github.com/sohoffice/debugthon-carpool/issues/49) T23 串接路線與旅行時間來源 | 完成後行程路線改沿真實道路；沒有金鑰或外部來源失敗時仍是模擬，介面依 `simulated` 標示 |
 | [#17](https://github.com/sohoffice/debugthon-carpool/issues/17) T17 本機 Demo 環境 | 兩個 UI、展示頁與其他元件在同一台機器上執行（DD-24） |
 | [#18](https://github.com/sohoffice/debugthon-carpool/issues/18) T18 端對端 Demo 劇本與預演 | 容器，拆成 #34（已關閉）、#35、#36、#37 |
@@ -173,7 +174,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 ## 3. 風險與建議
 
 - **後端以 `main` 為準**：`feat/ui` 原本自己寫的臨時後端（請求流程、地點搜尋、路線預覽、Demo 重設、行程自動結束）已在合併 `main` 時全部刪除，舊程式在 commit `8e27438` 可以找到。介面用到、但 `main` 還沒有的 API：Demo 重設（DD-29，[#17 T17](https://github.com/sohoffice/debugthon-carpool/issues/17)）、行程抵達目的地自動結束（REQ-070、DD-30，[#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31)）。
-- **地點搜尋需要 Google**：目的地以 Google Places 搜尋（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)），地圖金鑰要開啟 Places API (New)；Demo 時網路或金鑰有問題，只能沿用預先帶入的目的地（駕駛的上一趟行程、乘客的常用資料，Go 種子由 T03 補上）。
+- **地點搜尋需要 Google**：目的地以 Google Places 搜尋（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)），地圖金鑰要開啟 Places API (New)；Demo 時網路或金鑰有問題，只能沿用預先帶入的目的地（駕駛的上一趟行程、乘客的常用資料，Go 種子由 T03 補上）。
 - **接 Go 後端時的分配順序**：Go 依感受成本排序，通常是最近的模擬車先拿到請求；要讓台上的駕駛收到請求，見 ui-design 8.8。
 - **建議**：
   1. API 格式以 `main` 的後端為準：後端格式變了，`ui/shared/src/api/types.ts` 與示範後端跟著改，不回頭改後端。

@@ -876,7 +876,7 @@ Go 後端已有的 API（介面照抄後端格式）：
 介面需要、但 `main` 的後端 API 還沒有的資料（都已有工作單）：
 
 - **行程結束與這趟完成的人數**（SC-D4）：`GET /api/driver/requests` 沒有；T21（DD-30）實作行程自動結束時一併提供（#31 範圍已列）。
-- **車輛的目前位置、行進方向與是否已經過上車點**（UD-15、UD-09，SC-P5）：DD-31，[#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33) 已合併，欄位見 `DEV.md`：`vehicle_position{lat,lng,heading_deg,reported_at}` 與 `passed_pickup`，介面照抄（[#57 T24](https://github.com/sohoffice/debugthon-carpool/issues/57)）。行進方向由後端計算，介面不自己算；沒有 ETA 時大字顯示「車子正在來」。「車已到上車點」依是否已經過上車點判斷，不用 `eta_s` 為 `null` 判斷（沒有位置時也是 `null`）。請求狀態與供給查詢的 ETA 以 `eta_simulated`、`fastest_eta_simulated` 標示是否為模擬（REQ-063）。
+- **車輛的目前位置、行進方向與是否已經過上車點**（UD-15、UD-09，SC-P5）：DD-31，[#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33) 已合併，欄位見 `DEV.md`：`vehicle_position{lat,lng,heading_deg,reported_at}` 與 `passed_pickup`，介面照抄（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)）。行進方向由後端計算，介面不自己算；沒有 ETA 時大字顯示「車子正在來」。「車已到上車點」依是否已經過上車點判斷，不用 `eta_s` 為 `null` 判斷（沒有位置時也是 `null`）。請求狀態與供給查詢的 ETA 以 `eta_simulated`、`fastest_eta_simulated` 標示是否為模擬（REQ-063）。
 
 - 時間一律是 RFC 3339 字串；距離以公尺、時間長度以秒為單位（欄位名稱以 `_min` 結尾的除外）。
 - 行程路線用 Google 的 encoded polyline（和 `trips.route_polyline` 相同），`RoutePolyline` 可以直接畫；沿途公車站的欄位是 `bus_stops`（和 Go 的 `routeView` 相同）。
