@@ -38,6 +38,7 @@ Feature: route preview (POST /api/driver/trips/preview)
     # a different name for the same pickup point and destination still uses the preview
     * def r = depart({ pickup_point_id: pickup.id, destination: { name: '另一個名稱', lat: 25.0768, lng: 121.5738 }, capacity: 3, auto_accept: true })
     * match r.responseStatus == 201
+    * assert previewed.bus_stops.length > 0
     * match r.response.route == previewed
 
   Scenario Outline: a preview is refused: <why>

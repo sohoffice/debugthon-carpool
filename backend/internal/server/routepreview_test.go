@@ -9,7 +9,8 @@ import (
 )
 
 // shiftingRoutes returns a different route on every call, so a test can tell whether a route
-// was planned again or taken from the preview.
+// was planned again or taken from the preview. Every route passes through the midpoint of the
+// two points, so a stop placed there is always along it.
 type shiftingRoutes struct {
 	calls     int
 	simulated bool
@@ -18,7 +19,7 @@ type shiftingRoutes struct {
 func (r *shiftingRoutes) Route(_ context.Context, from, to latLng) (Route, error) {
 	r.calls++
 	off := float64(r.calls) * 0.001
-	points := []latLng{from, {(from.Lat+to.Lat)/2 + off, (from.Lng+to.Lng)/2 + off}, to}
+	points := []latLng{from, midpoint(from, to), to, {to.Lat + off, to.Lng + off}}
 	return Route{Points: points, Polyline: encodePolyline(points), DistanceM: 1000 * r.calls, DurationS: 100 * r.calls, Simulated: r.simulated}, nil
 }
 
@@ -38,6 +39,8 @@ func routerWith(t *testing.T, db DB, routes RouteProvider) func(method, path, to
 		return w
 	}
 }
+
+func midpoint(a, b latLng) latLng { return latLng{(a.Lat + b.Lat) / 2, (a.Lng + b.Lng) / 2} }
 
 func previewJSON(pickupID int64, lat, lng string) string {
 	return `{"pickup_point_id":` + itoa(pickupID) + `,"destination":{"lat":` + lat + `,"lng":` + lng + `}}`
@@ -90,6 +93,12 @@ func TestDepartUsesThePreviewedRoute(t *testing.T) {
 	pickupID := firstPickupID(t, tx)
 	routes := &shiftingRoutes{}
 	do := routerWith(t, tx, routes)
+	var pickup latLng
+	if err := tx.QueryRow(context.Background(), `SELECT lat, lng FROM pickup_points WHERE id = $1`, pickupID).Scan(&pickup.Lat, &pickup.Lng); err != nil {
+		t.Fatal(err)
+	}
+	mid := midpoint(pickup, latLng{25.0768, 121.5738})
+	mustExec(t, tx, `INSERT INTO bus_stops (name, lat, lng) VALUES ('test midpoint stop', $1, $2)`, mid.Lat, mid.Lng)
 
 	pw := do(http.MethodPost, "/api/driver/trips/preview", token, previewJSON(pickupID, "25.0768", "121.5738"))
 	wantStatus(t, pw, http.StatusOK, "")
@@ -100,6 +109,9 @@ func TestDepartUsesThePreviewedRoute(t *testing.T) {
 		} `json:"route"`
 	}](t, pw).Route
 
+	if len(previewed.BusStops) == 0 {
+		t.Fatal("previewed route has no bus stops, so the comparison below would prove nothing")
+	}
 	dw := do(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, `{"name":"another name","lat":25.0768,"lng":121.5738}`, ""))
 	wantStatus(t, dw, http.StatusCreated, "")
 	trip := decode[tripResp](t, dw)
