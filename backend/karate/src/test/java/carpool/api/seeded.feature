@@ -90,7 +90,7 @@ Feature: tag selection and seeded reference data
     * match each response == { id: '#number', stop_id: '##number', name: '#string', lat: '#number', lng: '#number' }
 
   # The Demo pre-filled data (DD-19, REQ-016, REQ-025). A manual demo changes it, so these two
-  # scenarios expect a database just after `just backend db-reset`.
+  # scenarios expect a database just after `just backend db-reset` or `just demo-reset`.
   Scenario: passenger1 starts with the seeded usual destination and accepted stops
     * configure headers = { Authorization: 'Bearer passenger:passenger1' }
     * path 'api', 'passenger', 'profile'

@@ -1,0 +1,108 @@
+package server
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// resetDemo puts the demo accounts (users.simulated) back to the start of the demo (DD-29), in one
+// transaction. Location reports are append-only (DD-06), so nothing that they hang off is deleted:
+// trips are ended and the seeded simulated trips start again as new trips. Other accounts keep
+// their data, except that seats held for deleted demo requests are given back.
+func (s *Server) resetDemo(c *gin.Context) {
+	if err := s.inTx(c, func(db DB) error { return resetDemoData(c, db) }); err != nil {
+		s.internalError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func resetDemoData(ctx context.Context, db DB) error {
+	steps := []string{
+		// Seats held or taken by the demo passengers' requests go back to their trips (DD-12).
+		`UPDATE trips t
+		    SET seats_held = t.seats_held - r.held, seats_confirmed = t.seats_confirmed - r.confirmed
+		   FROM (SELECT q.trip_id,
+		                count(*) FILTER (WHERE q.status = 'waiting_driver') AS held,
+		                count(*) FILTER (WHERE q.status IN ('confirmed', 'boarded')) AS confirmed
+		           FROM ride_requests q JOIN users u ON u.id = q.passenger_id
+		          WHERE u.simulated AND q.trip_id IS NOT NULL
+		          GROUP BY q.trip_id) r
+		  WHERE t.id = r.trip_id`,
+		// Service records reference the requests; tag filters and candidates cascade with them.
+		`DELETE FROM service_records s USING users u WHERE u.id = s.passenger_id AND u.simulated`,
+		`DELETE FROM ride_requests q USING users u WHERE u.id = q.passenger_id AND u.simulated`,
+		// Habitual data goes back to the seed (DD-19); accepted stops cascade with the profile.
+		`DELETE FROM driver_profiles p USING users u WHERE u.id = p.user_id AND u.simulated`,
+		`DELETE FROM passenger_profiles p USING users u WHERE u.id = p.user_id AND u.simulated`,
+		`SELECT seed_demo_habitual_data()`,
+		// End every unfinished demo trip. cancelled, not completed: the trip did not arrive (DD-30),
+		// so the driver UI does not show the trip-ended screen for it.
+		`UPDATE trips t SET status = 'cancelled', ended_at = now()
+		   FROM users u
+		  WHERE u.id = t.driver_id AND u.simulated AND t.status IN ('scheduled', 'active')`,
+	}
+	for _, sql := range steps {
+		if _, err := db.Exec(ctx, sql); err != nil {
+			return err
+		}
+	}
+	return restartSimulatedTrips(ctx, db)
+}
+
+// restartSimulatedTrips starts each demo driver's latest simulated trip again as a new active trip
+// with the same settings and stored route, and links the driver's new activity to it (DD-14, DD-25),
+// so the simulator can report positions right away.
+func restartSimulatedTrips(ctx context.Context, db DB) error {
+	rows, err := db.Query(ctx, `
+		SELECT DISTINCT ON (t.driver_id) t.id
+		  FROM trips t JOIN users u ON u.id = t.driver_id
+		 WHERE t.simulated AND u.simulated
+		 ORDER BY t.driver_id, t.id DESC`)
+	if err != nil {
+		return err
+	}
+	var sources []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		sources = append(sources, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, src := range sources {
+		var tripID, driverID int64
+		if err := db.QueryRow(ctx, `
+			INSERT INTO trips (driver_id, pickup_point_id, destination_name, destination_lat, destination_lng,
+			                   capacity, auto_accept, status, settings_locked, started_at,
+			                   route_polyline, route_distance_m, route_duration_s, route_simulated, simulated)
+			SELECT driver_id, pickup_point_id, destination_name, destination_lat, destination_lng,
+			       capacity, auto_accept, 'active', true, now(),
+			       route_polyline, route_distance_m, route_duration_s, route_simulated, true
+			  FROM trips WHERE id = $1
+			RETURNING id, driver_id`, src).Scan(&tripID, &driverID); err != nil {
+			return err
+		}
+		for _, sql := range []string{
+			`INSERT INTO trip_route_stops (trip_id, seq, bus_stop_id) SELECT $2, seq, bus_stop_id FROM trip_route_stops WHERE trip_id = $1`,
+			`INSERT INTO trip_tag_filters (trip_id, tag_id, intent) SELECT $2, tag_id, intent FROM trip_tag_filters WHERE trip_id = $1`,
+		} {
+			if _, err := db.Exec(ctx, sql, src, tripID); err != nil {
+				return err
+			}
+		}
+		if _, err := db.Exec(ctx, `INSERT INTO activities (user_id, role, trip_id) VALUES ($1, 'driver', $2)`,
+			driverID, tripID); err != nil {
+			return err
+		}
+	}
+	return nil
+}

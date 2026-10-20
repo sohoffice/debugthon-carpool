@@ -35,6 +35,8 @@ type Deps struct {
 	Park   *park.Boundary // 內湖科學園區 boundary, for checking destinations
 	Routes RouteProvider  // plans the pickup -> destination route; nil means the simulated straight line
 	Walks  WalkProvider   // estimates the walk from a drop-off to the destination; nil means the simulated straight line
+	// DemoReset registers POST /api/demo/reset (DD-29). Only the demo environment turns it on.
+	DemoReset bool
 }
 
 // NewRouter builds the HTTP router with all API routes registered.
@@ -58,6 +60,10 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 
 	api := r.Group("/api")
 	api.GET("/ping", ping)
+	if deps.DemoReset {
+		// DD-29: no token, like ping; the showcase page calls it.
+		api.POST("/demo/reset", s.resetDemo)
+	}
 
 	// Any authenticated role.
 	authed := api.Group("", s.authenticate)
