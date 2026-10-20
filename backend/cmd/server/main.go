@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -33,7 +34,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	deps := server.Deps{Park: boundary}
+	deps := server.Deps{Park: boundary, DemoReset: demoReset()}
+	if deps.DemoReset {
+		log.Print("DEMO_RESET is on: POST /api/demo/reset is registered")
+	}
 
 	// DD-13: overdue requests are reassigned from the database deadlines, also after a restart.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -82,4 +86,10 @@ func parkBoundaryPath() string {
 		return p
 	}
 	return "config/park/boundary.geojson"
+}
+
+// demoReset reports whether DEMO_RESET turns on the demo reset API (DD-29); off unless set to a true value.
+func demoReset() bool {
+	on, err := strconv.ParseBool(os.Getenv("DEMO_RESET"))
+	return err == nil && on
 }
