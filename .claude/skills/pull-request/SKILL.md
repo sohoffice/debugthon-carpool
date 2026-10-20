@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: 建立與合併 PR 的慣例——PR 描述的固定段落（摘要與目標、變更內容、驗證證據、受影響的工作單）、開 PR 後在 Slack #debugthon-carpool 公告、合併後在公告訊息加上 ✅。當要開 PR、更新 PR 描述、合併（approve、merge）PR，或其他 skill 要求開 PR 時使用。
+description: 建立與合併 PR 的慣例——PR 描述的固定段落（摘要與目標、變更內容、驗證證據、受影響的工作單）、開 PR 後在 Slack #debugthon-carpool 公告、合併後在公告訊息加上 ✅ 並刪除本機分支。當要開 PR、更新 PR 描述、合併（approve、merge）PR，或其他 skill 要求開 PR 時使用。
 ---
 
 # 建立與合併 PR
@@ -62,4 +62,8 @@ PR 描述以繁體中文撰寫，依序包含以下段落：
 1. 只在開發者要求時合併（`gh pr merge`）；開發者自行合併時，跳到下一步。
 2. 確認 PR 已合併（`gh pr view <編號> --json state`）。
 3. 在該 PR 的 Slack 公告訊息加上 `white_check_mark` 反應；不在討論串回覆。
-4. 更新本機 `main`（`git pull --ff-only`），並刪除已合併的本機分支。
+4. 刪除該 PR 的本機分支（PR 合併後一定要做，不論是誰合併的）：
+   1. 以 `gh pr view <編號> --json headRefName -q .headRefName` 取得分支名稱。
+   2. `git switch main` 後 `git pull --ff-only`，讓本機 `main` 包含合併結果。
+   3. `git branch -d <分支>`；若因 squash 或 rebase 合併而被拒，確認 PR 狀態為 `MERGED` 後改用 `git branch -D <分支>`。
+   4. 以 `git branch` 確認分支已不存在。
