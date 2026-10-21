@@ -111,7 +111,7 @@ func TestNoETAOnceThePickupIsPassed(t *testing.T) {
 		t.Fatalf("eta after passing = %v, %v; want nil", eta, err)
 	}
 	if drives.calls != 0 {
-		t.Fatal("a passed car must not cost a route estimate")
+		t.Fatal("a passed car must not cost a drive time estimate")
 	}
 	// Coming back does not bring the ETA back.
 	report(t, tx, f.token, offsetM(f.pickup, 200))
@@ -138,7 +138,7 @@ func TestNoETAForATripThatIsNotActive(t *testing.T) {
 		t.Fatalf("eta for an ended trip = %v, %v; want nil", eta, err)
 	}
 	if drives.calls != 0 {
-		t.Fatal("an ended trip must not cost a route estimate")
+		t.Fatal("an ended trip must not cost a drive time estimate")
 	}
 
 	if eta, err := s.vehicleETA(context.Background(), f.id+1000000); err != nil || eta != nil {
