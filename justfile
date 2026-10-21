@@ -22,8 +22,8 @@ demo:
     just ui dev
 
 # Run the Demo's off-stage part on the `just demo` setup (T18E): driver5 and the simulator, cues in the terminal; Ctrl-C stops
-demo-offstage:
-    cd "{{source_directory()}}/ui" && npx playwright install chromium && node scripts/demo-offstage.ts
+demo-offstage delay="10":
+    cd "{{source_directory()}}/ui" && npx playwright install chromium && node scripts/demo-offstage.ts "{{delay}}"
 
 # Put the demo back to its start (DD-29); reload the debug-mode driver page to restart the simulator
 demo-reset:
