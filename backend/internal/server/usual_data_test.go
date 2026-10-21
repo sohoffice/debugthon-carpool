@@ -197,6 +197,29 @@ func TestRecomputeReplacesAnExistingProfile(t *testing.T) {
 	}
 }
 
+// DD-19: rides that all ended at the trip's destination give no stop, so the stored stops stay.
+func TestRecomputeKeepsStopsWhenNoStopWasUsed(t *testing.T) {
+	e := newUsualEnv(t)
+	mustExec(t, e.tx, `INSERT INTO passenger_profiles (user_id, usual_destination_name) VALUES ($1, '舊')`, e.userID)
+	mustExec(t, e.tx, `INSERT INTO passenger_accepted_stops (user_id, bus_stop_id) VALUES ($1, $2), ($1, $3)`, e.userID, e.stops[1], e.stops[2])
+	e.addRide(t, ride{pickup: e.pickups[0], capacity: 3, tripDest: "甲", reqDest: "新", stop: nil, completed: "2026-10-19 08:00"})
+	e.recompute(t)
+	dest, _, stops := e.passengerProfile(t)
+	if dest != "新" {
+		t.Errorf("destination = %s, want 新: the other fields are still recomputed", dest)
+	}
+	if fmt.Sprint(stops) != fmt.Sprint([]int64{e.stops[1], e.stops[2]}) {
+		t.Errorf("accepted stops = %v, want the stored %v kept", stops, []int64{e.stops[1], e.stops[2]})
+	}
+
+	// Once a stop has been used, the used stops replace the stored ones.
+	e.addRide(t, ride{pickup: e.pickups[0], capacity: 3, tripDest: "甲", reqDest: "新", stop: ptr(e.stops[0]), completed: "2026-10-20 08:00"})
+	e.recompute(t)
+	if _, _, stops := e.passengerProfile(t); fmt.Sprint(stops) != fmt.Sprint([]int64{e.stops[0]}) {
+		t.Errorf("accepted stops = %v, want only the used stop %d", stops, e.stops[0])
+	}
+}
+
 // Acceptance: after a ride is completed the usual data is there for the next departure or query.
 func TestCompletionFeedsTheProfilesTheAPIServes(t *testing.T) {
 	e := newSupplyEnv(t)

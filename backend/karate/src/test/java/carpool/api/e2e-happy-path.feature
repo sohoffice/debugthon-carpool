@@ -29,6 +29,7 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * path 'api', 'bus-stops'
     * method get
     * def stop = response[0]
+    * def stopOther = response[1]
     * def inPark = { name: '瑞光路 內科大樓 A', lat: 25.0768, lng: 121.5738 }
     * def parkCheck = function(token, p) { return karate.http(baseUrl + '/api/park/check').header('Authorization', 'Bearer ' + token).params({ lat: p.lat, lng: p.lng }).get().body }
     * def doGet = function(token, path) { return karate.call('classpath:carpool/api/act-get.feature', { token: token, path: path }) }
@@ -113,6 +114,10 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match doGet(dt, 'api/trips/' + tripId).response contains { seats_held: 0, seats_confirmed: 1 }
 
     # 6. REQ-067, DD-23: the ride ends, the seat is freed and nothing is left unfinished
+    # DD-19: the passenger has an accepted stop on file (as the demo seed gives passenger1) and this ride
+    # ends at the trip's destination, so completing it leaves the stored stop in place
+    * Db.exec('INSERT INTO passenger_profiles (user_id, usual_destination_name) SELECT id, ? FROM users WHERE username = ?', 'stored', passenger)
+    * Db.exec('INSERT INTO passenger_accepted_stops (user_id, bus_stop_id) SELECT id, ? FROM users WHERE username = ?', stopOther.id, passenger)
     * def done = doPost(dt, 'api/driver/requests/' + req.id + '/complete')
     * match done.responseStatus == 200
     * match done.response contains { id: '#(req.id)', status: 'completed', completed_at: '#string' }
@@ -121,3 +126,10 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match doGet(dt, 'api/trips/' + tripId).response contains { seats_held: 0, seats_confirmed: 0 }
     * match doGet(dt, 'api/driver/requests').response contains { pending: '#[0]', passengers: '#[0]' }
     * match Db.queryLong('SELECT count(*) FROM service_records WHERE request_id = ? AND trip_id = ? AND picked_up_at IS NOT NULL AND completed_at IS NOT NULL', req.id, tripId) == 1
+
+    # DD-19: no stop was used, so the accepted stops are still the stored one, and the profile's other fields are recomputed
+    * match Db.queryLong('SELECT count(*) FROM service_records WHERE request_id = ? AND dropoff_bus_stop_id IS NULL', req.id) == 1
+    * def profile = doGet(pt, 'api/passenger/profile').response
+    * match profile.accepted_stops == '#[1]'
+    * match profile.accepted_stops[0].id == stopOther.id
+    * match profile.usual_destination.name == inPark.name
