@@ -45,7 +45,7 @@
 
 ### #15 T15 駕駛介面
 
-[#15](https://github.com/sohoffice/debugthon-carpool/issues/15) · 尺寸 M · 依賴 #5、#13、#14、#30、#31、#57
+[#15](https://github.com/sohoffice/debugthon-carpool/issues/15) · 尺寸 M · 依賴 #5、#13、#14、#30、#31、#57 · 已關閉
 
 | 項目 | 狀態 | 說明 |
 |---|---|---|
@@ -63,13 +63,13 @@
 - [x] 行程中找不到任何設定入口與地圖（不含 `?debug=1` 的除錯模式）
 - [x] 收到請求後能在確認時限內完成確認（示範後端與 Go 後端都驗證過：畫面變黃後按「確認」，乘客端下一次輪詢就看到已確認）
 - [x] 出發前在地圖上看得到預覽的行程路線（示範後端與 Go 後端都驗證過；Go 後端的實測見 [PR #60](https://github.com/sohoffice/debugthon-carpool/pull/60)：搜尋選定目的地後地圖畫出預覽路線，出發後的行程路線和預覽相同）
-- [ ] 抵達目的地後畫面換到行程結束（等 T21）
+- [x] 抵達目的地後畫面換到行程結束（Go 後端，真實路線：顯示「這趟載了 1 位乘客」，見 [#15 的留言](https://github.com/sohoffice/debugthon-carpool/issues/15#issuecomment-6307342807)）
 
-前兩條在 `main` 5b16bd2 以 Playwright（390×664）在示範後端與 Go 後端實測：行程中的按鈕都在螢幕下半部（「確認」342×112、「婉拒」342×72、「已上車／已下車」108×64），沒有橫向捲動；行程中四個畫面（沒有請求、搭車請求、乘客等上車、乘客在車上）都沒有地圖元素與設定入口，加上 `?debug=1` 才出現「除錯」。量測是手動腳本；「行程中沒有地圖與設定入口」的自動測試在下一個 T15 PR 補上。
+前兩條在 `main` 5b16bd2 以 Playwright（390×664）在示範後端與 Go 後端實測：行程中的按鈕都在螢幕下半部（「確認」342×112、「婉拒」342×72、「已上車／已下車」108×64），沒有橫向捲動；行程中四個畫面（沒有請求、搭車請求、乘客等上車、乘客在車上）都沒有地圖元素與設定入口，加上 `?debug=1` 才出現「除錯」。量測是手動腳本；「行程中沒有地圖與設定入口」的自動測試已在 PR #72 補上。
 
 ### #16 T16 乘客介面
 
-[#16](https://github.com/sohoffice/debugthon-carpool/issues/16) · 尺寸 L · 依賴 #6、#11、#13、#14、#30、#33、#57
+[#16](https://github.com/sohoffice/debugthon-carpool/issues/16) · 尺寸 L · 依賴 #6、#11、#13、#14、#30、#33、#57 · 已關閉
 
 | 項目 | 狀態 | 說明 |
 |---|---|---|
@@ -100,7 +100,7 @@
 
 ### #57 T25 介面改用 T20、T22 的後端格式
 
-[#57](https://github.com/sohoffice/debugthon-carpool/issues/57) · 尺寸 M · 依賴 #30、#33（都已合併）
+[#57](https://github.com/sohoffice/debugthon-carpool/issues/57) · 尺寸 M · 依賴 #30、#33、#61（都已合併） · 已關閉
 
 T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成後 #15、#16 才能在 Go 後端上驗收。
 
@@ -145,7 +145,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 
 ### #35 T18B UI 端對端測試
 
-[#35](https://github.com/sohoffice/debugthon-carpool/issues/35) · 尺寸 M · 依賴 #15、#16、#17
+[#35](https://github.com/sohoffice/debugthon-carpool/issues/35) · 尺寸 M · 依賴 #15、#16、#17 · 已關閉
 
 | 項目 | 狀態 | 說明 |
 |---|---|---|
@@ -182,7 +182,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 | [#49](https://github.com/sohoffice/debugthon-carpool/issues/49) T23 串接路線與旅行時間來源 | 完成後行程路線改沿真實道路；沒有金鑰或外部來源失敗時仍是模擬，介面依 `simulated` 標示 |
 | [#17](https://github.com/sohoffice/debugthon-carpool/issues/17) T17 本機 Demo 環境 | 兩個 UI、展示頁與其他元件在同一台機器上執行（DD-24） |
 | [#18](https://github.com/sohoffice/debugthon-carpool/issues/18) T18 端對端 Demo 劇本與預演 | 容器，拆成 #34（已關閉）、#35、#36、#37 |
-| [#36](https://github.com/sohoffice/debugthon-carpool/issues/36) T18C Demo 劇本 | 劇本全程在兩個介面上操作；展示頁、駕駛除錯模式（模擬器）與乘客除錯模式（目前位置）的用法見 ui-design 8.8 |
+| [#36](https://github.com/sohoffice/debugthon-carpool/issues/36) T18C Demo 劇本 | 劇本在 `../docs/demo-script.md`：展示頁並排 driver4／passenger1，台下另開模擬器與 driver5 的分頁 |
 | [#37](https://github.com/sohoffice/debugthon-carpool/issues/37) T18D Demo 預演 | 在 Demo 用的機器上依劇本預演兩次；發現的介面問題回報到對應的工作單 |
 
 ## 3. 風險與建議
