@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// UI end-to-end tests (T18B). They start their own mock backend and apps on ports of their own,
-// so they never touch a running dev setup. The Go backend is not covered yet: it has no reset
-// (T17) and no destination search (T20).
+// UI end-to-end tests on the mock backend (T18B). They start their own mock backend and apps on
+// ports of their own, so they never touch a running dev setup. The same flows on the Go backend
+// are in e2e/go/, run with playwright.go.config.ts.
 export const E2E_PORTS = { mock: 8091, driver: 5183, passenger: 5184, driverPlaces: 5185, passengerPlaces: 5186 }
 const API = `http://localhost:${E2E_PORTS.mock}`
 // No Maps key: the map shows its placeholder, so the tests use no Google quota and do not wait on it.
@@ -12,6 +12,7 @@ const PLACES_ENV = `API_PROXY_TARGET=${API} VITE_GOOGLE_MAPS_API_KEY=e2e-fake-ke
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'go/**',
   // One shared backend: tests run one at a time.
   workers: 1,
   fullyParallel: false,

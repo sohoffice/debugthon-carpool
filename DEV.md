@@ -83,14 +83,19 @@
 | `just ui mock-reset` | 重設示範後端（`POST /api/demo/reset`；Go 後端用 `just demo-reset`） |
 | `just ui test` | 型別檢查並執行所有前端測試 |
 | `just ui e2e` | 執行前端端對端測試（Playwright，T18B）：自己啟動示範後端與兩個介面，透過瀏覽器走完快樂路徑 |
+| `just ui e2e-go` | 同樣的流程接 Go 後端（T18B）：自己建置並啟動 Go 後端，用獨立的資料庫 `carpool_e2e`；需要先 `just infra up` |
 
-- 端對端測試（`ui/e2e/`，設定在 `ui/playwright.config.ts`）：
+- 端對端測試（`ui/e2e/`，示範後端的設定在 `ui/playwright.config.ts`，Go 後端的在 `ui/playwright.go.config.ts`）：
   - `just ui e2e` 第一次執行時會下載 Playwright 的 Chromium。
   - 測試自己啟動示範後端 `:8091`、駕駛介面 `:5183`、乘客介面 `:5184`，以及帶假金鑰的駕駛介面 `:5185`、乘客介面 `:5186`，不會用到開發中的伺服器。
   - 每個測試前後都重設示範後端，不留下資料。
   - 不帶地圖金鑰，地圖只顯示提示文字。園區範圍檢查的測試（`park-check.spec.ts`）要搜尋目的地，改連 `:5185`、`:5186`，並由 Playwright 攔截 Maps 的腳本、換成 `ui/e2e/fakeGoogleMaps.ts` 的假 API（只認得固定的兩個地點），其他 Google 請求一律擋下，不會呼叫真的 Google。
   - 失敗時的紀錄（trace）在 `ui/test-results/`，可用 `npx playwright show-trace <檔案>` 查看。
-  - 目前只接示範後端：Go 後端還沒有 Demo 重設（T17），目的地搜尋由用戶端的 Google Places 負責（DD-32）。
+  - 接 Go 後端（`just ui e2e-go`，測試在 `ui/e2e/go/`）：
+    - `ui/e2e/go/backend.sh` 建立並遷移資料庫 `carpool_e2e`、建置 Go 後端，以 `DEMO_RESET=1` 在 `:8092` 啟動；介面在 `:5187`、`:5188`。開發用的資料庫 `carpool`、Demo 與 Karate 都不受影響，可以同時執行。
+    - 每個測試前後都呼叫 `POST /api/demo/reset`（DD-29），並取消 `driver4` 自選的標籤（重設不還原自選標籤），不留下資料。
+    - 測試替模擬器回報 `driver4` 的位置；快樂路徑讓乘客把只有台上駕駛帶的標籤設成「強制」，請求才會配給 `driver4`（同 Demo 劇本）。
+    - 不帶地圖金鑰，只用預先帶入的目的地；目的地搜尋與園區範圍檢查的 e2e 只在示範後端跑（`park-check.spec.ts`）。
 - 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫；`just ui dev-mock`／`just ui dev` 會自動設定。
 - 示範後端（`ui/mock-server/`）是只用 Node 內建模組的小程式，狀態放在記憶體裡，重啟就回到初始狀態。帳號、上車點、公車站、標籤與模擬行程直接讀 `backend/migrations/` 的種子 SQL，和 Go 後端一致。做法見 `docs/ui-design.md` 10.2。
 - 以網址參數切換 Demo 帳號，例如 `http://localhost:5173/?account=driver2`。
