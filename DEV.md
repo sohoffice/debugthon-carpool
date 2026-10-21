@@ -93,10 +93,12 @@
   - 不帶地圖金鑰，地圖只顯示提示文字。園區範圍檢查的測試（`park-check.spec.ts`）要搜尋目的地，改連 `:5185`、`:5186`，並由 Playwright 攔截 Maps 的腳本、換成 `ui/e2e/fakeGoogleMaps.ts` 的假 API（只認得固定的兩個地點），其他 Google 請求一律擋下，不會呼叫真的 Google。
   - 失敗時的紀錄（trace）在 `ui/test-results/`，可用 `npx playwright show-trace <檔案>` 查看。
   - 接 Go 後端（`just ui e2e-go`，測試在 `ui/e2e/go/`）：
-    - `ui/e2e/go/backend.sh` 建立並遷移資料庫 `carpool_e2e`、建置 Go 後端，以 `DEMO_RESET=1` 與空的 `MAP_API_KEY` 在 `:8092` 啟動：Go e2e 一律用模擬路線，不呼叫 Google（空值優先於根目錄 `.env` 的金鑰）；介面在 `:5187`、`:5188`。開發用的資料庫 `carpool`、Demo 與 Karate 都不受影響，可以同時執行。
+    - `ui/e2e/go/backend.sh` 建立並遷移資料庫 `carpool_e2e`、建置 Go 後端，以 `DEMO_RESET=1` 與空的 `MAP_API_KEY` 在 `:8092` 啟動：Go e2e 一律用模擬路線，不呼叫 Google（空值優先於根目錄 `.env` 的金鑰）；介面在 `:5187`、`:5188`，另有帶假金鑰的駕駛介面 `:5189`、乘客介面 `:5190`。開發用的資料庫 `carpool`、Demo 與 Karate 都不受影響，可以同時執行。
     - 每個測試前後都呼叫 `POST /api/demo/reset`（DD-29），並取消 `driver4` 自選的標籤（重設不還原自選標籤），不留下資料。
     - 測試替模擬器回報 `driver4` 的位置；快樂路徑讓乘客把只有台上駕駛帶的標籤設成「強制」，請求才會配給 `driver4`（同 Demo 劇本）。
-    - 不帶地圖金鑰，只用預先帶入的目的地；目的地搜尋與園區範圍檢查的 e2e 只在示範後端跑（`park-check.spec.ts`）。
+    - 情境：快樂路徑與無車（`happy-path.spec.ts`，含剩餘座位、模擬資料標示、下車點與車輛資訊）、園區範圍檢查（`park-check.spec.ts`）、駕駛婉拒（沒有其他車、改配下一台車）與自動接受（`driver-response.spec.ts`）；共用的重設與開啟介面的函式在 `support.ts`。
+    - 一般介面不帶地圖金鑰，只用預先帶入的目的地；園區範圍檢查改連 `:5189`、`:5190`，和示範後端一樣由 Playwright 換成 `ui/e2e/fakeGoogleMaps.ts` 的假 API。
+    - 婉拒改配的情境讓 `driver5` 當第二台車：用 API 出發（有台上標籤、自動接受關閉、位置比 `driver4` 遠，所以 `driver4` 排第一），在介面上確認。重設不會讓出發過的駕駛回到「第一次出發」（Demo 重設不刪除行程，駕駛的預先帶入取自最近一趟行程，DD-19、DD-29），所以駕駛的園區檢查從 `driver4` 預先帶入的設定開始：園區外的地點被提示、不會取代原目的地；「沒有目的地時『我出發了』無法按」只在示範後端的 e2e 驗證。`carpool_e2e` 若已被舊版測試弄髒，可 `DROP DATABASE carpool_e2e` 後重跑。
 - 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫；`just ui dev-mock`／`just ui dev` 會自動設定。
 - 示範後端（`ui/mock-server/`）是只用 Node 內建模組的小程式，狀態放在記憶體裡，重啟就回到初始狀態。帳號、上車點、公車站、標籤與模擬行程直接讀 `backend/migrations/` 的種子 SQL，和 Go 後端一致。做法見 `docs/ui-design.md` 10.2。
 - 以網址參數切換 Demo 帳號，例如 `http://localhost:5173/?account=driver2`。

@@ -10,6 +10,10 @@ async function resetBackend(request: APIRequestContext) {
   expect((await request.post(`${API}/_mock/scenario`, { data: { scenario: 'normal' } })).ok()).toBe(true)
 }
 
+/** passenger1 rides to its usual destination (DD-19). */
+const DROPOFF = '瑞光路 513 巷'
+const DRIVER4_VEHICLE = { plate: 'DEF-4567', description: '藍色 Mazda 3' }
+
 test.beforeEach(async ({ request }) => resetBackend(request))
 test.afterEach(async ({ request }) => resetBackend(request))
 
@@ -46,10 +50,15 @@ test('happy path: depart, see supply, request, confirm, board, end the ride (REQ
   // REQ-049: the driver sees the pickup and drop-off and confirms.
   await expect(driver.getByRole('heading', { name: '有乘客要搭車' })).toBeVisible()
   await expect(driver.getByRole('definition').filter({ hasText: '松山車站' })).toBeVisible()
+  await expect(driver.getByRole('definition').filter({ hasText: DROPOFF })).toBeVisible()
   await driver.getByRole('button', { name: '確認' }).click()
 
   // The passenger is told (REQ-065) and marks boarding (REQ-068).
   await expect(passenger.getByText('分鐘後到').first()).toBeVisible()
+  // REQ-052: where to get in and which car comes.
+  await expect(passenger.getByText('在松山車站上車')).toBeVisible()
+  await expect(passenger.getByText(DRIVER4_VEHICLE.plate, { exact: true })).toBeVisible()
+  await expect(passenger.getByText(DRIVER4_VEHICLE.description, { exact: true })).toBeVisible()
   await passenger.getByRole('button', { name: '我已上車' }).click()
   await expect(passenger.getByRole('heading', { name: /^在.+下車$/ })).toBeVisible()
   await expect(driver.getByText('在車上')).toBeVisible()
