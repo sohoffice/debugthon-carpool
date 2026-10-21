@@ -21,6 +21,10 @@ demo:
     echo "Ctrl-C stops the UIs; the backend keeps running (just backend down)"
     just ui dev
 
+# Run the Demo's off-stage part on the `just demo` setup (T18E): driver5 and the simulator, cues in the terminal; Ctrl-C stops
+demo-offstage:
+    cd "{{source_directory()}}/ui" && npx playwright install chromium && node scripts/demo-offstage.ts
+
 # Put the demo back to its start (DD-29); reload the debug-mode driver page to restart the simulator
 demo-reset:
     @curl -sf -X POST http://localhost:8080/api/demo/reset && echo "demo reset"
