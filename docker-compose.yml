@@ -1,3 +1,8 @@
+# Fixed project name, so every checkout and git worktree reaches the same container and data volume
+# (debugthon-carpool-postgres-1, debugthon-carpool_pgdata). `just infra down`/`reset` from any of them
+# act on that shared one; set COMPOSE_PROJECT_NAME (and POSTGRES_PORT) for a separate database.
+name: debugthon-carpool
+
 services:
   postgres:
     image: postgres:18
