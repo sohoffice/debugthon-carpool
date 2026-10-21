@@ -23,7 +23,7 @@ func (r *shiftingRoutes) Route(_ context.Context, from, to latLng) (Route, error
 	return Route{Points: points, Polyline: encodePolyline(points), DistanceM: 1000 * r.calls, DurationS: 100 * r.calls, Simulated: r.simulated}, nil
 }
 
-// one router for the whole test, because the preview cache lives in it.
+// routerWith builds a router on db with the given route provider.
 func routerWith(t *testing.T, db DB, routes RouteProvider) func(method, path, token, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	deps := testDeps(t)
@@ -86,10 +86,39 @@ func TestPreviewReturnsRouteAndBusStopsWithoutATrip(t *testing.T) {
 	wantStatus(t, do(http.MethodGet, "/api/driver/trips/current", token, ""), http.StatusNotFound, "not_found")
 }
 
-// DD-21: departing with the same pickup point and destination uses the previewed route and bus
-// stops, even though planning again would give another route; the destination name is not part
-// of the match.
-func TestDepartUsesThePreviewedRoute(t *testing.T) {
+type previewResp struct {
+	PreviewID int64 `json:"preview_id"`
+	Route     struct {
+		Polyline string    `json:"polyline"`
+		BusStops []busStop `json:"bus_stops"`
+	} `json:"route"`
+}
+
+func preview(t *testing.T, do func(method, path, token, body string) *httptest.ResponseRecorder, token string, pickupID int64, lat, lng string) previewResp {
+	t.Helper()
+	w := do(http.MethodPost, "/api/driver/route-preview", token, previewJSON(pickupID, lat, lng))
+	wantStatus(t, w, http.StatusOK, "")
+	p := decode[previewResp](t, w)
+	if p.PreviewID == 0 {
+		t.Fatalf("preview has no preview_id: %s", w.Body.String())
+	}
+	return p
+}
+
+func withPreview(id int64) string { return `"preview_id":` + itoa(id) }
+
+func previewUsed(t *testing.T, db DB, id int64) bool {
+	t.Helper()
+	var used bool
+	if err := db.QueryRow(context.Background(), `SELECT used_at IS NOT NULL FROM route_previews WHERE id = $1`, id).Scan(&used); err != nil {
+		t.Fatal(err)
+	}
+	return used
+}
+
+// DD-21: departing with a preview id copies the previewed route and bus stops without planning
+// again (the counting provider would give another route), whatever the destination name.
+func TestDepartWithPreviewCopiesRouteWithoutPlanning(t *testing.T) {
 	tx := testTx(t)
 	_, token := newUser(t, tx, roleDriver)
 	pickupID := firstPickupID(t, tx)
@@ -102,71 +131,182 @@ func TestDepartUsesThePreviewedRoute(t *testing.T) {
 	mid := midpoint(pickup, latLng{25.0768, 121.5738})
 	mustExec(t, tx, `INSERT INTO bus_stops (name, lat, lng) VALUES ('test midpoint stop', $1, $2)`, mid.Lat, mid.Lng)
 
-	pw := do(http.MethodPost, "/api/driver/route-preview", token, previewJSON(pickupID, "25.0768", "121.5738"))
-	wantStatus(t, pw, http.StatusOK, "")
-	previewed := decode[struct {
-		Route struct {
-			Polyline string    `json:"polyline"`
-			BusStops []busStop `json:"bus_stops"`
-		} `json:"route"`
-	}](t, pw).Route
-
-	if len(previewed.BusStops) == 0 {
+	previewed := preview(t, do, token, pickupID, "25.0768", "121.5738")
+	if len(previewed.Route.BusStops) == 0 {
 		t.Fatal("previewed route has no bus stops, so the comparison below would prove nothing")
 	}
-	dw := do(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, `{"name":"another name","lat":25.0768,"lng":121.5738}`, ""))
+	dw := do(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, `{"name":"another name","lat":25.0768,"lng":121.5738}`, withPreview(previewed.PreviewID)))
 	wantStatus(t, dw, http.StatusCreated, "")
 	trip := decode[tripResp](t, dw)
 	if routes.calls != 1 {
 		t.Fatalf("route planned %d times, want once (the preview)", routes.calls)
 	}
-	if trip.Route.Polyline != previewed.Polyline || len(trip.Route.BusStops) != len(previewed.BusStops) {
-		t.Fatalf("departed route %q / %d stops, previewed %q / %d stops", trip.Route.Polyline, len(trip.Route.BusStops), previewed.Polyline, len(previewed.BusStops))
+	if trip.Route.Polyline != previewed.Route.Polyline || len(trip.Route.BusStops) != len(previewed.Route.BusStops) {
+		t.Fatalf("departed route %q / %d stops, previewed %q / %d stops", trip.Route.Polyline, len(trip.Route.BusStops), previewed.Route.Polyline, len(previewed.Route.BusStops))
 	}
-	for i := range previewed.BusStops {
-		if trip.Route.BusStops[i].ID != previewed.BusStops[i].ID {
-			t.Fatalf("bus stop %d differs: %+v vs %+v", i, trip.Route.BusStops[i], previewed.BusStops[i])
+	for i := range previewed.Route.BusStops {
+		if trip.Route.BusStops[i].ID != previewed.Route.BusStops[i].ID {
+			t.Fatalf("bus stop %d differs: %+v vs %+v", i, trip.Route.BusStops[i], previewed.Route.BusStops[i])
 		}
+	}
+	if !previewUsed(t, tx, previewed.PreviewID) {
+		t.Fatal("preview not marked used")
 	}
 }
 
-// DD-21: a simulated preview is used as well, and a later preview replaces an earlier one.
-func TestDepartUsesTheLatestSimulatedPreview(t *testing.T) {
+// DD-21: the departure takes the route stored in the database, so rewriting it with SQL shows
+// in the trip; that is only possible if the departure copied the stored preview.
+func TestDepartWithPreviewTakesTheStoredRoute(t *testing.T) {
 	tx := testTx(t)
 	_, token := newUser(t, tx, roleDriver)
 	pickupID := firstPickupID(t, tx)
 	routes := &shiftingRoutes{simulated: true}
 	do := routerWith(t, tx, routes)
 
-	do(http.MethodPost, "/api/driver/route-preview", token, previewJSON(pickupID, "25.0768", "121.5738"))
-	pw := do(http.MethodPost, "/api/driver/route-preview", token, previewJSON(pickupID, "25.0768", "121.5738"))
-	latest := decode[struct {
-		Route struct {
-			Polyline string `json:"polyline"`
-		} `json:"route"`
-	}](t, pw).Route.Polyline
+	p := preview(t, do, token, pickupID, "25.0768", "121.5738")
+	mustExec(t, tx, `UPDATE route_previews SET route_polyline = 'rewritten', route_distance_m = 4242, route_duration_s = 99, route_simulated = false WHERE id = $1`, p.PreviewID)
+	mustExec(t, tx, `DELETE FROM route_preview_stops WHERE preview_id = $1`, p.PreviewID)
+	mustExec(t, tx, `INSERT INTO route_preview_stops (preview_id, seq, bus_stop_id) SELECT $1, 1, min(id) FROM bus_stops`, p.PreviewID)
 
-	dw := do(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, inPark, ""))
+	dw := do(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, inPark2, withPreview(p.PreviewID)))
 	wantStatus(t, dw, http.StatusCreated, "")
 	trip := decode[tripResp](t, dw)
-	if routes.calls != 2 || trip.Route.Polyline != latest || !trip.Route.Simulated {
-		t.Fatalf("calls=%d polyline=%q simulated=%v, want 2 calls, the latest preview %q, simulated", routes.calls, trip.Route.Polyline, trip.Route.Simulated, latest)
+	if trip.Route.Polyline != "rewritten" || trip.Route.DistanceM != 4242 || trip.Route.DurationS != 99 || trip.Route.Simulated || len(trip.Route.BusStops) != 1 {
+		t.Fatalf("trip route = %+v, want the rewritten preview", trip.Route)
+	}
+	if routes.calls != 1 {
+		t.Fatalf("route planned %d times, want once", routes.calls)
 	}
 }
 
-// DD-21: no preview for this pickup point and destination, or a different one, means planning
-// at departure.
-func TestDepartPlansWhenNothingWasPreviewed(t *testing.T) {
+// inPark2 is the destination the previews in these tests use.
+const inPark2 = `{"name":"x","lat":25.0768,"lng":121.5738}`
+
+// DD-21: a preview serves one departure.
+func TestPreviewCanBeUsedOnce(t *testing.T) {
+	tx := testTx(t)
+	driverID, token := newUser(t, tx, roleDriver)
+	pickupID := firstPickupID(t, tx)
+	do := routerWith(t, tx, straightRoute{})
+	p := preview(t, do, token, pickupID, "25.0768", "121.5738")
+	body := departJSON(pickupID, inPark2, withPreview(p.PreviewID))
+
+	wantStatus(t, do(http.MethodPost, "/api/driver/trips", token, body), http.StatusCreated, "")
+	mustExec(t, tx, `UPDATE trips SET status = 'completed', ended_at = now() WHERE driver_id = $1`, driverID)
+	before := countTrips(t, tx, driverID)
+	wantStatus(t, do(http.MethodPost, "/api/driver/trips", token, body), http.StatusBadRequest, "invalid_route_preview")
+	if countTrips(t, tx, driverID) != before {
+		t.Fatal("a trip was created from a used preview")
+	}
+}
+
+// DD-21: a failed departure leaves the preview unused.
+func TestFailedDepartureLeavesThePreviewUnused(t *testing.T) {
+	tx := testTx(t)
+	driverID, token := newUser(t, tx, roleDriver)
+	pickupID := firstPickupID(t, tx)
+	do := routerWith(t, tx, straightRoute{})
+	p := preview(t, do, token, pickupID, "25.0768", "121.5738")
+	body := departJSON(pickupID, inPark2, withPreview(p.PreviewID))
+
+	wantStatus(t, do(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, inPark2, "")), http.StatusCreated, "")
+	wantStatus(t, do(http.MethodPost, "/api/driver/trips", token, body), http.StatusConflict, "already_active")
+	if previewUsed(t, tx, p.PreviewID) {
+		t.Fatal("preview used by a failed departure")
+	}
+	mustExec(t, tx, `UPDATE trips SET status = 'completed', ended_at = now() WHERE driver_id = $1`, driverID)
+	wantStatus(t, do(http.MethodPost, "/api/driver/trips", token, body), http.StatusCreated, "")
+}
+
+// DD-21: an unknown, foreign, differing preview is refused, without planning again or creating a trip.
+func TestDepartRefusesAnInvalidPreview(t *testing.T) {
+	tx := testTx(t)
+	driverID, token := newUser(t, tx, roleDriver)
+	otherID, other := newUser(t, tx, roleDriver)
+	var pickups []int64
+	rows, err := tx.Query(context.Background(), `SELECT id FROM pickup_points ORDER BY id LIMIT 2`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		pickups = append(pickups, id)
+	}
+	rows.Close()
+	if len(pickups) < 2 {
+		t.Fatal("need two pickup points")
+	}
+	routes := &shiftingRoutes{}
+	do := routerWith(t, tx, routes)
+	p := preview(t, do, token, pickups[0], "25.0768", "121.5738")
+
+	cases := []struct {
+		name   string
+		token  string
+		caller int64
+		pickup int64
+		dest   string
+		id     int64
+	}{
+		{"unknown id", token, driverID, pickups[0], inPark2, p.PreviewID + 100000},
+		{"another driver's", other, otherID, pickups[0], inPark2, p.PreviewID},
+		{"other pickup point", token, driverID, pickups[1], inPark2, p.PreviewID},
+		{"other destination latitude", token, driverID, pickups[0], `{"name":"x","lat":25.0769,"lng":121.5738}`, p.PreviewID},
+		{"other destination longitude", token, driverID, pickups[0], `{"name":"x","lat":25.0768,"lng":121.5739}`, p.PreviewID},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := countTrips(t, tx, tc.caller)
+			w := do(http.MethodPost, "/api/driver/trips", tc.token, departJSON(tc.pickup, tc.dest, withPreview(tc.id)))
+			wantStatus(t, w, http.StatusBadRequest, "invalid_route_preview")
+			if countTrips(t, tx, tc.caller) != before || countTrips(t, tx, driverID) != 0 {
+				t.Fatal("a trip was created")
+			}
+			if previewUsed(t, tx, p.PreviewID) {
+				t.Fatal("preview marked used")
+			}
+		})
+	}
+	if routes.calls != 1 {
+		t.Fatalf("route planned %d times, want once (the preview): a refusal must not plan again", routes.calls)
+	}
+}
+
+// DD-21: departing without a preview id plans at departure and ignores saved previews.
+func TestDepartWithoutPreviewIDPlans(t *testing.T) {
 	tx := testTx(t)
 	_, token := newUser(t, tx, roleDriver)
 	pickupID := firstPickupID(t, tx)
 	routes := &shiftingRoutes{}
 	do := routerWith(t, tx, routes)
 
-	wantStatus(t, do(http.MethodPost, "/api/driver/route-preview", token, previewJSON(pickupID, "25.07585", "121.5745")), http.StatusOK, "")
-	wantStatus(t, do(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, inPark, "")), http.StatusCreated, "")
-	if routes.calls != 2 {
-		t.Fatalf("route planned %d times, want 2 (preview of another destination, then the departure)", routes.calls)
+	p := preview(t, do, token, pickupID, "25.0768", "121.5738")
+	dw := do(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, inPark2, ""))
+	wantStatus(t, dw, http.StatusCreated, "")
+	if routes.calls != 2 || decode[tripResp](t, dw).Route.Polyline == p.Route.Polyline {
+		t.Fatalf("calls=%d, want 2 and a route planned at departure", routes.calls)
+	}
+	if previewUsed(t, tx, p.PreviewID) {
+		t.Fatal("preview used by a departure without its id")
+	}
+}
+
+// DD-21: previews live in the database, so a router built later (as after a restart) still
+// finds them.
+func TestPreviewSurvivesANewRouter(t *testing.T) {
+	tx := testTx(t)
+	_, token := newUser(t, tx, roleDriver)
+	pickupID := firstPickupID(t, tx)
+	p := preview(t, routerWith(t, tx, straightRoute{}), token, pickupID, "25.0768", "121.5738")
+
+	routes := &shiftingRoutes{}
+	dw := routerWith(t, tx, routes)(http.MethodPost, "/api/driver/trips", token, departJSON(pickupID, inPark2, withPreview(p.PreviewID)))
+	wantStatus(t, dw, http.StatusCreated, "")
+	if routes.calls != 0 || decode[tripResp](t, dw).Route.Polyline != p.Route.Polyline {
+		t.Fatalf("calls=%d, want the previewed route without planning", routes.calls)
 	}
 }
 

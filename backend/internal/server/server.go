@@ -26,8 +26,6 @@ type Server struct {
 	park   *park.Boundary
 	routes RouteProvider
 	walks  WalkProvider
-	// previews remembers route previews for the departure that follows (DD-21).
-	previews *previewCache
 }
 
 // Deps are the collaborators that are not the database.
@@ -41,7 +39,7 @@ type Deps struct {
 
 // NewRouter builds the HTTP router with all API routes registered.
 func NewRouter(db DB, deps Deps) *gin.Engine {
-	s := &Server{db: db, park: deps.Park, routes: deps.Routes, previews: &previewCache{}}
+	s := &Server{db: db, park: deps.Park, routes: deps.Routes}
 	if s.routes == nil {
 		s.routes = straightRoute{}
 	}

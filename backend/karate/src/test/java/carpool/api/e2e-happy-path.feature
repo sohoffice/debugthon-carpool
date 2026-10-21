@@ -48,15 +48,17 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * status 200
     * match response.route == { polyline: '#string', distance_m: '#number', duration_s: '#number', simulated: '#boolean', bus_stops: '#array' }
     * def previewed = response.route
+    * def previewId = response.preview_id
     * configure headers = { Authorization: '#("Bearer " + pt)' }
 
     # 1. REQ-015: the driver departs (auto_accept off, so the driver must confirm) and reports a position
-    * def tripId = karate.call('classpath:carpool/api/supply-car.feature', { user: driver, pickup: pickup, northM: 500, tagIds: [tagId], body: { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: false, tag_filters: [] } }).tripId
+    * def tripId = karate.call('classpath:carpool/api/supply-car.feature', { user: driver, pickup: pickup, northM: 500, tagIds: [tagId], body: { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: false, tag_filters: [], preview_id: '#(previewId)' } }).tripId
     * def trip = doGet(dt, 'api/driver/trips/current')
     * match trip.responseStatus == 200
     * match trip.response contains { id: '#(tripId)', status: 'active', capacity: 3, auto_accept: false }
-    # TODO T26 (#61): depart with the preview id; without it the route is re-planned, so this equality does not yet prove reuse
+    # DD-21: the departure carried the preview id, so the trip has the previewed route and the preview is used
     * match trip.response.route == previewed
+    * match Db.queryLong('SELECT count(*) FROM route_previews WHERE id = ? AND used_at IS NOT NULL', previewId) == 1
 
     # 2. REQ-029: the passenger sees the approaching car, with all seats free
     * def supply = function() { return karate.http(baseUrl + '/api/passenger/supply').header('Authorization', 'Bearer ' + pt).params({ pickup_point_id: pickup.id, dest_lat: inPark.lat, dest_lng: inPark.lng, stop_ids: stop.id, required_tags: tagId }).get().body }
