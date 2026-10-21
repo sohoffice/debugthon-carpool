@@ -41,8 +41,9 @@ export function driverProfileView(world: World, lookups: Lookups, userId: number
   }
 }
 
-/** A trip shaped like the Go backend's tripView. */
-export function tripView(lookups: Lookups, trip: Trip): TripView {
+/** A trip shaped like the Go backend's tripView; completed_rides counts its finished rides (T21). */
+export function tripView(world: World, lookups: Lookups, trip: Trip): TripView {
+  const completedRides = world.requests.filter((r) => r.status === 'completed' && assignedTripId(r) === trip.id).length
   return {
     id: trip.id,
     driver_id: trip.driverId,
@@ -59,6 +60,8 @@ export function tripView(lookups: Lookups, trip: Trip): TripView {
     tag_filters: trip.tagFilters.map((f) => ({ ...f, name: lookups.tagById.get(f.tag_id)?.name })),
     route: trip.route,
     started_at: iso(trip.startedAtMs),
+    ended_at: trip.endedAtMs === null ? null : iso(trip.endedAtMs),
+    completed_rides: completedRides,
   }
 }
 
@@ -119,7 +122,7 @@ export function requestStatusView(world: World, lookups: Lookups, request: RideR
     vehicle: lookups.data.seed.vehicles[driver.username] ?? { plate: '', description: '' },
     eta_s: passed ? null : Math.round(etaToPickupS(trip, now)),
     eta_simulated: passed ? null : true,
-    trip: tripView(lookups, trip),
+    trip: tripView(world, lookups, trip),
     vehicle_position: { ...position, heading_deg: heading, reported_at: iso(now) },
     passed_pickup: passed,
   }

@@ -21,10 +21,7 @@
 
 進度（2026-10-20）：下列畫面都已完成，在示範後端上可以完整操作（`just ui dev-mock`），並以 390px 寬度與展示頁實際操作驗證過，包括設定地圖金鑰與 Map ID 後的地圖；`npm test` 77 個測試、型別檢查與建置都通過。
 
-接 Go 後端：介面與示範後端已改用 `main` 的 T11 供給查詢、T12 送出請求、T13 請求流程，以及 T20 地點檢查與路線預覽、T22 車輛位置與模擬標示的格式（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)），接 Go 後端（`just ui dev`）實際走完「出發 → 送出 → 確認 → 已上車 → 結束共乘」，T25 另外實測了以 Google Places 搜尋目的地、路線預覽、車輛轉向與模擬標示。目的地搜尋需要地圖金鑰開啟 Places API (New)；沒有金鑰時只能沿用預先帶入的目的地。接 Go 後端時還不能用的部分（後端還沒有）：
-
-- 行程自動結束（T21）：接 Go 後端時行程不會結束；「行程結束」畫面的載客人數也等 T21。
-- Demo 重設（T17）。
+接 Go 後端：介面與示範後端已改用 `main` 的 T11 供給查詢、T12 送出請求、T13 請求流程，以及 T20 地點檢查與路線預覽、T22 車輛位置與模擬標示的格式（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)），接 Go 後端（`just ui dev`）實際走完「出發 → 送出 → 確認 → 已上車 → 結束共乘」，T25 另外實測了以 Google Places 搜尋目的地、路線預覽、車輛轉向與模擬標示。目的地搜尋需要地圖金鑰開啟 Places API (New)；沒有金鑰時只能沿用預先帶入的目的地。行程自動結束（T21，PR #70）已合併，駕駛介面接上「行程結束」畫面的載客人數（T15）。Demo 重設（T17，PR #68）已合併，展示頁與 e2e 改接 Go 在 [#35 T18B](https://github.com/sohoffice/debugthon-carpool/issues/35)。
 
 ### #14 T14 前端共用基礎
 
@@ -58,7 +55,7 @@
 | 改用 `main` 的 T13 格式 | ✅ 已完成 | 行程中輪詢 `GET /api/driver/requests`（`pending`、`passengers`）；確認、婉拒、上車、結束共乘後重新輪詢，`409 not_waiting`／`invalid_state` 時顯示目前的狀態 |
 | 目的地以 Google Places 搜尋，選定後提示不在園區內的地點 | ✅ 已完成 | DD-32；Google Places 加 `GET /api/park/check`，不在園區內的地點提示且不採用（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
 | 出發前的路線預覽 | ✅ 已完成 | DD-21；讀 Go 的 `{route}`，路線為模擬時才標示「路線為估算」（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)）；出發時帶預覽編號等 [#61 T26](https://github.com/sohoffice/debugthon-carpool/issues/61) |
-| 行程結束 | ⚠️ 只有示範後端 | 抵達目的地自動結束（UD-16）：輪詢的 `trip_id` 變成 `null` 時，以 `GET /api/trips/:id` 確認行程已結束並顯示目的地；載客人數等 T21 提供。後端規則見 REQ-070、DD-30，實作在 [#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31) |
+| 行程結束 | ✅ 已完成 | 抵達目的地自動結束（UD-16）：輪詢的 `trip_id` 變成 `null` 時，以 `GET /api/trips/:id` 確認：`completed` 顯示目的地與這趟的載客人數（`completed_rides`）；Demo 重設造成的 `cancelled` 直接回到出發確認。後端規則見 REQ-070、DD-30，[#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31) 已合併 |
 
 驗收條件：
 
@@ -165,7 +162,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 
 不影響 Demo、先不開工作單的小問題；有空時修，或併進相關的 PR。
 
-- 駕駛出發確認的「自動接受」開關只有 52×32，高度低於觸控建議的 44（T15 驗證時發現）。
+- 模擬器的 `driver5` 路徑終點固定在瑞光路 513 巷：真人用 `driver5` 選別的目的地時，模擬器開不到那裡，行程不會自動結束。暫時的做法：Demo 用 `driver5` 時選瑞光路 513 巷，或不開模擬器替它回報。
 
 ## 2. 間接相關
 
@@ -179,7 +176,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 | [#12](https://github.com/sohoffice/debugthon-carpool/issues/12) T12 送出請求 | 已合併（PR #25）；介面已改用它的格式 |
 | [#13](https://github.com/sohoffice/debugthon-carpool/issues/13) T13 請求流程 | 已合併（PR #28）；介面已改用它的格式 |
 | [#30](https://github.com/sohoffice/debugthon-carpool/issues/30) T20 路線預覽與園區範圍檢查 | 已合併（PR #53）。DD-28 已撤回，改為 DD-32：目的地由介面以 Google Places 搜尋，後端提供 `GET /api/park/check` 與 `POST /api/driver/route-preview`；介面已照它修改（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
-| [#31](https://github.com/sohoffice/debugthon-carpool/issues/31) T21 行程抵達目的地自動結束 | 未完成；駕駛介面的「行程結束」畫面與載客人數要用到 |
+| [#31](https://github.com/sohoffice/debugthon-carpool/issues/31) T21 行程抵達目的地自動結束 | 已合併（PR #70）；駕駛介面的「行程結束」畫面讀它的 `completed_rides`（T15） |
 | [#33](https://github.com/sohoffice/debugthon-carpool/issues/33) T22 請求狀態：車輛位置、行進方向與模擬標示 | 已合併（PR #48）；乘客已確認畫面的地圖上的車（UD-15）與「車已到上車點」（UD-09）要用到，介面已照 `DEV.md` 的欄位修改（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
 | [#49](https://github.com/sohoffice/debugthon-carpool/issues/49) T23 串接路線與旅行時間來源 | 完成後行程路線改沿真實道路；沒有金鑰或外部來源失敗時仍是模擬，介面依 `simulated` 標示 |
 | [#17](https://github.com/sohoffice/debugthon-carpool/issues/17) T17 本機 Demo 環境 | 兩個 UI、展示頁與其他元件在同一台機器上執行（DD-24） |

@@ -21,7 +21,8 @@ export function App() {
   useEffect(() => {
     if (tripId !== null && tripId !== runningId) setRunningId(tripId)
     if (tripId === null && runningId !== null) {
-      // The running trip is gone: it ended by itself at the destination (UD-16, DD-30).
+      // The running trip is gone: it ended by itself at the destination (UD-16, DD-30), or a Demo
+      // reset cancelled it (DD-29), which goes straight back to the departure screen.
       setRunningId(null)
       api.get<TripView>(`/trips/${runningId}`).then((t) => t.status === 'completed' && setEnded(t), () => undefined)
     }

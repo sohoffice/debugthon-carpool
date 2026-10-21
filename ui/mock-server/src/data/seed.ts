@@ -40,6 +40,8 @@ export interface SeedSql {
   reference: string
   activities: string
   passMargin: string
+  /** All migrations' Up parts in order, for the later moves of driver2's destination (T03, T23). */
+  migrationsUp: string
 }
 
 /**
@@ -78,9 +80,19 @@ export function parseSeed(sql: SeedSql): Seed {
     username: String(username),
     tag: String(tag),
   }))
+  // The last UPDATE of driver2's trip destination wins, as on a database migrated to the latest version.
+  const moves = sql.migrationsUp
+    .split(';')
+    .filter((statement) => statement.includes('UPDATE trips SET destination_name') && statement.includes("'driver2'"))
+    .map((statement) => /destination_name = '([^']+)', destination_lat = ([\d.]+), destination_lng = ([\d.]+)/.exec(statement))
+  const moved = moves.at(-1)
+  if (!moved) throw new Error('no move of driver2’s destination found in the migrations')
   const simulatedTrips = valuesAfter(sql.reference, 'INSERT INTO trips', ') v (').map(([username, name, lat, lng, capacity]) => ({
     username: String(username),
-    destination: { name: String(name), lat: Number(lat), lng: Number(lng) },
+    destination:
+      username === 'driver2'
+        ? { name: moved[1], lat: Number(moved[2]), lng: Number(moved[3]) }
+        : { name: String(name), lat: Number(lat), lng: Number(lng) },
     capacity: Number(capacity),
   }))
   const vehicles = Object.fromEntries(

@@ -369,7 +369,7 @@ flowchart LR
 │ 已到達目的地                     ← 深色柏油底、白字
 │ 瑞光路 513 巷
 │
-│ 今天載了 2 位乘客                 ← 行程已結束，不在行車中
+│ 這趟載了 2 位乘客                 ← 行程已結束，不在行車中；`completed_rides`，0 位時顯示「這趟沒有載到乘客」
 │
 │ [             好              ]   ← 回到出發確認
 ```
@@ -379,7 +379,7 @@ flowchart LR
 狀態：提案。後端規則見 REQ-070、DD-30，實作在 [#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31)。
 
 - **做法：**
-  - 後端的規則見 DD-30：車輛經過上車點後進入目的地「抵達距離」（系統設定，預設 50 公尺）內，就結束這段行程。`main` 的後端還沒有實作，目前只有示範後端照這個做。駕駛介面下一次輪詢看到行程已結束，就換到「行程結束」畫面。
+  - 後端的規則見 DD-30：車輛經過上車點後進入目的地「抵達距離」（系統設定，預設 50 公尺）內，就結束這段行程（Go 後端在 T21 實作，示範後端照同樣的規則）。駕駛介面下一次輪詢看到 `trip_id` 變成 `null`，讀 `GET /api/trips/:id`：`completed` 換到「行程結束」畫面；Demo 重設造成的 `cancelled`（DD-29）直接回到出發確認。
   - 行程中畫面**不放**「結束行程」按鈕。
   - 結束時車上還沒結束共乘的乘客，由後端一併標記完成（REQ-067），乘客端換到「共乘完成」（SC-P9）。
   - 結束時若有待回應的請求，後端改配給下一台車（REQ-050），乘客端看到「已改配」。
@@ -857,7 +857,7 @@ Go 後端已有的 API（介面照抄後端格式）：
 | POST | `/api/activities` | 任一 | `201 Activity` | 乘客按「送出請求」時先建立參與主檔（DD-25）；駕駛的主檔由出發時建立 |
 | POST | `/api/location` | 任一 | `201 LocationReport` | 乘客的位置回報（DD-26）、模擬器的駕駛位置回報（DD-14）；沒有參與主檔時回 `409 no_activity` |
 | POST | `/api/passenger/requests` | 乘客 | `201 RequestView` | 「送出請求」（T12）：`pickup_point_id`、`location`（目前位置，DD-25），選填 `destination`、`stop_ids`、`tag_filters`。立即回傳結果：`rejected`（`reason: too_far` 與 `message`）、`no_match`、`waiting_driver` 或 `confirmed`。後端不檢查重複送出（REQ-069 只由介面防止）。完整格式見 `DEV.md` |
-| GET | `/api/driver/requests` | 駕駛 | `DriverRequests` | 駕駛行程中的輪詢（T13）：`trip_id`、`pending`（待回應的請求：上車點、下車點 `dropoff`、`relaxed`）、`passengers`（已確認乘客的下車點與 `boarded`）。沒有進行中的行程時 `trip_id` 為 `null`。**不含**行程結束與完成人數（SC-D4 要等 T21） |
+| GET | `/api/driver/requests` | 駕駛 | `DriverRequests` | 駕駛行程中的輪詢（T13）：`trip_id`、`pending`（待回應的請求：上車點、下車點 `dropoff`、`relaxed`）、`passengers`（已確認乘客的下車點與 `boarded`）。沒有進行中的行程時 `trip_id` 為 `null`。行程結束後 `trip_id` 變成 `null`，結束的行程與完成人數（`completed_rides`）由 `GET /api/trips/:id` 取得（SC-D4，T21） |
 | POST | `/api/driver/requests/:id/accept`、`/decline` | 駕駛 | `200 RequestView` | 確認、婉拒（T13）；已不在等待回應時回 `409 not_waiting` |
 | POST | `/api/driver/requests/:id/board`、`/complete` | 駕駛 | `200 RequestView` | 「已上車」「已下車」（T13，DD-27、DD-23）；重複操作直接回先到者的結果，狀態不對時回 `409 invalid_state` |
 | GET | `/api/passenger/requests/current` | 乘客 | `{ request }` | 乘客尚未結束的請求，沒有時 `request` 為 `null`；打開 App 時帶出（REQ-069） |
@@ -875,7 +875,6 @@ Go 後端已有的 API（介面照抄後端格式）：
 
 介面需要、但 `main` 的後端 API 還沒有的資料（都已有工作單）：
 
-- **行程結束與這趟完成的人數**（SC-D4）：`GET /api/driver/requests` 沒有；T21（DD-30）實作行程自動結束時一併提供（#31 範圍已列）。
 - **車輛的目前位置、行進方向與是否已經過上車點**（UD-15、UD-09，SC-P5）：DD-31，[#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33) 已合併，欄位見 `DEV.md`：`vehicle_position{lat,lng,heading_deg,reported_at}` 與 `passed_pickup`，介面照抄（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)）。行進方向由後端計算，介面不自己算；沒有 ETA 時大字顯示「車子正在來」。「車已到上車點」依是否已經過上車點判斷，不用 `eta_s` 為 `null` 判斷（沒有位置時也是 `null`）。請求狀態與供給查詢的 ETA 以 `eta_simulated`、`fastest_eta_simulated` 標示是否為模擬（REQ-063）。
 
 - 時間一律是 RFC 3339 字串；距離以公尺、時間長度以秒為單位（欄位名稱以 `_min` 結尾的除外）。
@@ -1035,7 +1034,7 @@ flowchart LR
 | 車輛的目前位置與行進方向 | UD-15；10.1 | 已決定為 DD-31（design.md 4.12）：已確認、尚未上車時，請求狀態附上車輛最新位置、回報時間、行進方向（後端計算）與是否已經過上車點，ETA 標示是否為模擬；實作在 [#33 T22](https://github.com/sohoffice/debugthon-carpool/issues/33)；Go 後端還沒有 |
 | Demo 重設 `POST /api/demo/reset` | UD-18；10.2 | DD-29，實作在 [#17 T17](https://github.com/sohoffice/debugthon-carpool/issues/17)；Go 後端還沒有 |
 | 展示頁 | UD-18 | DD-24 寫「開兩個瀏覽器視窗」；展示頁只是把兩個 App 並排嵌入，兩個視窗的做法仍然可用 |
-| 行程抵達目的地時自動結束 | UD-16 | REQ-070、DD-30，實作在 [#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31)；Go 後端還沒有 |
+| 行程抵達目的地時自動結束 | UD-16 | REQ-070、DD-30，[#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31) 已合併 |
 | 目的地搜尋（Google Places）與園區範圍檢查、出發前的路線預覽 | 7.1、6.1；10.1 | DD-32 與修改後的 DD-21，實作在 [#30 T20](https://github.com/sohoffice/debugthon-carpool/issues/30)；Go 後端還沒有 |
 | Demo 種子直接寫入常用資料 | 10.2〈Demo 種子補充〉 | 已決定為 DD-19 的 Demo 例外：由 [#3 T03](https://github.com/sohoffice/debugthon-carpool/issues/3) 在 Go 後端的種子實作 `passenger1` 的常用資料與 `driver4` 的上一趟行程，內容同示範後端；Go 後端還沒有 |
 

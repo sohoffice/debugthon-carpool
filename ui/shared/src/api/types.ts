@@ -99,7 +99,8 @@ export interface DepartureSettings {
   tag_filters: TagFilter[]
 }
 
-export type TripStatus = 'active' | 'completed'
+/** completed: arrived at the destination (T21, DD-30); cancelled: ended by the Demo reset (T17, DD-29). */
+export type TripStatus = 'active' | 'completed' | 'cancelled'
 
 /**
  * A trip as the Go backend returns it: POST /api/driver/trips (201), GET /api/driver/trips/current
@@ -123,6 +124,10 @@ export interface TripView {
   /** Null only for a simulated trip whose route is not built yet. */
   route: Route | null
   started_at: string | null
+  /** Null until the trip ended. */
+  ended_at: string | null
+  /** Rides finished on this trip, i.e. service records (REQ-070, SC-D4). */
+  completed_rides: number
 }
 
 /** GET /api/driver/trips/defaults — the last departure's settings; all empty if never departed (REQ-016). */
@@ -158,6 +163,8 @@ export interface LocationReport {
   reported_at: string
   /** Only on a driver's report that belongs to a trip. */
   passed_pickup?: boolean
+  /** Only on a driver's report that belongs to a trip: the trip has ended at its destination (T21). */
+  trip_ended?: boolean
 }
 
 /** The driver's car (vehicles table), shown to the passenger once confirmed (REQ-052). */

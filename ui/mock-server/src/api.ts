@@ -139,7 +139,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       access: 'driver',
       run: ({ user, body }) => {
         world = depart(world, lookups, user.id, departureSettings(body, lookups), now())
-        return created(tripView(lookups, activeTripOf(world, user.id)!))
+        return created(tripView(world, lookups, activeTripOf(world, user.id)!))
       },
     },
     {
@@ -149,7 +149,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       run: ({ user }) => {
         const trip = activeTripOf(world, user.id)
         if (!trip) throw new MockError(404, 'not_found', '目前沒有進行中的行程')
-        return ok(tripView(lookups, trip))
+        return ok(tripView(world, lookups, trip))
       },
     },
     { method: 'GET', pattern: '/api/driver/trips/defaults', access: 'driver', run: ({ user }) => ok(tripDefaultsView(latestTripOf(world, user.id))) },
@@ -160,7 +160,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       run: ({ params }) => {
         const trip = findTrip(world, idParam(params[0], '行程'))
         if (!trip) throw new MockError(404, 'not_found', '找不到這個行程')
-        return ok(tripView(lookups, trip))
+        return ok(tripView(world, lookups, trip))
       },
     },
     {
@@ -189,7 +189,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
           lat: r.lat,
           lng: r.lng,
           reported_at: new Date(r.atMs).toISOString(),
-          ...(trip ? { passed_pickup: trip.reports.passedPickup } : {}),
+          ...(trip ? { passed_pickup: trip.reports.passedPickup, trip_ended: trip.status === 'completed' } : {}),
         })
       },
     },
