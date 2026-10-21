@@ -25,7 +25,7 @@
 - [Go](https://go.dev/) 1.27.2
 - [just](https://github.com/casey/just) 1.31 以上（需支援 `mod`）
 - Docker（用於 `docker-compose.yml` 中的 PostgreSQL）
-- [Node.js](https://nodejs.org/) 20.19 或 22.12 以上（Vite 8 的需求）
+- [Node.js](https://nodejs.org/) 22.18 以上：Vite 8 需要 20.19／22.12 以上，而 `just demo-offstage` 與示範後端直接執行 `.ts` 檔，需要 Node 原生支援 TypeScript（22.18 起）
 
 ## Just 指令
 
@@ -37,8 +37,8 @@
 
 | 指令 | 說明 |
 | --- | --- |
-| `just backend up` | 編譯後端並在背景啟動，預設監聽 `:8080`；若已在執行則不重複啟動 |
-| `just backend down` | 停止由 `up` 啟動的後端 |
+| `just backend up` | 編譯後端並在背景啟動，預設監聽 `:8080`；若已在執行則不重複啟動。連接埠被其他程式占用時直接報錯；啟動後等 `/api/ping` 回應（最多 15 秒），沒回應就印出 log 最後幾行並以失敗結束 |
+| `just backend down` | 停止由 `up` 啟動的後端，並等它真的結束（最多 15 秒）才返回，接著 `up` 不會撞到還沒放開的連接埠 |
 | `just backend test` | 執行後端 Go 測試（`go test ./...`），需先 `just infra up` 與 `just backend db-apply` |
 | `just backend karate` | 另外啟動一個 Karate 專用的後端（`:18080`，空的 `MAP_API_KEY`，測試不呼叫真實 Google），以 Karate 執行 API 整合測試，結束後關掉；不會動到執行中的 `just backend up`／`just demo` 後端（見下方說明） |
 | `just backend db-apply` | 套用尚未執行的資料庫遷移（需先 `just infra up`） |
@@ -117,11 +117,12 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 
 | 指令 | 說明 |
 | --- | --- |
-| `just demo` | 一個指令啟動全部元件：PostgreSQL（`just infra up`）、套用遷移、重新啟動後端（開啟 Demo 重設）、兩個介面與展示頁（`just ui dev`，第一次會先 `just ui install`）。按 Ctrl-C 停止介面，後端繼續在背景執行（`just backend down` 停止） |
+| `just demo-check` | 檢查 `just demo` 需要、但不會替你準備的東西：Docker 有在執行、Node 能直接執行 TypeScript、根目錄有 `.env`、`:5170`／`:5173`／`:5174` 沒被占用；`MAP_API_KEY` 或 `VITE_GOOGLE_MAPS_API_KEY` 是空的只警告（Demo 會改用模擬路線或不顯示地圖） |
+| `just demo` | 一個指令啟動全部元件：先執行 `just demo-check`，再啟動 PostgreSQL（`just infra up`）、套用遷移、重新啟動後端（開啟 Demo 重設）、兩個介面與展示頁（`just ui dev`）。`ui/package-lock.json` 比上次安裝新（例如 pull 之後）或從沒安裝過時，先執行 `just ui install`。按 Ctrl-C 停止介面，後端繼續在背景執行（`just backend down` 停止） |
 | `just demo-reset` | 一個指令把 Demo 重設回初始狀態（呼叫 `POST /api/demo/reset`）；展示頁的「重設」按鈕呼叫同一個 API |
 
-- 開啟的網址：展示頁 `http://localhost:5170`（並排嵌入兩支手機）；另開一個分頁 `http://localhost:5173/?debug=1` 按「開始模擬」，讓 `driver1`～`driver3` 回報位置（DD-14）。
-- 重設之後，重新整理除錯模式的駕駛頁面，模擬器就從起點重新開始；展示頁按「重設」會自己重新載入兩支手機。
+- 開啟的網址：展示頁 `http://localhost:5170`（並排嵌入兩支手機）。模擬器（DD-14）由 `just demo-offstage` 在背景開啟，照 `docs/demo-script.md` 演出時不要再另開 `http://localhost:5173/?debug=1` 按「開始模擬」，否則兩個模擬器會同時回報同一批車的位置。不跑台下腳本、只想讓 `driver1`～`driver3` 動起來時，才自己開這個分頁。
+- 重設之後，重新執行 `just demo-offstage`（或重新整理自己開的除錯模式駕駛頁面），模擬器就從起點重新開始；展示頁按「重設」會自己重新載入兩支手機。
 - 重設的內容（DD-29）只動 Demo 帳號（`users.simulated`），在同一個交易內完成：
   - 刪除 Demo 乘客的請求與這些請求的服務紀錄；這些請求暫留或佔用的座位還給原本的行程。
   - 常用資料還原為種子（DD-19）：刪除 Demo 帳號的常用資料，再呼叫資料庫函式 `seed_demo_habitual_data()`（遷移 `20261021120000_demo_seed_function.sql`，值和種子遷移相同，由 `TestDemoSeedFunctionMatchesMigration` 驗證）。這個函式每次都替 `driver4` 新增一趟和種子相同、已結束的行程，所以重設後駕駛介面帶入的是種子的設定，而不是 Demo 中最後一趟的設定。

@@ -11,8 +11,10 @@ db_url := env_var_or_default("DATABASE_URL", "postgres://" + pg_user + ":" + pg_
 run_dir := source_directory() / ".run"
 pid_file := run_dir / "server.pid"
 log_file := run_dir / "server.log"
+# Seconds `up` waits for /api/ping and `down` waits for the process to exit (graceful shutdown takes up to 5 s)
+wait_s := "15"
 
-# Build and launch the backend in the background
+# Build and launch the backend in the background; fails unless /api/ping answers
 up:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -21,13 +23,32 @@ up:
         echo "backend already running (pid $(cat "{{pid_file}}"))"
         exit 0
     fi
+    for host in 127.0.0.1 ::1; do
+        if (: </dev/tcp/$host/{{port}}) 2>/dev/null; then
+            echo "error: port {{port}} is already in use by another process (lsof -nP -iTCP:{{port}} -sTCP:LISTEN)" >&2
+            exit 1
+        fi
+    done
     mkdir -p "{{run_dir}}"
     go build -o "{{run_dir}}/server" ./cmd/server
     PORT={{port}} DEMO_RESET={{demo_reset}} nohup "{{run_dir}}/server" >"{{log_file}}" 2>&1 &
-    echo $! > "{{pid_file}}"
-    echo "backend started on :{{port}} (pid $!, log {{log_file}}, DEMO_RESET={{demo_reset}})"
+    pid=$!
+    echo $pid > "{{pid_file}}"
+    for _ in $(seq $(({{wait_s}} * 5))); do
+        if curl -sf http://localhost:{{port}}/api/ping >/dev/null; then
+            echo "backend started on :{{port}} (pid $pid, log {{log_file}}, DEMO_RESET={{demo_reset}})"
+            exit 0
+        fi
+        kill -0 $pid 2>/dev/null || break
+        sleep 0.2
+    done
+    echo "error: backend did not answer /api/ping on :{{port}}; last lines of {{log_file}}:" >&2
+    tail -n 20 "{{log_file}}" >&2
+    kill $pid 2>/dev/null || true
+    rm -f "{{pid_file}}"
+    exit 1
 
-# Stop the backend started by `up`
+# Stop the backend started by `up` and wait until it has exited
 down:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -36,13 +57,22 @@ down:
         exit 0
     fi
     pid=$(cat "{{pid_file}}")
-    if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid"
-        echo "backend stopped (pid $pid)"
-    else
+    if ! kill -0 "$pid" 2>/dev/null; then
         echo "backend not running (stale pid file)"
+        rm -f "{{pid_file}}"
+        exit 0
     fi
-    rm -f "{{pid_file}}"
+    kill "$pid"
+    for _ in $(seq $(({{wait_s}} * 5))); do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            rm -f "{{pid_file}}"
+            echo "backend stopped (pid $pid)"
+            exit 0
+        fi
+        sleep 0.2
+    done
+    echo "error: backend (pid $pid) did not exit within {{wait_s}} s; stop it with: kill -9 $pid" >&2
+    exit 1
 
 # Run the Go unit tests (needs `just infra up` and `db-apply`)
 test:
