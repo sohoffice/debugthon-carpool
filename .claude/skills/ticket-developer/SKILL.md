@@ -9,6 +9,7 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
 - [開發前準備](#開發前準備)
 - [實作](#實作)
 - [測試](#測試)
+- [與 main 同步](#與-main-同步)
 - [交付審查](#交付審查)
 - [處理審查意見](#處理審查意見)
 - [回報格式](#回報格式)
@@ -36,7 +37,10 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
 3. 讀開發環境：`DEV.md`（指令、資料庫、測試帳號、種子資料），以及變更所在目錄的 `CLAUDE.md`
    （`backend/CLAUDE.md`、`ui/CLAUDE.md`）。
 4. 看現況：`git status`，確認沒有他人未 commit 的變更會與你的工作重疊；有的話先問開發者。
-5. 請架構師檢查工作單：用 `SendMessage` 通知解決方案架構師 session，第一行寫明工作單與目的（如「T13 about to start」），
+5. 開分支：工作目錄乾淨時，`git fetch origin` 後 `git switch -c <分支> origin/main`，在開始修改前就切到自己的分支，
+   不要在 `main` 上累積未 commit 的變更。所有 session 共用同一個 checkout，`git switch` 會帶走工作目錄中的變更，
+   所以只有這一次切換分支，之後同步 `main` 也不切換（見〈[與 main 同步](#與-main-同步)〉）。
+6. 請架構師檢查工作單：用 `SendMessage` 通知解決方案架構師 session，第一行寫明工作單與目的（如「T13 about to start」），
    等架構師確認範圍與追溯一致後才開始實作。找不到架構師 session 時，先問開發者。
 
 ## 實作
@@ -60,9 +64,20 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
 - 交付前自己執行並確認全部通過：後端 `cd backend && go vet ./... && go test ./...`，
   API `just backend karate`，前端 `just ui test`。無法執行時說明原因，不要宣稱通過。
 
+## 與 main 同步
+
+- 方法：在自己的分支上 `git fetch origin && git merge origin/main`，不切換到 `main`；
+  已 push 的分支不要 rebase 或 force push。同步後重跑〈[測試](#測試)〉的全部指令。
+- 以下時機**必須**同步：
+  1. 依賴（blocked by）的工作單合併時。
+  2. 交付審查之前。
+  3. 審查者回報衝突，或 `gh pr view <編號> --json mergeable` 顯示 `CONFLICTING` 時。
+  4. 得知 `main` 合併了改到相同檔案、migration 或種子資料的 PR 時。
+- 解決衝突時改變了行為的，在回覆審查者時說明。
+
 ## 交付審查
 
-1. 依 `pull-request` skill 開 PR：從 `main` 開分支、commit、push、`gh pr create`，描述依該 skill 的段落撰寫。
+1. 先依〈[與 main 同步](#與-main-同步)〉同步，再依 `pull-request` skill 開 PR：commit、push、`gh pr create`，描述依該 skill 的段落撰寫。
    **不要**在 Slack 公告；公告由審查者在審查通過後張貼。
 2. 用 `ListAgents` 找審查 session。無法確定是哪一個（沒有、或有多個候選）時，先問開發者。
 3. 用 `SendMessage` 交給審查者，第一行寫明工作單、PR 與目的（如「T09 PR #30 ready for review」），內容包括：
@@ -81,6 +96,7 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
   - 往返兩輪仍無共識，就停止爭論，向開發者並列雙方立場與取捨，請開發者決定。
   - 開發者決定後，把結論告知審查者。
 - **涉及設計或需求文件的修改**：先請開發者同意，再動手。
+- **PR 無法合併（衝突）**：依〈[與 main 同步](#與-main-同步)〉同步、重跑測試、push，回覆審查者。
 - 審查通過後，審查者會在 Slack 公告並請開發者同意合併；不要自行合併。
 - 審查者回覆已合併並關閉工作單時，確認本機分支已刪除（`git branch`），向開發者回報。
 

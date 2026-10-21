@@ -20,7 +20,9 @@ description: 建立與合併 PR 的慣例——PR 描述的固定段落（摘要
 
 ## 建立 PR
 
-1. 從 `main` 開分支，commit 並 push（經開發者同意，或依〈[原則](#原則)〉視同同意）。
+1. 從最新的 `main` 開分支：先 `git status` 確認工作目錄乾淨（所有 session 共用同一個 checkout，`git switch` 會帶走他人未 commit 的變更；不乾淨時停下來問開發者），
+   再 `git fetch origin` 後 `git switch -c <分支> origin/main`。已在自己的分支上時略過這一步。
+   commit 並 push（經開發者同意，或依〈[原則](#原則)〉視同同意）。
 2. 以 `gh pr create --base main` 建立 PR，描述依〈[PR 描述](#pr-描述)〉的段落撰寫。
 3. 依〈[Slack 公告](#slack-公告)〉的時機張貼公告，再把公告連結補進 PR 描述最後（`Slack 公告：<連結>`），讓之後的 session 找得到要加 ✅ 的訊息。
 4. 之後補 commit 時，若摘要、變更內容或證據因此改變，更新 PR 描述（`gh pr edit`）；不另發 Slack 訊息。

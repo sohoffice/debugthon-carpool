@@ -71,6 +71,7 @@ description: 以審查者身分審查某張工作單（GitHub issue，如 T06A�
 實作 session 或架構師 session 開 PR 後用 `SendMessage` 交付審查；之後的修改都補 commit 到同一個 PR。
 
 1. 提交的 session 補 commit 後，重新審查新的變更（`gh pr diff <編號>`），直到所有審查項目（文件 PR 為〈[文件 PR 的審查項目](#文件-pr-的審查項目)〉）都通過。
+   PR 有衝突（`gh pr view <編號> --json mergeable` 為 `CONFLICTING`）時，用 `SendMessage` 請提交的 session 同步 `main`（`git merge origin/main`）後重新交付；不要自己解決衝突。
 2. **PR 通過且可以合併時**（`gh pr view <編號> --json mergeable,state`，無衝突且未合併）：
    1. 依 `pull-request` skill〈Slack 公告〉張貼公告，並把公告連結補進 PR 描述最後（`gh pr edit`）。
    2. 勾選有證據的驗收條件，然後停下來向開發者回報並請求同意合併 PR 並關閉工作單；文件 PR（含實作 PR 中架構師的文件 commit）要逐條列出修改的段落與最終文字，請開發者同意最終文字並合併，文件 PR 沒有工作單可關閉。開發者要求修改文字時，轉交架構師 session，修改後重新審查。
