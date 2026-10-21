@@ -87,13 +87,21 @@ function request(change: Partial<DriverRequestItem>): DriverRequestItem {
  */
 function fakeBackend(
   polls: DriverRequests[],
-  { defaults = LAST_DEPARTURE, departStatus = 201, route = ROUTE, ended = trip({ status: 'completed', completed_rides: 2 }), refusedPreviews = [] as number[] } = {},
+  {
+    defaults = LAST_DEPARTURE,
+    departStatus = 201,
+    route = ROUTE,
+    ended = trip({ status: 'completed', completed_rides: 2 }),
+    refusedPreviews = [] as number[],
+    autoAccept = false,
+  } = {},
 ) {
   const calls: { method: string; path: string; body: unknown }[] = []
   // Each preview is saved with a new id (T26); refusedPreviews are the ids a departure turns down.
   let previews = 0
   let index = 0
   let state: DriverRequests | null = null
+  let polled: DriverRequests | undefined
   // The caller's tag choice is kept like the backend keeps it (PUT/DELETE /api/me/tags/:id).
   let tagSelected = false
   const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
@@ -101,9 +109,10 @@ function fakeBackend(
     const method = init.method ?? 'GET'
     calls.push({ method, path, body: init.body ? JSON.parse(String(init.body)) : undefined })
     const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
-    if (path === '/driver/requests') return reply(state ?? polls[Math.min(index++, polls.length - 1)])
+    if (path === '/driver/requests') return reply((polled = state ?? polls[Math.min(index++, polls.length - 1)]))
     if (path === '/driver/trips/defaults') return reply(defaults)
-    if (path === '/trips/5') return reply(ended)
+    // Trip 5 while it runs, or how it ended once the driver's poll no longer has it.
+    if (path === '/trips/5') return reply(polled?.trip_id === 5 ? trip({ auto_accept: autoAccept }) : ended)
     if (path === '/pickup-points') return reply(PICKUP_POINTS)
     if (path === '/tags') return reply([{ id: 1, name: '不抽菸', issuer: 'self', selected: tagSelected }])
     if (path === '/me/tags/1' && (method === 'PUT' || method === 'DELETE')) {
@@ -314,6 +323,79 @@ describe('driver App', () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: '確認' }))
     expect(await screen.findByRole('heading', { name: /目前沒有/ })).toBeInTheDocument()
+  })
+
+  it('auto-accept confirms a waiting request with no tap, through the 確認 API (REQ-022, DD-33)', async () => {
+    const calls = fakeBackend([{ trip_id: 5, pending: [request({})], passengers: [] }], { autoAccept: true })
+    render(<App />)
+
+    const passengers = await screen.findByRole('region', { name: '乘客' })
+    expect(within(passengers).getByRole('button', { name: '瑞光路 513 巷的乘客已上車' })).toBeInTheDocument()
+    await nextPoll()
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.path)).toEqual(['/driver/requests/7/accept'])
+  })
+
+  it('without auto-accept a request waits for the driver to confirm or decline (REQ-021)', async () => {
+    const calls = fakeBackend([{ trip_id: 5, pending: [request({})], passengers: [] }])
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: '有乘客要搭車' })).toBeInTheDocument()
+    await nextPoll()
+    await nextPoll()
+    expect(calls.some((c) => c.path === '/trips/5')).toBe(true)
+    expect(calls.filter((c) => c.method === 'POST')).toEqual([])
+    expect(screen.getByRole('button', { name: '確認' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '婉拒' })).toBeEnabled()
+  })
+
+  it('an auto-accept answered elsewhere (409 not_waiting) shows no error and keeps polling (DD-33)', async () => {
+    const calls = fakeBackend([{ trip_id: 5, pending: [request({ id: 8 })], passengers: [] }, DRIVING], { autoAccept: true })
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: /目前沒有/ })).toBeInTheDocument()
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.path)).toEqual(['/driver/requests/8/accept'])
+    const polls = calls.filter((c) => c.path === '/driver/requests').length
+    await nextPoll()
+    expect(calls.filter((c) => c.path === '/driver/requests').length).toBeGreaterThan(polls)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(/無法連線|錯誤/)).not.toBeInTheDocument()
+  })
+
+  it('forgets an ended auto-accept trip: a later manual trip with the same id waits for the tap (DD-29, DD-33)', async () => {
+    // The mock backend numbers trips from the start again after a Demo reset: trip 5 auto-accepts,
+    // a reset ends it, and the next trip 5 does not.
+    let phase: 'auto' | 'reset' | 'manual' = 'auto'
+    const posts: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        const path = url.replace('/api', '')
+        const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+        if (init.method === 'POST') {
+          posts.push(path)
+          phase = 'reset'
+          return reply({ status: 'confirmed' })
+        }
+        if (path === '/driver/requests') {
+          if (phase === 'reset') {
+            phase = 'manual'
+            return reply(NO_TRIP)
+          }
+          return reply({ trip_id: 5, pending: [request({ id: phase === 'auto' ? 7 : 8 })], passengers: [] })
+        }
+        if (path === '/trips/5') return reply(trip({ auto_accept: phase === 'auto' }))
+        return reply({ error: { code: 'not_found', message: '' } }, 404)
+      }),
+    )
+    render(<App />)
+
+    await waitFor(() => expect(posts).toEqual(['/driver/requests/7/accept']))
+    await nextPoll()
+    await nextPoll()
+    expect(await screen.findByRole('heading', { name: '有乘客要搭車' })).toBeInTheDocument()
+    await nextPoll()
+    expect(posts).toEqual(['/driver/requests/7/accept'])
+    expect(screen.getByRole('button', { name: '確認' })).toBeEnabled()
   })
 
   it('shows the running trip when it was already started elsewhere (409 already_active)', async () => {

@@ -38,15 +38,13 @@ function assignFrom(world: World, lookups: Lookups, requestId: number, from: num
     return updateRequest(world, requestId, (r) => ({ ...r, status: 'no_match', candidateIndex: r.candidates.length, deadlineMs: null }))
   }
   const trip = findTrip(world, request.candidates[index].tripId)!
-  const status = trip.autoAccept ? 'confirmed' : 'waiting_driver'
-  const held = moveSeat(world, trip.id, null, trip.autoAccept ? 'confirmed' : 'held')
-  const linked = trip.autoAccept ? linkActivity(held, request.passengerId, trip.id) : held
-  return updateRequest(linked, requestId, (r) => ({
+  // Even an auto-accept trip waits: the driver UI or the simulator sends the confirm (DD-33).
+  const held = moveSeat(world, trip.id, null, 'held')
+  return updateRequest(held, requestId, (r) => ({
     ...r,
-    status,
+    status: 'waiting_driver',
     candidateIndex: index,
-    deadlineMs: trip.autoAccept ? null : now + confirmTimeoutMs(world, lookups),
-    confirmedAtMs: trip.autoAccept ? now : null,
+    deadlineMs: now + confirmTimeoutMs(world, lookups),
   }))
 }
 
@@ -225,7 +223,7 @@ export interface Submission {
 }
 
 /**
- * Decides at once: rejected, no_match, waiting_driver or confirmed (REQ-034, REQ-036). Like the
+ * Decides at once: rejected, no_match or waiting_driver (REQ-034, REQ-036, DD-33). Like the
  * Go backend it does not refuse a second open request; the UI does (REQ-069).
  */
 export function submitRequest(world: World, lookups: Lookups, passengerId: number, submission: Submission, now: number): World {

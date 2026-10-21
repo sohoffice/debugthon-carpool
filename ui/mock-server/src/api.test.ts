@@ -208,12 +208,35 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     expect(call('GET', `/api/passenger/requests/${id}`, 'Bearer passenger:passenger2')).toMatchObject({ status: 404, body: { error: { code: 'not_found' } } })
   })
 
-  it('reassign: the driver times out and a simulated car auto-accepts', () => {
+  it('auto-accept: the request still waits until the client confirms (DD-33)', () => {
+    call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, auto_accept: true })
+    const { id, status } = submit()
+    expect(status).toBe('waiting_driver')
+    expect(statusOf(id)).toMatchObject({ status: 'waiting_driver', vehicle: null })
+    expect(driverRequests()).toMatchObject({ pending: [expect.objectContaining({ id })], passengers: [] })
+
+    // The driver UI sends the same confirm as the 確認 button; a second one is 409 not_waiting.
+    expect(json<RequestView>('POST', `/api/driver/requests/${id}/accept`, DRIVER)).toMatchObject({ id, status: 'confirmed' })
+    expect(call('POST', `/api/driver/requests/${id}/accept`, DRIVER)).toMatchObject({ status: 409, body: { error: { code: 'not_waiting' } } })
+    expect(statusOf(id)).toMatchObject({ status: 'confirmed', vehicle: { plate: 'DEF-4567' } })
+  })
+
+  it('reassign: the driver times out; the simulated car waits for the simulator to confirm (DD-14, DD-33)', () => {
     scenario('reassign')
     call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
     const { id } = submit()
     advance(16)
     expect(driverRequests().pending).toEqual([])
+    const reassigned = statusOf(id)
+    expect(reassigned).toMatchObject({ status: 'waiting_driver', reassigned_count: 1 })
+
+    // The seeded trip auto-accepts, but only once its account confirms, as the simulator does.
+    const simulated = ['driver1', 'driver2', 'driver3']
+      .map((name) => `Bearer driver:${name}`)
+      .find((auth) => json<DriverRequests>('GET', '/api/driver/requests', auth).trip_id === reassigned.trip_id)!
+    expect(json<TripView>('GET', '/api/driver/trips/current', simulated).auto_accept).toBe(true)
+    expect(json<DriverRequests>('GET', '/api/driver/requests', simulated).pending).toEqual([expect.objectContaining({ id })])
+    call('POST', `/api/driver/requests/${id}/accept`, simulated)
     expect(statusOf(id)).toMatchObject({ status: 'confirmed', reassigned_count: 1 })
   })
 

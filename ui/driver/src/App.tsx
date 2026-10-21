@@ -7,6 +7,7 @@ import { LoadingScreen } from './LoadingScreen'
 import { TripEndedScreen } from './TripEndedScreen'
 import { TripIdleScreen } from './TripIdleScreen'
 import { TripRequestScreen } from './TripRequestScreen'
+import { useAutoAccept } from './useAutoAccept'
 
 const fetchRequests = () => api.get<DriverRequests>('/driver/requests')
 
@@ -28,18 +29,22 @@ export function App() {
     }
   }, [tripId, runningId])
 
-  async function act(path: string) {
+  /** False when the call failed; a 409 counts as done. */
+  async function act(path: string): Promise<boolean> {
     setBusy(true)
     try {
       await api.post(path)
     } catch (err) {
       // 409 not_waiting / invalid_state: answered elsewhere or timed out; the refresh shows the outcome.
-      if (!(err instanceof ApiError && err.status === 409)) return
+      if (!(err instanceof ApiError && err.status === 409)) return false
     } finally {
       setBusy(false)
     }
     polling.mutate(await fetchRequests().catch(() => polling.data!))
+    return true
   }
+
+  useAutoAccept(polling.data, (id) => act(`/driver/requests/${id}/accept`))
 
   const offline = polling.error !== undefined
   let tone: StatusBarTone = 'light'

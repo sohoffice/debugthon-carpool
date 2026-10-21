@@ -1,5 +1,6 @@
-import { ApiError, createApiClient, type ApiClient, type TripView } from '@carpool/shared'
+import { ApiError, createApiClient, type ApiClient, type DriverRequests, type TripView } from '@carpool/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { POLL_INTERVAL_MS } from './config'
 import { distanceTravelled, makePath, pointAt, reportDistances, type SimPath } from './simulatorPath'
 import { SIMULATOR_ROUTES } from './simulatorRoutes'
 
@@ -20,6 +21,8 @@ interface Track {
   startedAt: number
   /** Metres along the path last reported; -1 before the first report. */
   reported: number
+  autoAccept: boolean
+  requestsCheckedAt: number
 }
 
 interface Driver {
@@ -31,9 +34,28 @@ interface Driver {
 export const SIMULATED_ACCOUNTS = Object.keys(SIMULATOR_ROUTES)
 
 /**
+ * The SQL-seeded simulated trips. Nobody drives them from the driver UI, so the simulator confirms
+ * their requests when they auto-accept (DD-14, DD-33). driver4 and driver5 depart from the driver
+ * UI, which confirms by itself; confirming for them too would send every confirm twice.
+ */
+export const SEEDED_TRIP_ACCOUNTS = ['driver1', 'driver2', 'driver3']
+
+/** Confirms every request waiting for this driver, like the 確認 button. */
+async function confirmPending(api: ApiClient) {
+  const { pending } = await api.get<DriverRequests>('/driver/requests')
+  for (const request of pending) {
+    await api.post(`/driver/requests/${request.id}/accept`).catch((err) => {
+      // 409 not_waiting: timed out or answered in the meantime.
+      if (!(err instanceof ApiError && err.status === 409)) throw err
+    })
+  }
+}
+
+/**
  * The simulator (DD-14, T08): while running, each selected driver with a running trip moves along
  * its predefined path at its speed and reports positions through the public location API. Position
  * comes from elapsed time, so a throttled background tab catches up instead of falling behind.
+ * For the seeded trips it also confirms requests when the trip auto-accepts (DD-33).
  * Nothing is saved: after a reload it starts again from the beginning of each path.
  */
 export function useSimulator(accounts: string[], running: boolean): Record<string, SimulatorStatus> {
@@ -73,14 +95,22 @@ export function useSimulator(accounts: string[], running: boolean): Record<strin
           throw err
         })
         if (!trip) {
-          tracks.current[name] = { tripId: null, checkedAt: now, startedAt: now, reported: -1 }
+          tracks.current[name] = { tripId: null, checkedAt: now, startedAt: now, reported: -1, autoAccept: false, requestsCheckedAt: 0 }
           return setStatus(name, { kind: 'no_trip' })
         }
         // A new trip starts again from the beginning of the path.
-        track = trip.id === track?.tripId ? { ...track, checkedAt: now } : { tripId: trip.id, checkedAt: now, startedAt: now, reported: -1 }
+        track =
+          trip.id === track?.tripId
+            ? { ...track, checkedAt: now, autoAccept: trip.auto_accept }
+            : { tripId: trip.id, checkedAt: now, startedAt: now, reported: -1, autoAccept: trip.auto_accept, requestsCheckedAt: 0 }
         tracks.current[name] = track
       }
       if (track.tripId === null) return
+      if (track.autoAccept && SEEDED_TRIP_ACCOUNTS.includes(name) && now - track.requestsCheckedAt >= POLL_INTERVAL_MS) {
+        track = { ...track, requestsCheckedAt: now }
+        tracks.current[name] = track
+        await confirmPending(driver.api)
+      }
       if (track.reported >= driver.path.length) return setStatus(name, { kind: 'arrived' })
 
       const along = distanceTravelled(driver.speedKmh, track.startedAt, now, driver.path.length)
