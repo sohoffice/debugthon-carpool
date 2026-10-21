@@ -37,8 +37,9 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
 3. 讀開發環境：`DEV.md`（指令、資料庫、測試帳號、種子資料），以及變更所在目錄的 `CLAUDE.md`
    （`backend/CLAUDE.md`、`ui/CLAUDE.md`）。
 4. 看現況：`git status`，確認沒有他人未 commit 的變更會與你的工作重疊；有的話先問開發者。
-5. 開分支：工作目錄乾淨時，`git fetch origin` 後 `git switch -c <分支> origin/main`，在開始修改前就切到自己的分支，
-   不要在 `main` 上累積未 commit 的變更。所有 session 共用同一個 checkout，`git switch` 會帶走工作目錄中的變更，
+5. 開分支：開分支前以 `git branch --show-current` 確認目前在 `main`；在其他分支時（可能是其他 session 正在開發）先問開發者。
+   工作目錄乾淨時，`git fetch origin` 後 `git switch -c <分支> origin/main`，在開始修改前就切到自己的分支，
+   不要在 `main` 上累積未 commit 的變更；不乾淨時先問開發者。所有 session 共用同一個 checkout，`git switch` 會帶走工作目錄中的變更，
    所以只有這一次切換分支，之後同步 `main` 也不切換（見〈[與 main 同步](#與-main-同步)〉）。
 6. 請架構師檢查工作單：用 `SendMessage` 通知解決方案架構師 session，第一行寫明工作單與目的（如「T13 about to start」），
    等架構師確認範圍與追溯一致後才開始實作。找不到架構師 session 時，先問開發者。
@@ -66,6 +67,7 @@ description: 以開發者身分實作某張工作單（GitHub issue，如 T09）
 
 ## 與 main 同步
 
+- 每次同步與 commit 前，先以 `git branch --show-current` 確認仍在自己的分支；不在時停下來問開發者，不要自行切回。
 - 方法：在自己的分支上 `git fetch origin && git merge origin/main`，不切換到 `main`；
   已 push 的分支不要 rebase 或 force push。同步後重跑〈[測試](#測試)〉的全部指令。
 - 以下時機**必須**同步：

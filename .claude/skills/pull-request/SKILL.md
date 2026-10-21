@@ -69,6 +69,7 @@ PR 描述以繁體中文撰寫，依序包含以下段落：
 4. 刪除該 PR 的本機分支（PR 合併後一定要做，不論是誰合併的）：
    1. 以 `gh pr view <編號> --json headRefName -q .headRefName` 取得分支名稱。
    2. 先 `git status` 確認工作目錄乾淨；有未 commit 的變更時（可能是其他 session 共用這個 checkout），停下來問開發者。
-      乾淨才 `git switch main` 後 `git pull --ff-only`，讓本機 `main` 包含合併結果。
+      目前分支（`git branch --show-current`）就是該 PR 的分支時，才 `git switch main` 後 `git pull --ff-only`；
+      目前在其他分支（可能是其他 session 正在開發）時不切換，改用 `git fetch origin main:main` 更新本機 `main`。
    3. `git branch -d <分支>`；若因 squash 或 rebase 合併而被拒，確認 PR 狀態為 `MERGED` 後改用 `git branch -D <分支>`。
    4. 以 `git branch` 確認分支已不存在。
