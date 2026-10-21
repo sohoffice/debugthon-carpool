@@ -4,6 +4,7 @@ import { useFakeGoogleMaps } from '../fakeGoogleMaps'
 
 export const API = `http://localhost:${E2E_GO_PORTS.backend}/api`
 export const DRIVER4 = { Authorization: 'Bearer driver:driver4' }
+export const DRIVER5 = { Authorization: 'Bearer driver:driver5' }
 /** Only the people on stage pick it as their own tag: required, it sends the request to driver4. */
 export const STAGE_TAG = '可帶寵物'
 
@@ -14,19 +15,21 @@ export const PASSENGER_URL = appUrl(E2E_GO_PORTS.passenger, 'passenger1')
 export const driverPlacesUrl = (account: string) => appUrl(E2E_GO_PORTS.driverPlaces, account)
 export const passengerPlacesUrl = (account: string) => appUrl(E2E_GO_PORTS.passengerPlaces, account)
 
-async function stageTagId(request: APIRequestContext): Promise<number> {
+export async function stageTagId(request: APIRequestContext): Promise<number> {
   const tags: { id: number; name: string }[] = await (await request.get(`${API}/tags`, { headers: DRIVER4 })).json()
   return tags.find((t) => t.name === STAGE_TAG)!.id
 }
 
 /**
  * Back to the Demo's start (DD-29). The reset keeps the tags people chose themselves, so driver4's
- * stage tag is dropped here too: nothing a test did is left for the next one. The reset also puts
- * driver4's trip settings back, auto-accept off included (DD-19).
+ * stage tag is dropped here too, and driver5's, which a test may have picked as the second car:
+ * nothing a test did is left for the next one. The reset also puts driver4's trip settings back,
+ * auto-accept off included (DD-19), and cancels any trip still open.
  */
 export async function resetDemo(request: APIRequestContext) {
   expect((await request.post(`${API}/demo/reset`)).status()).toBe(204)
-  expect((await request.delete(`${API}/me/tags/${await stageTagId(request)}`, { headers: DRIVER4 })).ok()).toBe(true)
+  const tagId = await stageTagId(request)
+  for (const headers of [DRIVER4, DRIVER5]) expect((await request.delete(`${API}/me/tags/${tagId}`, { headers })).ok()).toBe(true)
 }
 
 /** The simulator's part (DD-14): driver4 reports that it is coming up to 松山車站 from the south. */
@@ -67,4 +70,28 @@ export async function requestWithStageTagRequired(passenger: Page) {
   await passenger.getByRole('button', { name: '今天我要搭' }).click()
   await passenger.getByRole('radiogroup', { name: `${STAGE_TAG}的篩選` }).getByRole('radio', { name: '強制' }).click()
   await passenger.getByRole('button', { name: '送出請求' }).click()
+}
+
+/**
+ * driver5 as the second car, sent off through the API: the Demo reset cannot make driver5 a
+ * first-time driver again (trips are kept, DD-06), so its departure screen differs from run to run.
+ * It has the stage tag and auto-accept off, goes the same way as driver4, and reports a position
+ * farther from 松山車站 than driver4's, so driver4 ranks first and driver5 second.
+ */
+export async function departDriver5Behind(request: APIRequestContext) {
+  const pickups: { id: number; name: string }[] = await (await request.get(`${API}/pickup-points`, { headers: DRIVER5 })).json()
+  const pickup = pickups.find((p) => p.name === '松山車站')!
+  const destination = { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }
+  const preview = await request.post(`${API}/driver/route-preview`, {
+    headers: DRIVER5,
+    data: { pickup_point_id: pickup.id, destination: { lat: destination.lat, lng: destination.lng } },
+  })
+  expect(preview.status()).toBe(200)
+  const { preview_id } = await preview.json()
+  expect((await request.put(`${API}/me/tags/${await stageTagId(request)}`, { headers: DRIVER5 })).status()).toBe(204)
+  const trip = { pickup_point_id: pickup.id, destination, capacity: 3, auto_accept: false, preview_id }
+  expect((await request.post(`${API}/driver/trips`, { headers: DRIVER5, data: trip })).status()).toBe(201)
+  for (const lat of [25.0435, 25.0445]) {
+    expect((await request.post(`${API}/location`, { headers: DRIVER5, data: { lat, lng: 121.5779 } })).status()).toBe(201)
+  }
 }
