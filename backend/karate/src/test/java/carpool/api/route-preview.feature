@@ -14,6 +14,7 @@ Feature: route preview (POST /api/driver/route-preview)
     * configure headers = { Authorization: '#("Bearer driver:" + user)' }
     * path 'api', 'pickup-points'
     * method get
+    * def pickups = response
     * def pickup = response[0]
     * def inPark = { name: '瑞光路 內科大樓 A', lat: 25.0768, lng: 121.5738 }
     * def preview = function() { return karate.call('classpath:carpool/api/post-preview.feature', { user: user, pickupId: pickup.id, dest: inPark }).response }
@@ -74,7 +75,6 @@ Feature: route preview (POST /api/driver/route-preview)
     * def previewed = preview()
     * def other = 'karate-trip-other-' + suffix
     * Db.exec('INSERT INTO users (username, display_name, is_driver) VALUES (?, ?, true)', other, other)
-    * def pickups = karate.call('classpath:carpool/api/get-pickups.feature').response
     * def otherPickup = pickups.filter(function(p) { return p.id != pickup.id })[0]
     * def id = <id>
     * def who = <who>

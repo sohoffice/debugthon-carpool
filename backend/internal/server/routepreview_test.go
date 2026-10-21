@@ -222,7 +222,7 @@ func TestFailedDepartureLeavesThePreviewUnused(t *testing.T) {
 func TestDepartRefusesAnInvalidPreview(t *testing.T) {
 	tx := testTx(t)
 	driverID, token := newUser(t, tx, roleDriver)
-	_, other := newUser(t, tx, roleDriver)
+	otherID, other := newUser(t, tx, roleDriver)
 	var pickups []int64
 	rows, err := tx.Query(context.Background(), `SELECT id FROM pickup_points ORDER BY id LIMIT 2`)
 	if err != nil {
@@ -246,22 +246,23 @@ func TestDepartRefusesAnInvalidPreview(t *testing.T) {
 	cases := []struct {
 		name   string
 		token  string
+		caller int64
 		pickup int64
 		dest   string
 		id     int64
 	}{
-		{"unknown id", token, pickups[0], inPark2, p.PreviewID + 100000},
-		{"another driver's", other, pickups[0], inPark2, p.PreviewID},
-		{"other pickup point", token, pickups[1], inPark2, p.PreviewID},
-		{"other destination latitude", token, pickups[0], `{"name":"x","lat":25.0769,"lng":121.5738}`, p.PreviewID},
-		{"other destination longitude", token, pickups[0], `{"name":"x","lat":25.0768,"lng":121.5739}`, p.PreviewID},
+		{"unknown id", token, driverID, pickups[0], inPark2, p.PreviewID + 100000},
+		{"another driver's", other, otherID, pickups[0], inPark2, p.PreviewID},
+		{"other pickup point", token, driverID, pickups[1], inPark2, p.PreviewID},
+		{"other destination latitude", token, driverID, pickups[0], `{"name":"x","lat":25.0769,"lng":121.5738}`, p.PreviewID},
+		{"other destination longitude", token, driverID, pickups[0], `{"name":"x","lat":25.0768,"lng":121.5739}`, p.PreviewID},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			before := countTrips(t, tx, driverID)
+			before := countTrips(t, tx, tc.caller)
 			w := do(http.MethodPost, "/api/driver/trips", tc.token, departJSON(tc.pickup, tc.dest, withPreview(tc.id)))
 			wantStatus(t, w, http.StatusBadRequest, "invalid_route_preview")
-			if countTrips(t, tx, driverID) != before {
+			if countTrips(t, tx, tc.caller) != before || countTrips(t, tx, driverID) != 0 {
 				t.Fatal("a trip was created")
 			}
 			if previewUsed(t, tx, p.PreviewID) {
