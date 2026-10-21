@@ -4,7 +4,7 @@ import { driverPlacesUrl, openWithFakePlaces, passengerPlacesUrl, resetDemo } fr
 
 // passenger2 has no habitual data, so it starts with no destination. The driver test starts from driver4's
 // prefilled departure, which the Demo reset restores (DD-19): no driver can be a first-time driver again
-// once it has departed (trips are kept, DD-06), and the reassign test departs driver5. With a destination
+// once it has departed (the reset keeps trips and the prefill comes from the latest one, DD-19, DD-29), and the reassign test departs driver5. With a destination
 // already set, an outside place is refused and the set destination stays, so the departure button stays
 // on; the first-time driver who has no destination, where 「我出發了」 is disabled, is covered by the mock e2e.
 const OUTSIDE_NOTE = `${OUTSIDE_PARK.name}不在內湖科學園區內，請換一個地點。`

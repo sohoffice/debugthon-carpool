@@ -74,7 +74,7 @@ export async function requestWithStageTagRequired(passenger: Page) {
 
 /**
  * driver5 as the second car, sent off through the API: the Demo reset cannot make driver5 a
- * first-time driver again (trips are kept, DD-06), so its departure screen differs from run to run.
+ * first-time driver again (the reset keeps trips and the prefill comes from the latest one, DD-19, DD-29), so its departure screen differs from run to run.
  * It has the stage tag and auto-accept off, goes the same way as driver4, and reports a position
  * farther from 松山車站 than driver4's, so driver4 ranks first and driver5 second.
  */
