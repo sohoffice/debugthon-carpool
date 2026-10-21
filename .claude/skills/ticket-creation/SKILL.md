@@ -1,6 +1,6 @@
 ---
 name: ticket-creation
-description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——編號與標題、描述的固定格式（標頭列、範圍、驗收條件、追溯）、以 GitHub 原生「blocked by」連結建立依賴、拆分成子工作單，以及加入專案看板並設定尺寸與狀態。內容須先經開發者同意才建立。當使用者要求新增、拆分工作單，或需求與設計變更後要補工作單時使用；修改既有工作單的範圍、依賴或追溯時也適用。
+description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——編號與標題、描述的固定格式（標頭列、範圍、驗收條件、追溯）、以 GitHub 原生「blocked by」連結建立依賴、拆分成子工作單，以及加入專案看板並設定尺寸、狀態、類別與標籤。內容須先經開發者同意才建立。當使用者要求新增、拆分工作單，或需求與設計變更後要補工作單時使用；修改既有工作單的範圍、依賴或追溯時也適用。
 ---
 
 # 建立工作單
@@ -13,6 +13,7 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
   - [範圍](#範圍)
   - [驗收條件](#驗收條件)
   - [追溯](#追溯)
+- [類別與標籤](#類別與標籤)
 - [拆分工作單](#拆分工作單)
 - [建立步驟](#建立步驟)
 - [驗證](#驗證)
@@ -25,7 +26,8 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
 
 - 新增工作單、修改既有工作單的內容（範圍、驗收條件、依賴、尺寸、追溯），**必須**先把完整的標題與描述交給開發者，
   取得同意後才能執行 `gh issue create`、`gh issue edit`。
-- 建立時一併完成看板與依賴（見〈[建立步驟](#建立步驟)〉）；這兩項屬於建立工作單的一部分，不必另外再問。
+- 類別與標籤要和標題、描述一起交給開發者同意。
+- 建立時一併完成看板、標籤與依賴（見〈[建立步驟](#建立步驟)〉）；這些屬於建立工作單的一部分，不必另外再問。
 - 不勾選驗收條件、不關閉或重新開啟工作單、不指派負責人；這些由審查者與開發者負責。
 
 ## 編號與標題
@@ -99,6 +101,31 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
 - 至少一條 `REQ-xxx` 或 `DD-xx`；每個編號都要存在於 `docs/requirement.md` 或 `docs/design.md`，不引用已撤回的條目。
 - 範圍與追溯要互相對得上：範圍做了卻沒追溯，或追溯了卻不在範圍內，都要修正。
 
+## 類別與標籤
+
+每張工作單在看板的 `Category` 欄位設定一個類別，並在 issue 上加標籤。兩者都不寫進描述。
+
+| 類別 | 用於 |
+|---|---|
+| `Feature` | 實作需求所述的系統行為，使用者可經介面或 API 觀察到（包括只在後端的規則，例如媒合條件） |
+| `Enabler` | 讓功能得以實作或驗證的基礎建設、內部元件、測試與 Demo 工具（例如資料庫結構、外部來源的轉接器、e2e 測試）；追溯的需求只是間接支持 |
+| `Tech Debt` | 改善既有程式碼或測試，不改變行為，例如重新命名、重構 |
+| `Bug` | 修正與需求或設計不符的行為 |
+
+標籤依範圍會修改的位置加上，可以多個：
+
+| 標籤 | 範圍會修改 |
+|---|---|
+| `backend` | `backend/`（Go 程式碼、遷移、Karate） |
+| `ui/passenger` | `ui/passenger/`；`ui/shared/` 的修改影響乘客介面時也加 |
+| `ui/driver` | `ui/driver/`；`ui/shared/` 的修改影響駕駛介面時也加 |
+| `docs` | 只修改文件（`docs/`、`DEV.md`、`README`）；程式碼工作單順帶更新文件時不加 |
+
+- 只使用上表四個標籤；類別只記在看板的 `Category`，不用 `bug`、`enhancement`、`documentation` 標籤。
+- `ui/e2e/`、`ui/showcase/`、`ui/mock-server/` 不對應任何標籤；範圍只修改這些位置時不加標籤。
+- 沒有修改任何檔案的工作單（例如 Demo 預演）不加標籤。
+- 父工作單：所有子工作單的類別相同時才設定，不同時不設；標籤取子工作單標籤的聯集，不受 `docs` 的限制。
+
 ## 拆分工作單
 
 工作單太大，或其中一部分可以先開始時拆分：
@@ -117,7 +144,7 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
 
 標題與描述經開發者同意後，依序執行（`gh` 都以 `--repo sohoffice/debugthon-carpool` 指定 repo）：
 
-1. **建立 issue**：`gh issue create --title "Txx 名稱" --body-file <檔案>`，把描述先寫到暫存檔，避免 shell 跳脫問題。
+1. **建立 issue**：`gh issue create --title "Txx 名稱" --body-file <檔案> --label <標籤>`（多個標籤重複 `--label`），把描述先寫到暫存檔，避免 shell 跳脫問題。
 2. **建立依賴**：對標頭列的每一個依賴，建立原生「blocked by」連結：
 
    ```bash
@@ -127,22 +154,26 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
    ```
 
    拆分時，另以 `addSubIssue(input:{issueId:<父>, subIssueId:<子>})` 建立 sub-issue 連結。
-3. **加入看板**：加入專案 5，Status 設為 `Todo`，Size 設為標頭列的尺寸（父工作單不設 Size）：
+3. **加入看板**：加入專案 5，Status 設為 `Todo`，Size 設為標頭列的尺寸（父工作單不設 Size），Category 設為同意的類別：
 
    ```bash
    item=$(gh project item-add 5 --owner sohoffice --url <issue 網址> --format json -q .id)
-   gh project field-list 5 --owner sohoffice --format json   # Status、Size 欄位與選項的 ID
+   gh project field-list 5 --owner sohoffice --format json   # Status、Size、Category 欄位與選項的 ID
    gh project item-edit --id $item --project-id <專案 ID> --field-id <欄位 ID> --single-select-option-id <選項 ID>
    ```
 
 4. **更新相關工作單**：新工作單成為其他工作單的依賴時（例如 T20 是 T15、T16 的依賴），一併修改那些工作單的標頭列並建立「blocked by」連結；
    這屬於修改既有工作單的內容，要和新工作單一起提給開發者同意。
 
+修改既有工作單時，若範圍的改變使修改的位置或類別跟著改變，標籤以 `gh issue edit <編號> --add-label <標籤>`、`--remove-label <標籤>` 調整，
+類別以 `gh project item-edit` 調整；調整後的類別與標籤和描述一起提給開發者同意。
+
 ## 驗證
 
 建立或修改後，只檢查這次建立或修改的工作單；不回頭修正其他舊工作單，發現舊工作單的不一致也不提出修改。逐項確認：
 
-- 看板上有這張工作單，Status 與 Size 正確：`gh project item-list 5 --owner sohoffice --limit 200 --format json`。
+- issue 的標籤正確：`gh issue view <編號> --json labels`。
+- 看板上有這張工作單，Status、Size 與 Category 正確：`gh project item-list 5 --owner sohoffice --limit 200 --format json`。
 - 標頭列的依賴（父工作單則為子工作單）和原生連結一致；下列指令列出所有不一致的工作單，只看這次經手的編號：
 
   ```bash
@@ -158,6 +189,6 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
 
 ## 回報格式
 
-- 建立或修改的工作單：編號、標題、尺寸、依賴，附連結。
+- 建立或修改的工作單：編號、標題、尺寸、類別、標籤、依賴，附連結。
 - 看板與依賴連結的驗證結果。
 - 一併修改的其他工作單，以及仍待開發者同意的事項。
