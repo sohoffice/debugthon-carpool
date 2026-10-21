@@ -101,6 +101,12 @@ export function parseSeed(sql: SeedSql): Seed {
       { plate: String(plate), description: String(description) },
     ]),
   )
+  // Later migrations may renumber plates; the last UPDATE per driver wins.
+  for (const [, plate, username] of sql.migrationsUp.matchAll(
+    /UPDATE vehicles SET plate = '([^']+)' WHERE user_id = \(SELECT id FROM users WHERE username = '([^']+)'\)/g,
+  )) {
+    if (vehicles[username]) vehicles[username].plate = plate
+  }
   const settings = Object.fromEntries(
     [...valuesAfter(sql.schema, 'INSERT INTO system_settings', ';'), ...valuesAfter(sql.passMargin, 'INSERT INTO system_settings', ';')].map(
       ([key, value]) => [String(key), Number(value)],

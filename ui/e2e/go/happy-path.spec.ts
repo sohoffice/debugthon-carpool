@@ -3,7 +3,7 @@ import { driveTowardsPickup, openApps, PASSENGER_URL, pickStageTag, requestWithS
 
 /** passenger1 rides to its usual destination (DD-19). */
 const DROPOFF = '瑞光路 513 巷'
-const DRIVER4_VEHICLE = { plate: 'DEF-4567', description: '藍色 Mazda 3' }
+const DRIVER4_VEHICLE = { plate: 'ABC-0004', description: '藍色 Mazda 3' }
 
 test.beforeEach(async ({ request }) => resetDemo(request))
 test.afterEach(async ({ request }) => resetDemo(request))

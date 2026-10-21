@@ -21,7 +21,7 @@ const STOP = { id: 9, stop_id: 1013, name: '瑞光港墘路口', lat: 25.077753,
 const PROFILE: PassengerProfile = { usual_arrival_time: '08:15', usual_destination: DESTINATION, accepted_stops: [STOP] }
 const NO_PROFILE: PassengerProfile = { usual_arrival_time: null, usual_destination: null, accepted_stops: [] }
 const ROUTE = { polyline: '', distance_m: 4000, duration_s: 900, simulated: true, bus_stops: [STOP] }
-const VEHICLE = { plate: 'DEF-4567', description: '藍色 Mazda 3' }
+const VEHICLE = { plate: 'ABC-0004', description: '藍色 Mazda 3' }
 
 const TRIP: TripView = {
   id: 4,
@@ -211,13 +211,13 @@ describe('passenger App', () => {
     await nextPoll()
     expect(await screen.findByText('配到車了')).toBeInTheDocument()
     expect(screen.getByText('分鐘後到')).toBeInTheDocument()
-    expect(screen.getByText('DEF-4567 3 分鐘後到松山車站')).toBeInTheDocument()
+    expect(screen.getByText('ABC-0004 3 分鐘後到松山車站')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '我已上車' }))
     expect(await screen.findByRole('heading', { name: `在${STOP.name}下車` })).toBeInTheDocument()
     expect(screen.queryByText('分鐘後到')).not.toBeInTheDocument()
     // The status no longer carries the car after boarding (DD-27); the screen kept it.
-    expect(screen.getByText('DEF-4567')).toBeInTheDocument()
+    expect(screen.getByText('ABC-0004')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '我已下車，結束共乘' }))
     expect(await screen.findByRole('heading', { name: '共乘完成' })).toBeInTheDocument()
