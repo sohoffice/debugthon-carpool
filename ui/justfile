@@ -63,3 +63,7 @@ test:
 # Run the UI end-to-end tests (Playwright) on their own mock backend and apps (T18B)
 e2e:
     cd "{{source_directory()}}" && npx playwright install chromium && npx playwright test
+
+# Run the UI end-to-end tests on the Go backend with a database of its own (T18B; needs `just infra up`)
+e2e-go:
+    cd "{{source_directory()}}" && npx playwright install chromium && npx playwright test -c playwright.go.config.ts
