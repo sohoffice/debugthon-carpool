@@ -29,7 +29,8 @@ demo-check:
         failed=1
     else
         for key in MAP_API_KEY VITE_GOOGLE_MAPS_API_KEY; do
-            grep -q "^$key=." .env || echo "warning: $key is empty in .env; the demo falls back to $([ $key = MAP_API_KEY ] && echo 'simulated routes' || echo 'no map')" >&2
+            # Same forms godotenv reads: an optional `export `, and quotes around an empty value
+            grep -Eq "^(export )?$key=[^\"' ]|^(export )?$key=([\"'])[^\"']" .env || echo "warning: $key is empty in .env; the demo falls back to $([ $key = MAP_API_KEY ] && echo 'simulated routes' || echo 'no map')" >&2
         done
     fi
     for port in {{ui_ports}}; do

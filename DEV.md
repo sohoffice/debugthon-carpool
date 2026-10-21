@@ -25,7 +25,7 @@
 - [Go](https://go.dev/) 1.27.2
 - [just](https://github.com/casey/just) 1.31 以上（需支援 `mod`）
 - Docker（用於 `docker-compose.yml` 中的 PostgreSQL）
-- [Node.js](https://nodejs.org/) 22.18 以上：Vite 8 需要 20.19／22.12 以上，而 `just demo-offstage` 與示範後端直接執行 `.ts` 檔，需要 Node 原生支援 TypeScript（22.18 起）
+- [Node.js](https://nodejs.org/) 22（22.18 以上）、24 或 26 以上：`just demo-offstage` 與示範後端直接執行 `.ts` 檔，需要 Node 原生支援 TypeScript（22.18、23.6 起）；Vitest 只支援 22.12 以上的 22、24 與 26 以上，不含 23、25
 
 ## Just 指令
 
@@ -103,7 +103,7 @@
 - 示範後端（`ui/mock-server/`）是只用 Node 內建模組的小程式，狀態放在記憶體裡，重啟就回到初始狀態。帳號、上車點、公車站、標籤與模擬行程直接讀 `backend/migrations/` 的種子 SQL，和 Go 後端一致。做法見 `docs/ui-design.md` 10.2。
 - 以網址參數切換 Demo 帳號，例如 `http://localhost:5173/?account=driver2`。
 - 除錯模式（Demo 工具）加上 `?debug=1`，畫面左緣會出現「除錯」標籤（`docs/ui-design.md` 8.8）：
-  - 駕駛：`http://localhost:5173/?debug=1` 可切換帳號，並執行模擬器（DD-14）：按「開始模擬」後，有進行中行程的駕駛沿預先定義的路徑回報位置。接 Go 後端時，車輛位置全靠它，Demo 時另開一個分頁讓它一直開著。
+  - 駕駛：`http://localhost:5173/?debug=1` 可切換帳號，並執行模擬器（DD-14）：按「開始模擬」後，有進行中行程的駕駛沿預先定義的路徑回報位置。接 Go 後端時，車輛位置全靠它。Demo 時由 `just demo-offstage` 在背景開一個這樣的頁面，不要再自己另開（見〈Demo〉）。
   - 乘客：`http://localhost:5174/?debug=1` 可設定乘客的目前位置（DD-26），例如「離松山車站 420 公尺」來展示請求被拒絕。同一帳號的其他分頁會跟著改。
 - 環境變數放在根目錄 `.env`：
   - `VITE_GOOGLE_MAPS_API_KEY`：瀏覽器用的 Google Maps 金鑰，會公開給使用者。請限制為 HTTP 參照網址，且只開 Maps JavaScript API；不要沿用伺服器端的 `MAP_API_KEY`。未設定時地圖顯示提示文字，其他功能照常運作。
