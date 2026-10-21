@@ -109,6 +109,32 @@ describe('trips, activities and positions match the Go backend', () => {
     })
   })
 
+  it('departs on a saved preview once, like the Go backend (T26, DD-21)', () => {
+    const at = { lat: DEPARTURE.destination.lat, lng: DEPARTURE.destination.lng }
+    const preview = (who = DRIVER, pickup = 1) => json<{ preview_id: number }>('POST', '/api/driver/route-preview', who, { pickup_point_id: pickup, destination: at }).preview_id
+    const refused = { status: 400, body: { error: { code: 'invalid_route_preview' } } }
+    const other = 'Bearer driver:driver5'
+
+    // Someone else's preview, another pickup point, an unknown one: refused, and no trip is made.
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, preview_id: preview(other) })).toMatchObject(refused)
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, preview_id: preview(DRIVER, 2) })).toMatchObject(refused)
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, preview_id: 999 })).toMatchObject(refused)
+    expect(call('GET', '/api/driver/trips/current', DRIVER).status).toBe(404)
+
+    // The name may differ; the position may not.
+    const id = preview()
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, destination: { ...DEPARTURE.destination, name: '別的名字' }, preview_id: id }).status).toBe(201)
+    call('POST', '/api/demo/reset')
+    // Used once: refused the second time.
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, preview_id: id })).toMatchObject(refused)
+    // A failed departure leaves the preview unused.
+    const fresh = preview()
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, preview_id: fresh }).status).toBe(409)
+    call('POST', '/api/demo/reset')
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, preview_id: fresh }).status).toBe(201)
+  })
+
   it('accepts positions only after taking part (DD-25)', () => {
     expect(call('POST', '/api/location', PASSENGER, SONGSHAN)).toMatchObject({ status: 409, body: { error: { code: 'no_activity' } } })
     expect(call('POST', '/api/activities', PASSENGER)).toMatchObject({ status: 201, body: { role: 'passenger', trip_id: null } })

@@ -85,8 +85,13 @@ function request(change: Partial<DriverRequestItem>): DriverRequestItem {
  * Answers like the Go backend. `polls` are served in order for GET /driver/requests, the last one
  * repeats; accept and board move the request like the backend does.
  */
-function fakeBackend(polls: DriverRequests[], { defaults = LAST_DEPARTURE, departStatus = 201, route = ROUTE, ended = trip({ status: 'completed', completed_rides: 2 }) } = {}) {
+function fakeBackend(
+  polls: DriverRequests[],
+  { defaults = LAST_DEPARTURE, departStatus = 201, route = ROUTE, ended = trip({ status: 'completed', completed_rides: 2 }), refusedPreviews = [] as number[] } = {},
+) {
   const calls: { method: string; path: string; body: unknown }[] = []
+  // Each preview is saved with a new id (T26); refusedPreviews are the ids a departure turns down.
+  let previews = 0
   let index = 0
   let state: DriverRequests | null = null
   // The caller's tag choice is kept like the backend keeps it (PUT/DELETE /api/me/tags/:id).
@@ -108,8 +113,12 @@ function fakeBackend(polls: DriverRequests[], { defaults = LAST_DEPARTURE, depar
     if (path === '/driver/profile') return reply({ usual_pickup_point: null, usual_destination: null, capacity: null })
     // Like the backend's park boundary: north of the pickup points.
     if (path.startsWith('/park/check')) return reply({ inside: Number(new URLSearchParams(path.split('?')[1]).get('lat')) > 25.05 })
-    if (path === '/driver/route-preview') return reply({ route })
+    if (path === '/driver/route-preview') return reply({ preview_id: ++previews, route })
     if (method === 'POST' && path === '/driver/trips') {
+      const previewId = (calls.at(-1)!.body as { preview_id?: number }).preview_id
+      if (previewId !== undefined && refusedPreviews.includes(previewId)) {
+        return reply({ error: { code: 'invalid_route_preview', message: '路線預覽不存在、已使用，或與出發的上車點、目的地不符，請重新預覽' } }, 400)
+      }
       if (departStatus === 409) return reply({ error: { code: 'already_active', message: '駕駛已有進行中的行程' } }, 409)
       if (departStatus === 400) return reply({ error: { code: 'destination_outside_park', message: '目的地必須在內湖科學園區內' } }, 400)
       return reply(trip({}), 201)
@@ -145,6 +154,8 @@ describe('driver App', () => {
 
     expect(await screen.findByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeInTheDocument()
+    // The previewed route is in, so the departure carries its id.
+    await within(await screen.findByRole('list', { name: '今天的路線' })).findByText('陽光街')
     await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
 
@@ -155,6 +166,8 @@ describe('driver App', () => {
       capacity: 3,
       auto_accept: false,
       tag_filters: [],
+      // The route the driver saw is the trip's route (DD-21, T26).
+      preview_id: 1,
     })
   })
 
@@ -222,6 +235,33 @@ describe('driver App', () => {
     expect(screen.getByRole('button', { name: /目的地\s*未填/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '我出發了' })).toBeDisabled()
     expect(calls.some((c) => c.path === '/driver/route-preview')).toBe(false)
+  })
+
+  it('departs on the previewed route: the departure carries the preview id (DD-21, T26)', async () => {
+    const calls = fakeBackend([NO_TRIP])
+    render(<App />)
+    await waitFor(() => expect(calls.some((c) => c.path === '/driver/route-preview')).toBe(true))
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/driver/trips')?.body).toMatchObject({ preview_id: 1 })
+  })
+
+  it('a refused preview is previewed again and the driver taps once more; no trip until then (DD-21, T26)', async () => {
+    const calls = fakeBackend([NO_TRIP], { refusedPreviews: [1] })
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    await within(await screen.findByRole('list', { name: '今天的路線' })).findByText('陽光街')
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+
+    expect(await screen.findByText('路線已重新整理，確認後請再按一次「我出發了」。')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
+    await waitFor(() => expect(calls.filter((c) => c.path === '/driver/route-preview')).toHaveLength(2))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    expect(calls.filter((c) => c.method === 'POST' && c.path === '/driver/trips').map((c) => (c.body as { preview_id: number }).preview_id)).toEqual([1, 2])
   })
 
   it('a departure refused for a destination outside the park says so (REQ-001)', async () => {

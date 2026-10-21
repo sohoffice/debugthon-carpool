@@ -97,6 +97,8 @@ export interface DepartureSettings {
   capacity: number
   auto_accept: boolean
   tag_filters: TagFilter[]
+  /** The preview this departure takes its route from (T26, DD-21); without it the route is planned on departure. */
+  preview_id?: number
 }
 
 /** completed: arrived at the destination (T21, DD-30); cancelled: ended by the Demo reset (T17, DD-29). */
@@ -335,8 +337,12 @@ export interface RoutePreviewRequest {
   destination: LatLngBody
 }
 
-/** POST /api/driver/route-preview: the same route a departure to this destination would get. */
+/**
+ * POST /api/driver/route-preview: a saved preview (T26, DD-21). Departing with its preview_id gives
+ * the trip this very route; a used, foreign or mismatched one is 400 invalid_route_preview.
+ */
 export interface RoutePreview {
+  preview_id: number
   route: Route
 }
 

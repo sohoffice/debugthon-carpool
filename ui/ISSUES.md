@@ -54,7 +54,7 @@
 | 標記乘客已上車（DD-27） | ✅ 已完成 | 每位乘客一次一個按鈕：「已上車」→「已下車」（UD-20） |
 | 改用 `main` 的 T13 格式 | ✅ 已完成 | 行程中輪詢 `GET /api/driver/requests`（`pending`、`passengers`）；確認、婉拒、上車、結束共乘後重新輪詢，`409 not_waiting`／`invalid_state` 時顯示目前的狀態 |
 | 目的地以 Google Places 搜尋，選定後提示不在園區內的地點 | ✅ 已完成 | DD-32；Google Places 加 `GET /api/park/check`，不在園區內的地點提示且不採用（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)） |
-| 出發前的路線預覽 | ✅ 已完成 | DD-21；讀 Go 的 `{route}`，路線為模擬時才標示「路線為估算」（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)）；出發時帶預覽編號等 [#61 T26](https://github.com/sohoffice/debugthon-carpool/issues/61) |
+| 出發前的路線預覽 | ✅ 已完成 | DD-21；讀 Go 的 `{route}`，路線為模擬時才標示「路線為估算」（[#57 T25](https://github.com/sohoffice/debugthon-carpool/issues/57)）；出發時帶 `preview_id`，行程的路線就是預覽的路線（T26） |
 | 行程結束 | ✅ 已完成 | 抵達目的地自動結束（UD-16）：輪詢的 `trip_id` 變成 `null` 時，以 `GET /api/trips/:id` 確認：`completed` 顯示目的地與這趟的載客人數（`completed_rides`）；Demo 重設造成的 `cancelled` 直接回到出發確認。後端規則見 REQ-070、DD-30，[#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31) 已合併 |
 
 驗收條件：
@@ -113,7 +113,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 | 車輛方向改用 `vehicle_position.heading_deg` | ✅ 已完成 | DD-31；經過上車點後不再畫車 |
 | ETA 的模擬標示 | ✅ 已完成 | `fastest_eta_simulated`、每台車的 `eta_simulated`、請求狀態的 `eta_simulated`（REQ-063） |
 | 型別與示範後端照 `main` 修改，刪除 `GET /api/places` | ✅ 已完成 | 示範後端新增 `GET /api/park/check` |
-| 出發時送出預覽編號；`400 invalid_route_preview` 時重新預覽並提示再按一次 | ⏳ 等後端 | DD-21；`main` 的 Go 後端還沒有預覽編號，等 [#61 T26](https://github.com/sohoffice/debugthon-carpool/issues/61) 合併後再改（第 2 條驗收條件），T25 在那之前保持開啟 |
+| 出發時送出預覽編號；`400 invalid_route_preview` 時重新預覽並提示再按一次 | ✅ 已完成 | DD-21；`preview_id` 隨出發送出（[#61 T26](https://github.com/sohoffice/debugthon-carpool/issues/61) 已合併）；被拒時不建立行程，重新預覽並提示「路線已重新整理，確認後請再按一次「我出發了」。」；示範後端照 Go 的規則檢查預覽 |
 
 ### #55 T24 目的地園區範圍檢查（UI）
 

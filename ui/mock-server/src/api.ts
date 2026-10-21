@@ -79,6 +79,8 @@ const errorBody = (code: string, message: string) => ({ error: { code, message }
 export function createMockApi(data: StaticData, clock: () => number = Date.now) {
   const lookups = buildLookups(data)
   let world: World = initialWorld(lookups, 'normal', clock())
+  // Saved route previews (T26, DD-21). Like the Go backend, a reset does not clear them.
+  const previews = new Map<number, { driverId: number; pickupPointId: number; lat: number; lng: number; used: boolean }>()
   const now = () => clock() + world.clockOffsetMs
 
   const reset = (scenario: MockScenario) => {
@@ -138,7 +140,18 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       pattern: '/api/driver/trips',
       access: 'driver',
       run: ({ user, body }) => {
-        world = depart(world, lookups, user.id, departureSettings(body, lookups), now())
+        const settings = departureSettings(body, lookups)
+        // Same rule as the Go backend: the preview must be the caller's, unused and for this pickup point and position.
+        const preview = settings.preview_id === undefined ? undefined : previews.get(settings.preview_id)
+        if (
+          settings.preview_id !== undefined &&
+          (!preview || preview.driverId !== user.id || preview.used || preview.pickupPointId !== settings.pickup_point_id ||
+            preview.lat !== settings.destination.lat || preview.lng !== settings.destination.lng)
+        ) {
+          throw new MockError(400, 'invalid_route_preview', '路線預覽不存在、已使用，或與出發的上車點、目的地不符，請重新預覽')
+        }
+        world = depart(world, lookups, user.id, settings, now())
+        if (preview) preview.used = true
         return created(tripView(world, lookups, activeTripOf(world, user.id)!))
       },
     },
@@ -270,9 +283,11 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       method: 'POST',
       pattern: '/api/driver/route-preview',
       access: 'driver',
-      run: ({ body }) => {
+      run: ({ user, body }) => {
         const req = routePreviewRequest(body, lookups)
-        return ok({ route: buildTripPath(lookups, lookups.pickupById.get(req.pickup_point_id)!, req.destination).route })
+        const id = previews.size + 1
+        previews.set(id, { driverId: user.id, pickupPointId: req.pickup_point_id, lat: req.destination.lat, lng: req.destination.lng, used: false })
+        return ok({ preview_id: id, route: buildTripPath(lookups, lookups.pickupById.get(req.pickup_point_id)!, req.destination).route })
       },
     },
 

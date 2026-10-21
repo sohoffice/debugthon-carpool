@@ -84,7 +84,13 @@ export function departureSettings(body: unknown, lookups: Lookups): DepartureSet
     capacity,
     auto_accept: body.auto_accept === true,
     tag_filters: body.tag_filters === undefined ? [] : tagFilters(body.tag_filters, lookups),
+    ...(body.preview_id === undefined ? {} : { preview_id: previewId(body.preview_id) }),
   }
+}
+
+function previewId(v: unknown): number {
+  if (!isNumber(v) || !Number.isInteger(v)) throw bad('preview_id')
+  return v
 }
 
 /**
