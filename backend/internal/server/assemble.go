@@ -12,11 +12,11 @@ type tripFailure struct {
 }
 
 // rankRequest screens the trips, builds each one's drop-off candidates and ranks them
-// (REQ-042, REQ-043, DD-11). Ride and walk times come from the injected providers; stops
+// (REQ-042, REQ-043, DD-11). Ride and walk times (DriveTimer, WalkProvider) come from the injected providers; stops
 // holds the position of every bus stop a route may pass. A provider error only drops the trip
 // being priced: the rest are still ranked, and the dropped trips are returned so the caller
 // can log or surface them.
-func rankRequest(ctx context.Context, routes RouteProvider, walks WalkProvider, p matchParams,
+func rankRequest(ctx context.Context, drives DriveTimer, walks WalkProvider, p matchParams,
 	r matchRequest, pickup latLng, stops map[int64]latLng, trips []matchTrip) ([]rankedTrip, []tripFailure) {
 	var failed []tripFailure
 	var cands []rankCandidate
@@ -24,7 +24,7 @@ func rankRequest(ctx context.Context, routes RouteProvider, walks WalkProvider, 
 		if !eligible(p, r, t) { // no point pricing a car that cannot be assigned
 			continue
 		}
-		ds, err := dropOffsFor(ctx, routes, walks, r, pickup, stops, t)
+		ds, err := dropOffsFor(ctx, drives, walks, r, pickup, stops, t)
 		if err != nil {
 			failed = append(failed, tripFailure{t.ID, err})
 			continue
@@ -36,10 +36,10 @@ func rankRequest(ctx context.Context, routes RouteProvider, walks WalkProvider, 
 
 // dropOffsFor lists where the passenger can get off this trip: the driver's destination, and
 // each stop the route passes that the passenger accepts (REQ-043).
-func dropOffsFor(ctx context.Context, routes RouteProvider, walks WalkProvider, r matchRequest,
+func dropOffsFor(ctx context.Context, drives DriveTimer, walks WalkProvider, r matchRequest,
 	pickup latLng, stops map[int64]latLng, t matchTrip) ([]dropOff, error) {
 	price := func(id *int64, at latLng) (dropOff, error) {
-		ride, err := routes.Route(ctx, pickup, at)
+		ride, err := drives.DriveTime(ctx, pickup, at)
 		if err != nil {
 			return dropOff{}, err
 		}

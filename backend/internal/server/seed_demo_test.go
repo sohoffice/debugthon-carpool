@@ -155,7 +155,7 @@ func TestSeedDemoMigrationIsRepeatable(t *testing.T) {
 func seedRanking(t *testing.T, tx pgx.Tx, etaMin map[string]float64, prefer bool, mutate func(*matchParams)) []string {
 	t.Helper()
 	ctx := context.Background()
-	s := &Server{db: tx, routes: straightRoute{}, walks: straightWalk{}}
+	s := &Server{db: tx, routes: straightRoute{}, drives: straightRoute{}, walks: straightWalk{}}
 	var pickupID int64
 	var pickup latLng
 	if err := tx.QueryRow(ctx, `SELECT id, lat, lng FROM pickup_points WHERE name = '松山車站'`).
@@ -189,7 +189,7 @@ func seedRanking(t *testing.T, tx pgx.Tx, etaMin map[string]float64, prefer bool
 	}
 	rows.Close()
 
-	trips, err := s.loadMatchTrips(ctx, pickupID)
+	trips, err := s.loadMatchTrips(ctx, ctx, pickupID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func seedRanking(t *testing.T, tx pgx.Tx, etaMin map[string]float64, prefer bool
 	if mutate != nil {
 		mutate(&p)
 	}
-	ranked, failed := rankRequest(ctx, s.routes, s.walks, p, req, pickup, stops, trips)
+	ranked, failed := rankRequest(ctx, s.drives, s.walks, p, req, pickup, stops, trips)
 	if len(failed) != 0 {
 		t.Fatalf("trips failed pricing: %+v", failed)
 	}

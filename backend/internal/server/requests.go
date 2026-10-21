@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -27,6 +28,10 @@ const (
 	reqBoarded       = "boarded"
 	reqCompleted     = "completed"
 )
+
+// rankingBudget is the total time one ranking may spend on travel estimates (DD-09); once spent,
+// the remaining estimates are simulated.
+const rankingBudget = 2 * time.Second
 
 // requestTransitions is the state diagram of design 4.12, as far as the stored statuses go.
 var requestTransitions = map[string][]string{
@@ -367,6 +372,11 @@ func confirmRequest(ctx context.Context, db DB, id, tripID, passengerID int64, r
 // rankForRequest screens and ranks the cars at the pickup point with the matching engine
 // (DD-10, DD-11). It also returns the trips as screened, for their tags.
 func (s *Server) rankForRequest(ctx context.Context, in requestInput) ([]rankedTrip, []matchTrip, error) {
+	// DD-09: one budget for all the travel estimates of this ranking (the cars' ETAs and the ride
+	// and walk times). Only estimate calls get estimateCtx; ctx, which the caller's transaction
+	// uses for every database call, must not expire with the budget.
+	estimateCtx, cancel := context.WithTimeout(ctx, cmp.Or(s.rankBudget, rankingBudget))
+	defer cancel()
 	params, err := loadMatchParams(ctx, s.db)
 	if err != nil {
 		return nil, nil, err
@@ -375,7 +385,7 @@ func (s *Server) rankForRequest(ctx context.Context, in requestInput) ([]rankedT
 	if err != nil {
 		return nil, nil, err
 	}
-	trips, err := s.loadMatchTrips(ctx, in.Pickup.ID)
+	trips, err := s.loadMatchTrips(ctx, estimateCtx, in.Pickup.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -412,7 +422,7 @@ func (s *Server) rankForRequest(ctx context.Context, in requestInput) ([]rankedT
 
 	req := matchRequest{PickupPointID: in.Pickup.ID, Destination: latLng{in.Dest.Lat, in.Dest.Lng},
 		AcceptedStops: in.StopIDs, Filters: in.Filters, Tags: myTags}
-	ranked, failed := rankRequest(ctx, s.routes, s.walks, params, req, latLng{in.Pickup.Lat, in.Pickup.Lng}, stops, trips)
+	ranked, failed := rankRequest(estimateCtx, s.drives, s.walks, params, req, latLng{in.Pickup.Lat, in.Pickup.Lng}, stops, trips)
 	for _, f := range failed {
 		log.Printf("request: trip %d left out: %v", f.TripID, f.Err)
 	}

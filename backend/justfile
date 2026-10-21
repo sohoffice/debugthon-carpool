@@ -46,8 +46,10 @@ down:
 test:
     cd "{{source_directory()}}" && go test ./...
 
-# Run the Karate API tests against the backend (starts it if needed; needs `just infra up` and `db-apply`)
-karate: up
+# Run the Karate API tests against a freshly restarted backend with MAP_API_KEY empty, so tests never call Google (needs `just infra up` and `db-apply`)
+karate:
+    just --justfile "{{source_directory()}}/justfile" down
+    MAP_API_KEY= just --justfile "{{source_directory()}}/justfile" up
     cd "{{source_directory()}}/karate" && mvn -q test -DbaseUrl=http://localhost:{{port}} -DdbUrl=jdbc:postgresql://localhost:{{pg_port}}/{{pg_db}}
 
 # Apply all pending migrations (needs `just infra up`)

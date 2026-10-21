@@ -15,9 +15,9 @@ type fakeRoutes struct {
 	n    int
 }
 
-func (f *fakeRoutes) Route(_ context.Context, _, to latLng) (Route, error) {
+func (f *fakeRoutes) DriveTime(_ context.Context, _, to latLng) (Travel, error) {
 	f.n++
-	return Route{DurationS: f.ride[to], Simulated: f.sim}, f.err
+	return Travel{DurationS: f.ride[to], Simulated: f.sim}, f.err
 }
 
 type fakeWalks struct {
@@ -97,11 +97,11 @@ func TestRankRequestOrdersByProviderTimes(t *testing.T) {
 // selectiveRoutes fails for one destination only.
 type selectiveRoutes struct{ bad latLng }
 
-func (f selectiveRoutes) Route(_ context.Context, _, to latLng) (Route, error) {
+func (f selectiveRoutes) DriveTime(_ context.Context, _, to latLng) (Travel, error) {
 	if to == f.bad {
-		return Route{}, errors.New("boom")
+		return Travel{}, errors.New("boom")
 	}
-	return Route{DurationS: 600}, nil
+	return Travel{DurationS: 600}, nil
 }
 
 // A provider error drops only the trip being priced; the others are still ranked and the
