@@ -106,14 +106,10 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
       [25.0763, 121.575],
     ],
   },
-  // 1200 m before 松山車站, then on to 瑞光路 513 巷.
+  // 535 m before 松山車站, so the Demo's cue can come right after departure; then on to 瑞光路 513 巷.
   driver4: {
     speedKmh: 25,
     path: [
-      [25.03904, 121.578111],
-      [25.040007, 121.577949],
-      [25.04195, 121.5779],
-      [25.043559, 121.577919],
       [25.045005, 121.577907],
       [25.047269, 121.577913],
       [25.049806, 121.578206],
@@ -133,14 +129,10 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
       [25.0765, 121.5742],
     ],
   },
-  // 1200 m before 松山車站, then on to 瑞光路 513 巷.
+  // 535 m before 松山車站, so the Demo's cue can come right after departure; then on to 瑞光路 513 巷.
   driver5: {
     speedKmh: 25,
     path: [
-      [25.03904, 121.578111],
-      [25.040007, 121.577949],
-      [25.04195, 121.5779],
-      [25.043559, 121.577919],
       [25.045005, 121.577907],
       [25.047269, 121.577913],
       [25.049806, 121.578206],

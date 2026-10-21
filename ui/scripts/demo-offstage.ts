@@ -10,10 +10,8 @@ const API = process.env.DEMO_API ?? 'http://localhost:8080/api'
 const DRIVER_APP = process.env.DEMO_DRIVER_APP ?? 'http://localhost:5173'
 /** The required tag of the Demo: only driver4 and driver5 carry it (docs/demo-script.md). */
 const STAGE_TAG = '女性友善'
-/** driver5 leads driver4 by this much, so it is nearer the pickup point and gets the request first. */
-const LEAD_S = 30
-/** driver4's progress on its simulator path when the 2 minutes on stage can start (about 500 m before the pickup). */
-const START_AT_PERCENT = 12
+/** Default seconds driver5 leads driver4, so it is nearer the pickup point and gets the request first. */
+const DEFAULT_LEAD_S = 10
 const POLL_MS = 1000
 
 type Trip = { id: number; destination: { name: string; lat: number; lng: number }; pickup_point: { id: number }; passed_pickup: boolean }
@@ -59,7 +57,17 @@ async function departDriver5() {
   say(`driver5 帶「${STAGE_TAG}」出發了，往${destination.name}（台下，觀眾看不到）。`)
 }
 
+/** Lead in seconds, from the first argument or DEMO_LEAD_S; anything but a non-negative integer is an error. */
+function parseLead(): number {
+  const raw = process.argv[2] ?? process.env.DEMO_LEAD_S
+  if (raw === undefined || raw === '') return DEFAULT_LEAD_S
+  if (!/^\d+$/.test(raw)) throw new Error(`延遲秒數必須是非負整數，收到「${raw}」`)
+  return Number(raw)
+}
+
 async function main() {
+  // Validate first, so a bad argument never lets driver5 depart.
+  const LEAD_S = parseLead()
   const ping = await fetch(`${API}/ping`).catch(() => null)
   if (!ping?.ok) throw new Error(`連不到後端 ${API}，請先執行 just demo`)
   const app = await fetch(DRIVER_APP).catch(() => null)
@@ -78,11 +86,6 @@ async function main() {
   await sim.getByRole('button', { name: '除錯' }).click()
   await sim.getByRole('button', { name: '開始模擬' }).click()
   say('模擬器開始了：模擬車與 driver5 開始移動。')
-  const progress = async (account: string): Promise<number | null> => {
-    const panel = await sim.getByRole('dialog', { name: '除錯模式' }).locator('ul').innerText()
-    const match = new RegExp(`${account}\\s+\\d+ km/h\\s+移動中 (\\d+)%`).exec(panel)
-    return match ? Number(match[1]) : null
-  }
 
   let stopping = false
   process.on('SIGINT', () => {
@@ -106,9 +109,10 @@ async function main() {
     const d4 = (await api<Requests>('driver4', 'GET', '/driver/requests')).body
     if (!driver4Seen && d4.trip_id !== null) {
       driver4Seen = true
-      say(`driver4 出發了。等它開到上車點前約 500 公尺（模擬器 ${START_AT_PERCENT}%），我會提示開始。`)
+      say('driver4 出發了。')
     }
-    if (driver4Seen && !toldStart && ((await progress('driver4')) ?? 0) >= START_AT_PERCENT) {
+    // Both simulated paths start about 500 m before the pickup, so the stage can start right away.
+    if (driver4Seen && !toldStart) {
       say('▶ 現在可以開始台上的 2 分鐘：從乘客看供給看板開始（劇本 0:00）。')
       toldStart = true
     }

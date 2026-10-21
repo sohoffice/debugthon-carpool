@@ -27,6 +27,7 @@ declare module 'node:http' {
 }
 
 declare const process: {
+  argv: string[]
   env: Record<string, string | undefined>
   exitCode?: number
   on(event: 'SIGINT', listener: () => void): void
