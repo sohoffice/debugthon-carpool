@@ -14,7 +14,6 @@ import {
   useMyTags,
   type DriverProfile,
   type PickupPoint,
-  type Route,
   type RoutePreview,
   type TripDefaults,
   type TripView,
@@ -56,7 +55,9 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
   const [loaded, setLoaded] = useState(false)
   const [firstTime, setFirstTime] = useState(false)
   const [open, setOpen] = useState<Section[]>([])
-  const [route, setRoute] = useState<Route | null>(null)
+  const [preview, setPreview] = useState<RoutePreview | null>(null)
+  /** Bumped to preview again when a departure refused the preview (invalid_route_preview). */
+  const [previewRound, setPreviewRound] = useState(0)
   /** Why there is no preview: null while it loads or when there is one. */
   const [routeError, setRouteError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -76,19 +77,21 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
 
   const { pickupPointId, destination } = draft
   useEffect(() => {
-    setRoute(null)
+    setPreview(null)
     setRouteError(null)
     if (pickupPointId === null || destination === null) return
     let cancelled = false
     const body = { pickup_point_id: pickupPointId, destination: { lat: destination.lat, lng: destination.lng } }
     api.post<RoutePreview>('/driver/route-preview', body).then(
-      (preview) => !cancelled && setRoute(preview.route),
+      (p) => !cancelled && setPreview(p),
       (err) => !cancelled && setRouteError(isOutsidePark(err) ? OUTSIDE_PARK : '路線畫不出來，還是可以出發。'),
     )
     return () => {
       cancelled = true
     }
-  }, [pickupPointId, destination])
+  }, [pickupPointId, destination, previewRound])
+
+  const route = preview?.route ?? null
 
   const pickup = pickupPoints.find((p) => p.id === draft.pickupPointId) ?? null
   const tags = myTags.tags ?? []
@@ -102,10 +105,15 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
     setSubmitting(true)
     setError(undefined)
     try {
-      onDeparted(await api.post<TripView>('/driver/trips', settings))
+      // The trip takes the previewed route, the one the driver saw (DD-21).
+      onDeparted(await api.post<TripView>('/driver/trips', preview ? { ...settings, preview_id: preview.preview_id } : settings))
     } catch (err) {
       if (err instanceof ApiError && err.code === 'already_active') return onAlreadyActive()
-      if (isOutsidePark(err)) setError(OUTSIDE_PARK)
+      if (err instanceof ApiError && err.code === 'invalid_route_preview') {
+        // No trip was made: preview again, so the driver departs on the route now shown.
+        setPreviewRound((n) => n + 1)
+        setError('路線已重新整理，確認後請再按一次「我出發了」。')
+      } else if (isOutsidePark(err)) setError(OUTSIDE_PARK)
       else setError(err instanceof ApiError && err.status < 500 ? err.message : '沒有出發成功，請再按一次。')
       setSubmitting(false)
     }
