@@ -481,7 +481,7 @@ func TestLastSeatGoesToTheFirstSubmitter(t *testing.T) {
 
 	// A deterministic order: the first request holds the seat in a transaction that is still
 	// open while the second one is submitted; the second must wait on the seat and then lose it.
-	s := &Server{db: pool, routes: straightRoute{}, walks: straightWalk{}}
+	s := &Server{db: pool, routes: straightRoute{}, drives: straightRoute{}, walks: straightWalk{}}
 	first, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -557,7 +557,7 @@ func TestSlowRankingDoesNotLetALaterRequestOvertake(t *testing.T) {
 	f := newRaceFixture(t, pool)
 
 	slow := &slowWalk{entered: make(chan struct{}), release: make(chan struct{})}
-	s := &Server{db: pool, routes: straightRoute{}, walks: slow}
+	s := &Server{db: pool, routes: straightRoute{}, drives: straightRoute{}, walks: slow}
 	var wg sync.WaitGroup
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(slow.release) }) }

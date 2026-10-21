@@ -5,20 +5,20 @@ import (
 	"testing"
 )
 
-// distanceRoutes is a RouteProvider whose duration is 1 s per metre, so an ETA tells which
+// distanceRoutes is a DriveTimer whose duration is 1 s per metre, so an ETA tells which
 // position it was computed from. It records the endpoints it was asked about.
 type distanceRoutes struct {
 	from, to latLng
 	calls    int
 }
 
-func (d *distanceRoutes) Route(_ context.Context, from, to latLng) (Route, error) {
+func (d *distanceRoutes) DriveTime(_ context.Context, from, to latLng) (Travel, error) {
 	d.from, d.to = from, to
 	d.calls++
-	return Route{DurationS: int(distanceM(from, to)), Simulated: true}, nil
+	return Travel{DurationS: int(distanceM(from, to)), Simulated: true}, nil
 }
 
-func etaServer(tx DB, routes RouteProvider) *Server { return &Server{db: tx, routes: routes} }
+func etaServer(tx DB, drives DriveTimer) *Server { return &Server{db: tx, drives: drives} }
 
 func TestETAUsesTheCurrentPosition(t *testing.T) {
 	tx := testTx(t)

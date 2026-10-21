@@ -187,12 +187,12 @@ func TestSupplyListsOnlyEligibleCars(t *testing.T) {
 	}
 
 	// The same inputs through the shared screening give the same set (DD-10).
-	s := &Server{db: e.tx, routes: straightRoute{}}
+	s := &Server{db: e.tx, routes: straightRoute{}, drives: straightRoute{}}
 	params, err := loadMatchParams(context.Background(), e.tx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	trips, err := s.loadMatchTrips(context.Background(), e.pickupID)
+	trips, err := s.loadMatchTrips(context.Background(), context.Background(), e.pickupID)
 	if err != nil {
 		t.Fatal(err)
 	}

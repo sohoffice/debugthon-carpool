@@ -155,7 +155,7 @@ func (s *Server) getSupply(c *gin.Context) {
 	req := matchRequest{PickupPointID: pickupID, Destination: latLng{dest.Lat, dest.Lng},
 		AcceptedStops: stopIDs, Filters: filters, Tags: myTags}
 
-	trips, err := s.loadMatchTrips(c, pickupID)
+	trips, err := s.loadMatchTrips(c, c, pickupID)
 	if err != nil {
 		s.internalError(c, err)
 		return
@@ -252,7 +252,7 @@ func (s *Server) userTagIDs(ctx context.Context, userID int64) ([]int64, error) 
 // loadMatchTrips reads the active trips at a pickup point as the matching engine sees them.
 // A trip whose route or ETA cannot be produced is logged and left out, like a provider error
 // in rankRequest, so one bad trip does not hide the others.
-func (s *Server) loadMatchTrips(ctx context.Context, pickupID int64) ([]matchTrip, error) {
+func (s *Server) loadMatchTrips(ctx, estCtx context.Context, pickupID int64) ([]matchTrip, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, driver_id, passed_pickup, destination_lat, destination_lng,
 		       capacity, seats_held, seats_confirmed
@@ -280,7 +280,7 @@ func (s *Server) loadMatchTrips(ctx context.Context, pickupID int64) ([]matchTri
 
 	out := trips[:0]
 	for i, t := range trips {
-		if err := s.fillMatchTrip(ctx, &t, drivers[i]); err != nil {
+		if err := s.fillMatchTrip(ctx, estCtx, &t, drivers[i]); err != nil {
 			log.Printf("supply: trip %d left out: %v", t.ID, err)
 			continue
 		}
@@ -289,7 +289,7 @@ func (s *Server) loadMatchTrips(ctx context.Context, pickupID int64) ([]matchTri
 	return out, nil
 }
 
-func (s *Server) fillMatchTrip(ctx context.Context, t *matchTrip, driverID int64) error {
+func (s *Server) fillMatchTrip(ctx, estCtx context.Context, t *matchTrip, driverID int64) error {
 	if err := s.ensureRoute(ctx, t.ID); err != nil { // simulated trips get their stops on first use (DD-21)
 		return err
 	}
@@ -330,7 +330,7 @@ func (s *Server) fillMatchTrip(ctx context.Context, t *matchTrip, driverID int64
 	if t.Tags, err = s.userTagIDs(ctx, driverID); err != nil {
 		return err
 	}
-	eta, err := s.vehicleETA(ctx, t.ID)
+	eta, err := s.vehicleETAWithin(ctx, estCtx, t.ID)
 	if err != nil {
 		return err
 	}

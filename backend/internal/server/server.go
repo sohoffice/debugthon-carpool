@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -25,13 +26,17 @@ type Server struct {
 	db     DB
 	park   *park.Boundary
 	routes RouteProvider
+	drives DriveTimer
 	walks  WalkProvider
+	// rankBudget overrides rankingBudget; tests shrink it.
+	rankBudget time.Duration
 }
 
 // Deps are the collaborators that are not the database.
 type Deps struct {
 	Park   *park.Boundary // 內湖科學園區 boundary, for checking destinations
 	Routes RouteProvider  // plans the pickup -> destination route; nil means the simulated straight line
+	Drives DriveTimer     // times a car's ETA and the ride to a drop-off place; nil means the simulated estimate
 	Walks  WalkProvider   // estimates the walk from a drop-off to the destination; nil means the simulated straight line
 	// DemoReset registers POST /api/demo/reset (DD-29). Only the demo environment turns it on.
 	DemoReset bool
@@ -42,6 +47,10 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	s := &Server{db: db, park: deps.Park, routes: deps.Routes}
 	if s.routes == nil {
 		s.routes = straightRoute{}
+	}
+	s.drives = deps.Drives
+	if s.drives == nil {
+		s.drives = straightRoute{}
 	}
 	s.walks = deps.Walks
 	if s.walks == nil {

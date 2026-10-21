@@ -16,6 +16,12 @@ type etaView struct {
 // the trip is not active, the car has not been heard from yet, or it has already passed the
 // pickup, after which it is no longer tracked. Passenger reports on the same trip are ignored.
 func (s *Server) vehicleETA(ctx context.Context, tripID int64) (*etaView, error) {
+	return s.vehicleETAWithin(ctx, ctx, tripID)
+}
+
+// vehicleETAWithin is vehicleETA with a separate context for the estimate: a time budget (DD-09)
+// must bound only the estimate, never the database reads, which use ctx.
+func (s *Server) vehicleETAWithin(ctx, estCtx context.Context, tripID int64) (*etaView, error) {
 	var status string
 	var passed bool
 	var pickup, car latLng
@@ -38,11 +44,11 @@ func (s *Server) vehicleETA(ctx context.Context, tripID int64) (*etaView, error)
 	if err != nil {
 		return nil, err
 	}
-	route, err := s.routes.Route(ctx, car, pickup)
+	t, err := s.drives.DriveTime(estCtx, car, pickup)
 	if err != nil {
 		return nil, err
 	}
-	return &etaView{DurationS: route.DurationS, Simulated: route.Simulated}, nil
+	return &etaView{DurationS: t.DurationS, Simulated: t.Simulated}, nil
 }
 
 // vehiclePosition is where the trip's car was last heard from and which way it is heading.

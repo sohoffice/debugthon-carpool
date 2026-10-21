@@ -40,7 +40,7 @@
 | `just backend up` | 編譯後端並在背景啟動，預設監聽 `:8080`；若已在執行則不重複啟動 |
 | `just backend down` | 停止由 `up` 啟動的後端 |
 | `just backend test` | 執行後端 Go 測試（`go test ./...`），需先 `just infra up` 與 `just backend db-apply` |
-| `just backend karate` | 啟動後端（若尚未執行）並以 Karate 執行 API 整合測試（見下方說明） |
+| `just backend karate` | 先停止執行中的後端，以空的 `MAP_API_KEY` 重新啟動（測試不呼叫真實 Google），再以 Karate 執行 API 整合測試（見下方說明） |
 | `just backend db-apply` | 套用尚未執行的資料庫遷移（需先 `just infra up`） |
 | `just backend db-rollback` | 回滾最近一次已套用的遷移（執行該檔的 `-- +goose Down`） |
 | `just backend migrate-status` | 顯示各遷移的套用狀態 |
@@ -100,6 +100,8 @@
 - 環境變數放在根目錄 `.env`：
   - `VITE_GOOGLE_MAPS_API_KEY`：瀏覽器用的 Google Maps 金鑰，會公開給使用者。請限制為 HTTP 參照網址，且只開 Maps JavaScript API；不要沿用伺服器端的 `MAP_API_KEY`。未設定時地圖顯示提示文字，其他功能照常運作。
   - `VITE_GOOGLE_MAPS_MAP_ID`：選填，留空則使用 Google 的 `DEMO_MAP_ID`。
+  - `MAP_API_KEY`：後端用的 Google Routes 金鑰，只放在伺服器端，且只開 Routes API。有設定時行程路線、行車時間與步行時間來自 Google；留空則用模擬。
+  - Go 後端啟動時只載入找到的第一個 `.env`：先找目前目錄，沒有再找上一層（從 `backend/` 執行時就是根目錄的 `.env`），不再往上找，也不會合併兩個檔案；都沒有只記一行 log，不算錯誤。環境中已設定的變數優先，包含設為空值的（例如 `MAP_API_KEY= just backend up` 強制用模擬）。Go 測試不讀 `.env`；`just backend karate` 一律以空的 `MAP_API_KEY` 啟動後端。
 
 ### Demo
 
@@ -164,7 +166,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 | POST | `/api/passenger/requests/:id/complete` | 乘客 | 乘客結束自己的共乘（主要方式），行為同駕駛的 `complete` |
 
 - 除 `/api/ping` 與 `/api/demo/reset` 外都需要 `Authorization: Bearer <角色>:<帳號>`：格式錯誤或帳號不存在回 `401`，帳號沒有該角色或角色不能使用該 API 回 `403`。
-- 行程路線目前由模擬的直線備援產生（`route.simulated` 為 `true`，距離為直線 × 1.3、時速 20 公里，DD-09）；T07 的真實來源完成後換進 `RouteProvider` 即可。園區範圍由後端啟動時載入 `backend/config/park/boundary.geojson`，可用環境變數 `PARK_BOUNDARY` 指定其他路徑。
+- 路線、行車時間與步行時間的來源（DD-09）：設定了 `MAP_API_KEY`，後端用 Google Routes（記憶體快取 → 逾時與斷路器 → Google，失敗時改用模擬）；沒有設定則全部用模擬的直線備援（`route.simulated` 為 `true`，距離為直線 × 1.3、時速 20 公里、步行每分鐘 80 公尺）。啟動時 log 會寫明使用哪一種，不會印出金鑰。媒合排序有約 2 秒的總時間預算，用完後剩下的估算改用模擬並標記為模擬。園區範圍由後端啟動時載入 `backend/config/park/boundary.geojson`，可用環境變數 `PARK_BOUNDARY` 指定其他路徑。
 - 請求逾時（DD-13）：每筆等待中的請求以 `response_deadline_at` 為唯一的計時依據，時限來自 `system_settings.driver_confirm_timeout`（每次分配時讀取）。後端啟動時起一個背景掃描（每秒一次，`server.RunTimeoutSweeper`），把已逾時的請求改配；服務重啟後第一次掃描就會處理停機期間逾時的請求。確認、婉拒、逾時、上車與結束都先鎖定請求列再用條件式狀態轉換，同時發生時只有一方生效，後到的得到先到者的結果。
 - 行程自動結束（T21，REQ-070、DD-30）：駕駛的回報在行程已經過上車點之後，距目的地不超過 `system_settings.arrival_radius`（預設 50 m，每次回報都重新讀取）時，在同一個交易內：行程改為 `completed` 並記下 `ended_at`；車上已確認或已上車的共乘一併完成（建立服務紀錄、更新常用資料，同 `complete`）；仍在等待該駕駛回應的請求釋放座位，改配給排序中的下一台車，沒有車可配為 `no_match`，該候選的結果記為 `trip_ended`。經過上車點之前進入目的地範圍不會結束。行程結束後，`GET /api/driver/requests` 的 `trip_id` 為 `null`，之後的回報照常保存（DD-06），`trip_ended` 維持 `true`。
 - 座位計算（暫留、正式佔用、釋放，`internal/server/seats.go`）是供請求流程使用的內部介面，沒有 HTTP API。
