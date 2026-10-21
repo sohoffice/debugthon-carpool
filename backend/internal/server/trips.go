@@ -66,6 +66,8 @@ type departBody struct {
 	Capacity   *int            `json:"capacity"`
 	AutoAccept bool            `json:"auto_accept"`
 	TagFilters []tagFilterBody `json:"tag_filters"`
+	// PreviewID is the route preview to depart with (DD-21); without it the route is planned now.
+	PreviewID *int64 `json:"preview_id"`
 }
 
 func validTagFilters(filters []tagFilterBody) bool {
@@ -145,15 +147,27 @@ func (s *Server) depart(c *gin.Context) {
 		return
 	}
 
-	plan, err := s.routeForDeparture(c, *body.PickupPointID, pickup, dest)
-	if err != nil {
-		s.internalError(c, err)
-		return
+	// Without a preview the route is planned before the transaction, which would otherwise hold
+	// a connection while waiting for the route provider.
+	var plan plannedRoute
+	if body.PreviewID == nil {
+		route, stopIDs, err := s.planRoute(c, pickup, dest)
+		if err != nil {
+			s.internalError(c, err)
+			return
+		}
+		plan = plannedRoute{route, stopIDs}
 	}
-	route, stopIDs := plan.route, plan.stopIDs
 
 	var tripID int64
-	err = s.inTx(c, func(db DB) error {
+	err := s.inTx(c, func(db DB) error {
+		if body.PreviewID != nil {
+			var err error
+			if plan, err = usePreview(c, db, *body.PreviewID, driverID, *body.PickupPointID, dest); err != nil {
+				return err
+			}
+		}
+		route, stopIDs := plan.route, plan.stopIDs
 		if err := db.QueryRow(c, `
 			INSERT INTO trips (driver_id, pickup_point_id, destination_name, destination_lat, destination_lng,
 			                   capacity, auto_accept, status, settings_locked, started_at,
@@ -173,6 +187,10 @@ func (s *Server) depart(c *gin.Context) {
 		_, err := db.Exec(c, `INSERT INTO activities (user_id, role, trip_id) VALUES ($1, 'driver', $2)`, driverID, tripID)
 		return err
 	})
+	if errors.Is(err, errInvalidPreview) {
+		apiError(c, http.StatusBadRequest, "invalid_route_preview", "路線預覽不存在、已使用，或與出發的上車點、目的地不符，請重新預覽")
+		return
+	}
 	if isUniqueViolation(err) {
 		apiError(c, http.StatusConflict, "already_active", "駕駛已有進行中的行程")
 		return

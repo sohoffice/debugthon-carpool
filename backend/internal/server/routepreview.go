@@ -2,46 +2,15 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 )
 
-// planKey identifies a planned route by what DD-21 calls "the same pickup point and destination":
-// the destination name is not part of it.
-type planKey struct {
-	pickupID int64
-	dest     latLng
-}
-
 type plannedRoute struct {
 	route   Route
 	stopIDs []int64
-}
-
-// previewCache keeps the latest preview of each pickup point and destination in memory, so a
-// departure shows the driver the route they previewed, however long ago, simulated or not
-// (DD-21). It is not the DD-09 estimate cache, and is empty after a restart.
-type previewCache struct {
-	mu sync.Mutex
-	m  map[planKey]plannedRoute
-}
-
-func (c *previewCache) get(k planKey) (plannedRoute, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	p, ok := c.m[k]
-	return p, ok
-}
-
-func (c *previewCache) put(k planKey, p plannedRoute) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.m == nil {
-		c.m = map[planKey]plannedRoute{}
-	}
-	c.m[k] = p
 }
 
 // previewBody is the departure confirmation's route part: pickup point and destination.
@@ -54,8 +23,8 @@ type previewBody struct {
 }
 
 // previewRoute plans the pickup -> destination route and its bus stops for the departure
-// confirmation screen (REQ-003, DD-21). It creates no trip and writes nothing to the database;
-// the result is remembered so that departing with the same pickup point and destination uses it.
+// confirmation screen (REQ-003, DD-21). It creates no trip; the route and its bus stops are saved
+// as a preview whose id the departure refers to.
 func (s *Server) previewRoute(c *gin.Context) {
 	var body previewBody
 	if err := c.ShouldBindJSON(&body); err != nil || body.PickupPointID == nil || body.Destination == nil ||
@@ -69,7 +38,13 @@ func (s *Server) previewRoute(c *gin.Context) {
 	if !ok {
 		return
 	}
-	plan, err := s.planAndRemember(c, *body.PickupPointID, pickup, dest)
+	route, stopIDs, err := s.planRoute(c, pickup, dest)
+	if err != nil {
+		s.internalError(c, err)
+		return
+	}
+	plan := plannedRoute{route, stopIDs}
+	previewID, err := s.savePreview(c, c.GetInt64(ctxUserID), *body.PickupPointID, dest, plan)
 	if err != nil {
 		s.internalError(c, err)
 		return
@@ -79,7 +54,7 @@ func (s *Server) previewRoute(c *gin.Context) {
 		s.internalError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"route": routeView{
+	c.JSON(http.StatusOK, gin.H{"preview_id": previewID, "route": routeView{
 		Polyline: plan.route.Polyline, DistanceM: plan.route.DistanceM, DurationS: plan.route.DurationS,
 		Simulated: plan.route.Simulated, BusStops: stops,
 	}})
@@ -106,25 +81,64 @@ func (s *Server) checkRoutePoints(c *gin.Context, pickupID int64, dest latLng) (
 	return pickup, true
 }
 
-// planAndRemember plans a fresh route and replaces the remembered preview for the same key.
-func (s *Server) planAndRemember(ctx context.Context, pickupID int64, pickup, dest latLng) (plannedRoute, error) {
-	route, stopIDs, err := s.planRoute(ctx, pickup, dest)
-	if err != nil {
-		return plannedRoute{}, err
-	}
-	plan := plannedRoute{route, stopIDs}
-	s.previews.put(planKey{pickupID, dest}, plan)
-	return plan, nil
+// savePreview stores a planned route and its bus stops as an unused preview of the driver.
+func (s *Server) savePreview(ctx context.Context, driverID, pickupID int64, dest latLng, plan plannedRoute) (int64, error) {
+	var id int64
+	err := s.inTx(ctx, func(db DB) error {
+		if err := db.QueryRow(ctx, `
+			INSERT INTO route_previews (driver_id, pickup_point_id, destination_lat, destination_lng,
+			                            route_polyline, route_distance_m, route_duration_s, route_simulated)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+			driverID, pickupID, dest.Lat, dest.Lng,
+			plan.route.Polyline, plan.route.DistanceM, plan.route.DurationS, plan.route.Simulated).Scan(&id); err != nil {
+			return err
+		}
+		for i, stopID := range plan.stopIDs {
+			if _, err := db.Exec(ctx, `INSERT INTO route_preview_stops (preview_id, seq, bus_stop_id) VALUES ($1, $2, $3)`,
+				id, i+1, stopID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return id, err
 }
 
-// routeForDeparture reuses the preview of the same pickup point and destination, however old,
-// and plans only when there is none (DD-21).
-func (s *Server) routeForDeparture(ctx context.Context, pickupID int64, pickup, dest latLng) (plannedRoute, error) {
-	if plan, ok := s.previews.get(planKey{pickupID, dest}); ok {
-		return plan, nil
+// errInvalidPreview means the preview id cannot be used for this departure (DD-21).
+var errInvalidPreview = errors.New("invalid route preview")
+
+// usePreview marks the driver's unused preview as used by a departure from the pickup point to
+// dest and returns its route. It runs in the departure's transaction, so a failed departure
+// leaves the preview unused (DD-21). The destination name is not compared. The UPDATE claims the
+// preview atomically, so two departures cannot both use it.
+func usePreview(ctx context.Context, db DB, previewID, driverID, pickupID int64, dest latLng) (plannedRoute, error) {
+	var plan plannedRoute
+	err := db.QueryRow(ctx, `
+		UPDATE route_previews SET used_at = now()
+		 WHERE id = $1 AND driver_id = $2 AND pickup_point_id = $3
+		   AND destination_lat = $4 AND destination_lng = $5 AND used_at IS NULL
+		RETURNING route_polyline, route_distance_m, route_duration_s, route_simulated`,
+		previewID, driverID, pickupID, dest.Lat, dest.Lng).
+		Scan(&plan.route.Polyline, &plan.route.DistanceM, &plan.route.DurationS, &plan.route.Simulated)
+	if isNoRows(err) {
+		return plan, errInvalidPreview
 	}
-	route, stopIDs, err := s.planRoute(ctx, pickup, dest)
-	return plannedRoute{route, stopIDs}, err
+	if err != nil {
+		return plan, err
+	}
+	rows, err := db.Query(ctx, `SELECT bus_stop_id FROM route_preview_stops WHERE preview_id = $1 ORDER BY seq`, previewID)
+	if err != nil {
+		return plan, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return plan, err
+		}
+		plan.stopIDs = append(plan.stopIDs, id)
+	}
+	return plan, rows.Err()
 }
 
 // busStopsByID loads the stops in the given order.

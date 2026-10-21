@@ -16,17 +16,16 @@ Feature: route preview (POST /api/driver/route-preview)
     * method get
     * def pickup = response[0]
     * def inPark = { name: '瑞光路 內科大樓 A', lat: 25.0768, lng: 121.5738 }
+    * def preview = function() { return karate.call('classpath:carpool/api/post-preview.feature', { user: user, pickupId: pickup.id, dest: inPark }).response }
     * def depart = function(body) { return karate.call('classpath:carpool/api/post-trip.feature', { body: body, user: user }) }
 
-  Scenario: a preview creates no trip and the departure that follows has the same route and bus stops
+  Scenario: a preview returns an id and the route, and creates no trip
     * path 'api', 'driver', 'route-preview'
     * request { pickup_point_id: '#(pickup.id)', destination: { lat: '#(inPark.lat)', lng: '#(inPark.lng)' } }
     * method post
     * status 200
-    * match response.route == { polyline: '#string', distance_m: '#number', duration_s: '#number', simulated: '#boolean', bus_stops: '#array' }
-    * def previewed = response.route
+    * match response == { preview_id: '#number', route: { polyline: '#string', distance_m: '#number', duration_s: '#number', simulated: '#boolean', bus_stops: '#array' } }
 
-    # no trip was created
     * path 'api', 'driver', 'trips', 'current'
     * method get
     * status 404
@@ -35,11 +34,63 @@ Feature: route preview (POST /api/driver/route-preview)
     * status 200
     * match response.pickup_point_id == null
 
-    # a different name for the same pickup point and destination still uses the preview
-    * def r = depart({ pickup_point_id: pickup.id, destination: { name: '另一個名稱', lat: 25.0768, lng: 121.5738 }, capacity: 3, auto_accept: true })
+  Scenario: departing with the preview id gives the previewed route and uses up the preview
+    * def previewed = preview()
+    # a different name for the same pickup point and destination is fine
+    * def r = depart({ pickup_point_id: pickup.id, destination: { name: '另一個名稱', lat: 25.0768, lng: 121.5738 }, capacity: 3, auto_accept: true, preview_id: '#(previewed.preview_id)' })
     * match r.responseStatus == 201
-    * assert previewed.bus_stops.length > 0
-    * match r.response.route == previewed
+    * match r.response.route == previewed.route
+    # the preview is used: departing again with it is refused, and no trip is created
+    * Db.exec("UPDATE trips SET status = 'completed', ended_at = now() WHERE status = 'active' AND driver_id = (SELECT id FROM users WHERE username = ?)", user)
+    * def again = depart({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true, preview_id: '#(previewed.preview_id)' })
+    * match again.responseStatus == 400
+    * match again.response.error.code == 'invalid_route_preview'
+    * match Db.queryLong('SELECT count(*) FROM trips t JOIN users u ON u.id = t.driver_id WHERE u.username = ?', user) == 1
+
+  Scenario: the trip takes the stored preview, not a new plan
+    * def previewed = preview()
+    * Db.exec("UPDATE route_previews SET route_polyline = 'rewritten', route_distance_m = 4242 WHERE id = ?", previewed.preview_id)
+    * def r = depart({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true, preview_id: '#(previewed.preview_id)' })
+    * match r.responseStatus == 201
+    * match r.response.route contains { polyline: 'rewritten', distance_m: 4242 }
+
+  Scenario: a failed departure leaves the preview usable
+    * def previewed = preview()
+    * def first = depart({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true })
+    * match first.responseStatus == 201
+    * def blocked = depart({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true, preview_id: '#(previewed.preview_id)' })
+    * match blocked.responseStatus == 409
+    * match blocked.response.error.code == 'already_active'
+    * Db.exec("UPDATE trips SET status = 'completed', ended_at = now() WHERE status = 'active' AND driver_id = (SELECT id FROM users WHERE username = ?)", user)
+    * def retry = depart({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true, preview_id: '#(previewed.preview_id)' })
+    * match retry.responseStatus == 201
+
+  Scenario: departing without a preview id plans at departure
+    * def r = depart({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true })
+    * match r.responseStatus == 201
+    * match r.response.route == { polyline: '#string', distance_m: '#number', duration_s: '#number', simulated: '#boolean', bus_stops: '#array' }
+
+  Scenario Outline: a departure with an unusable preview is refused: <why>
+    * def previewed = preview()
+    * def other = 'karate-trip-other-' + suffix
+    * Db.exec('INSERT INTO users (username, display_name, is_driver) VALUES (?, ?, true)', other, other)
+    * def pickups = karate.call('classpath:carpool/api/get-pickups.feature').response
+    * def otherPickup = pickups.filter(function(p) { return p.id != pickup.id })[0]
+    * def id = <id>
+    * def who = <who>
+    * def r = karate.call('classpath:carpool/api/post-trip.feature', { user: who, body: <body> })
+    * match r.responseStatus == 400
+    * match r.response.error.code == 'invalid_route_preview'
+    * match Db.queryLong('SELECT count(*) FROM trips t JOIN users u ON u.id = t.driver_id WHERE u.username = ?', who) == 0
+    * match Db.queryLong('SELECT count(*) FROM route_previews WHERE id = ? AND used_at IS NOT NULL', previewed.preview_id) == 0
+    * karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: other })
+
+    Examples:
+      | why                         | id                         | who   | body                                                                                                                                |
+      | id does not exist           | 999999999                  | user  | { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true, preview_id: id }                                |
+      | belongs to another driver   | previewed.preview_id       | other | { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true, preview_id: id }                                |
+      | different pickup point      | previewed.preview_id       | user  | { pickup_point_id: otherPickup.id, destination: inPark, capacity: 3, auto_accept: true, preview_id: id }                           |
+      | different destination       | previewed.preview_id       | user  | { pickup_point_id: pickup.id, destination: { name: 'x', lat: 25.0770, lng: 121.5738 }, capacity: 3, auto_accept: true, preview_id: id } |
 
   Scenario Outline: a preview is refused: <why>
     * path 'api', 'driver', 'route-preview'
