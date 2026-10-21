@@ -48,7 +48,8 @@ func recomputeDriverProfile(ctx context.Context, db DB, driverID int64) error {
 
 // The passenger's final destination is the one asked for in the requests (not the drop-off
 // stop); the arrival time is the median time of day of the completions; the accepted stops are
-// the bus stops actually used (a null drop-off is the trip's destination, not a stop).
+// the bus stops actually used (a null drop-off is the trip's destination, not a stop). When no
+// stop was ever used, the stored stops (e.g. the demo seed's) are kept rather than cleared.
 func recomputePassengerProfile(ctx context.Context, db DB, passengerID int64) error {
 	var dest place
 	if err := db.QueryRow(ctx, `
@@ -75,7 +76,9 @@ func recomputePassengerProfile(ctx context.Context, db DB, passengerID int64) er
 		passengerID, arrival, dest.Name, dest.Lat, dest.Lng); err != nil {
 		return err
 	}
-	if _, err := db.Exec(ctx, `DELETE FROM passenger_accepted_stops WHERE user_id = $1`, passengerID); err != nil {
+	if _, err := db.Exec(ctx, `
+		DELETE FROM passenger_accepted_stops WHERE user_id = $1
+		   AND EXISTS (SELECT 1 FROM service_records WHERE passenger_id = $1 AND dropoff_bus_stop_id IS NOT NULL)`, passengerID); err != nil {
 		return err
 	}
 	_, err := db.Exec(ctx, `
