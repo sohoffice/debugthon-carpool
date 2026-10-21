@@ -1,15 +1,14 @@
 // The Demo's off-stage part (T18E, docs/demo-script.md), so the speaker only works the two phones
-// on the showcase: driver5 takes the required tag and departs, the simulator runs (DD-14), the
-// terminal says when driver4 should depart and when the 2 minutes start, and driver5 declines
-// every request it gets, which reassigns it to driver4 (REQ-049).
+// on the showcase: driver4 and driver5 take the required tag, driver5 departs, the simulator runs
+// (DD-14), the terminal says when driver4 should depart and when the 2 minutes start, and driver5
+// declines every request it gets, which reassigns it to driver4 (REQ-049).
 // Runs against `just demo` (backend :8080, driver UI :5173); it never resets the Demo or starts
 // a server of its own. Ctrl-C stops it. Not a test.
 import { chromium } from '@playwright/test'
+import { selectStageTag, STAGE_ACCOUNTS, STAGE_TAG } from './stageTag.ts'
 
 const API = process.env.DEMO_API ?? 'http://localhost:8080/api'
 const DRIVER_APP = process.env.DEMO_DRIVER_APP ?? 'http://localhost:5173'
-/** The required tag of the Demo: only driver4 and driver5 carry it (docs/demo-script.md). */
-const STAGE_TAG = '女性友善'
 /** Default seconds driver5 leads driver4, so it is nearer the pickup point and gets the request first. */
 const DEFAULT_LEAD_S = 10
 const POLL_MS = 1000
@@ -32,17 +31,13 @@ async function api<T>(account: string, method: string, path: string, body?: unkn
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** driver5 takes the stage tag and departs to driver4's destination, unless it is already driving. */
+/** driver5 departs to driver4's destination, unless it is already driving. */
 async function departDriver5() {
   const running = await api<Requests>('driver5', 'GET', '/driver/requests')
   if (running.body.trip_id !== null) {
     say(`driver5 已經在行程中（行程 ${running.body.trip_id}），沿用這趟。`)
     return
   }
-  const tags = await api<{ id: number; name: string }[]>('driver5', 'GET', '/tags')
-  const tag = tags.body.find((t) => t.name === STAGE_TAG)
-  if (!tag) throw new Error(`找不到標籤「${STAGE_TAG}」`)
-  await api('driver5', 'PUT', `/me/tags/${tag.id}`)
   // Same destination as driver4's prefilled one, so the simulator's driver5 path reaches it too.
   const defaults = (await api<Defaults>('driver4', 'GET', '/driver/trips/defaults')).body
   const destination = defaults.destination ?? { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }
@@ -73,6 +68,9 @@ async function main() {
   const app = await fetch(DRIVER_APP).catch(() => null)
   if (!app?.ok) throw new Error(`連不到駕駛介面 ${DRIVER_APP}，請先執行 just demo`)
 
+  // Both stage drivers carry the required tag, else the request has no second car (T34).
+  for (const account of STAGE_ACCOUNTS) await selectStageTag(api, account)
+  say(`driver4、driver5 都帶「${STAGE_TAG}」。`)
   await departDriver5()
 
   // The simulator page, headless. Its Google requests are blocked: this page shows no map, and
