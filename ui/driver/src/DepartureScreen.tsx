@@ -136,7 +136,10 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
 
       <div className="pointer-events-none absolute inset-x-0 top-(--safe-top) bottom-0 overflow-y-auto overscroll-contain">
         <div className="h-[34%]" />
-        <section className="pointer-events-auto min-h-[62%] rounded-t-sheet bg-white px-6 pt-7 pb-[calc(var(--safe-bottom)+112px)] shadow-[0_-12px_32px_-16px_color-mix(in_srgb,var(--color-ink)_40%,transparent)]">
+        {/* Room under the last row for the bar below, which is taller with an error in it. */}
+        <section
+          className={`pointer-events-auto min-h-[62%] rounded-t-sheet bg-white px-6 pt-7 shadow-[0_-12px_32px_-16px_color-mix(in_srgb,var(--color-ink)_40%,transparent)] ${error ? 'pb-[calc(var(--safe-bottom)+208px)]' : 'pb-[calc(var(--safe-bottom)+112px)]'}`}
+        >
           <h1 className="text-[32px]/tight font-bold">{firstTime ? '第一次出發' : '今天載人嗎？'}</h1>
           <p className="mt-1 text-lg text-ink-soft">{firstTime ? '選好上車點和目的地就能出發，下次會自動帶入。' : '設定沿用上次。沒問題就出發。'}</p>
 
@@ -199,7 +202,10 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
         </section>
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-white from-70% to-transparent px-6 pt-8 pb-[calc(var(--safe-bottom)+12px)]">
+      {/* With an error the bar is solid white, so the message never sits over a setting row. */}
+      <div
+        className={`absolute inset-x-0 bottom-0 px-6 pb-[calc(var(--safe-bottom)+12px)] ${error ? 'border-t border-rule bg-white pt-4' : 'bg-gradient-to-t from-white from-70% to-transparent pt-8'}`}
+      >
         {error && (
           <div className="mb-3">
             <ErrorNote>{error}</ErrorNote>
