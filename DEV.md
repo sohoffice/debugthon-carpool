@@ -101,7 +101,7 @@
   - `VITE_GOOGLE_MAPS_API_KEY`：瀏覽器用的 Google Maps 金鑰，會公開給使用者。請限制為 HTTP 參照網址，且只開 Maps JavaScript API；不要沿用伺服器端的 `MAP_API_KEY`。未設定時地圖顯示提示文字，其他功能照常運作。
   - `VITE_GOOGLE_MAPS_MAP_ID`：選填，留空則使用 Google 的 `DEMO_MAP_ID`。
   - `MAP_API_KEY`：後端用的 Google Routes 金鑰，只放在伺服器端，且只開 Routes API。有設定時行程路線、行車時間與步行時間來自 Google；留空則用模擬。
-  - Go 後端啟動時會讀取根目錄 `.env`（從 `backend/` 執行，讀 `../.env`）：檔案不存在不算錯誤；環境中已設定的變數優先，包含設為空值的（例如 `MAP_API_KEY= just backend up` 強制用模擬）。Go 測試不讀 `.env`；`just backend karate` 一律以空的 `MAP_API_KEY` 啟動後端。
+  - Go 後端啟動時只載入找到的第一個 `.env`：先找目前目錄，沒有再找上一層（從 `backend/` 執行時就是根目錄的 `.env`），不再往上找，也不會合併兩個檔案；都沒有只記一行 log，不算錯誤。環境中已設定的變數優先，包含設為空值的（例如 `MAP_API_KEY= just backend up` 強制用模擬）。Go 測試不讀 `.env`；`just backend karate` 一律以空的 `MAP_API_KEY` 啟動後端。
 
 ### Demo
 
