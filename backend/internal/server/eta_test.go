@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-// distanceRoutes is a DriveTimer whose duration is 1 s per metre, so an ETA tells which
+// distanceDrives is a DriveTimer whose duration is 1 s per metre, so an ETA tells which
 // position it was computed from. It records the endpoints it was asked about.
-type distanceRoutes struct {
+type distanceDrives struct {
 	from, to latLng
 	calls    int
 }
 
-func (d *distanceRoutes) DriveTime(_ context.Context, from, to latLng) (Travel, error) {
+func (d *distanceDrives) DriveTime(_ context.Context, from, to latLng) (Travel, error) {
 	d.from, d.to = from, to
 	d.calls++
 	return Travel{DurationS: int(distanceM(from, to)), Simulated: true}, nil
@@ -24,8 +24,8 @@ func TestETAUsesTheCurrentPosition(t *testing.T) {
 	tx := testTx(t)
 	f := activeTrip(t, tx)
 	act := declare(t, tx, f.token)
-	routes := &distanceRoutes{}
-	s := etaServer(tx, routes)
+	drives := &distanceDrives{}
+	s := etaServer(tx, drives)
 
 	// Reports are not an ETA until the car has been heard from.
 	if eta, err := s.vehicleETA(context.Background(), f.id); err != nil || eta != nil {
@@ -38,8 +38,8 @@ func TestETAUsesTheCurrentPosition(t *testing.T) {
 	if err != nil || eta == nil {
 		t.Fatalf("eta = %v, %v", eta, err)
 	}
-	if routes.from != near || routes.to != f.pickup {
-		t.Fatalf("estimated from %v to %v, want from the latest report %v to the pickup %v", routes.from, routes.to, near, f.pickup)
+	if drives.from != near || drives.to != f.pickup {
+		t.Fatalf("estimated from %v to %v, want from the latest report %v to the pickup %v", drives.from, drives.to, near, f.pickup)
 	}
 	if eta.DurationS < 290 || eta.DurationS > 310 || !eta.Simulated {
 		t.Fatalf("eta = %+v, want ~300 s and marked simulated", eta)
@@ -79,16 +79,16 @@ func TestETAIgnoresPassengerReports(t *testing.T) {
 	declare(t, tx, f.token)
 	_, pax := newUser(t, tx, rolePassenger)
 	declare(t, tx, pax)
-	routes := &distanceRoutes{}
-	s := etaServer(tx, routes)
+	drives := &distanceDrives{}
+	s := etaServer(tx, drives)
 
 	report(t, tx, f.token, offsetM(f.pickup, 500))
 	report(t, tx, pax, offsetM(f.pickup, 5))
 	if _, err := s.vehicleETA(context.Background(), f.id); err != nil {
 		t.Fatal(err)
 	}
-	if routes.from != offsetM(f.pickup, 500) {
-		t.Fatalf("estimated from %v, want the driver's position", routes.from)
+	if drives.from != offsetM(f.pickup, 500) {
+		t.Fatalf("estimated from %v, want the driver's position", drives.from)
 	}
 }
 
@@ -96,8 +96,8 @@ func TestNoETAOnceThePickupIsPassed(t *testing.T) {
 	tx := testTx(t)
 	f := activeTrip(t, tx)
 	declare(t, tx, f.token)
-	routes := &distanceRoutes{}
-	s := etaServer(tx, routes)
+	drives := &distanceDrives{}
+	s := etaServer(tx, drives)
 
 	report(t, tx, f.token, offsetM(f.pickup, 400))
 	report(t, tx, f.token, offsetM(f.pickup, 5))
@@ -105,12 +105,12 @@ func TestNoETAOnceThePickupIsPassed(t *testing.T) {
 	if passed.PassedPickup == nil || !*passed.PassedPickup {
 		t.Fatalf("fixture: trip should have passed the pickup, got %v", passed.PassedPickup)
 	}
-	routes.calls = 0
+	drives.calls = 0
 	eta, err := s.vehicleETA(context.Background(), f.id)
 	if err != nil || eta != nil {
 		t.Fatalf("eta after passing = %v, %v; want nil", eta, err)
 	}
-	if routes.calls != 0 {
+	if drives.calls != 0 {
 		t.Fatal("a passed car must not cost a route estimate")
 	}
 	// Coming back does not bring the ETA back.
@@ -124,8 +124,8 @@ func TestNoETAForATripThatIsNotActive(t *testing.T) {
 	tx := testTx(t)
 	f := activeTrip(t, tx)
 	declare(t, tx, f.token)
-	routes := &distanceRoutes{}
-	s := etaServer(tx, routes)
+	drives := &distanceDrives{}
+	s := etaServer(tx, drives)
 
 	report(t, tx, f.token, offsetM(f.pickup, 500))
 	if eta, err := s.vehicleETA(context.Background(), f.id); err != nil || eta == nil {
@@ -133,11 +133,11 @@ func TestNoETAForATripThatIsNotActive(t *testing.T) {
 	}
 
 	mustExec(t, tx, `UPDATE trips SET status = 'completed', ended_at = now() WHERE id = $1`, f.id)
-	routes.calls = 0
+	drives.calls = 0
 	if eta, err := s.vehicleETA(context.Background(), f.id); err != nil || eta != nil {
 		t.Fatalf("eta for an ended trip = %v, %v; want nil", eta, err)
 	}
-	if routes.calls != 0 {
+	if drives.calls != 0 {
 		t.Fatal("an ended trip must not cost a route estimate")
 	}
 

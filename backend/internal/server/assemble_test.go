@@ -7,15 +7,15 @@ import (
 	"testing"
 )
 
-// fakeRoutes returns a ride time per destination, so a test can see which one was used.
-type fakeRoutes struct {
+// fakeDrives returns a ride time per destination, so a test can see which one was used.
+type fakeDrives struct {
 	ride map[latLng]int
 	sim  bool
 	err  error
 	n    int
 }
 
-func (f *fakeRoutes) DriveTime(_ context.Context, _, to latLng) (Travel, error) {
+func (f *fakeDrives) DriveTime(_ context.Context, _, to latLng) (Travel, error) {
 	f.n++
 	return Travel{DurationS: f.ride[to], Simulated: f.sim}, f.err
 }
@@ -37,14 +37,14 @@ func TestRankRequestUsesProvidersAndCandidates(t *testing.T) {
 	dest := latLng{25.0900, 121.5700}
 	s1, s2, s3 := latLng{25.0850, 121.5700}, latLng{25.0860, 121.5700}, latLng{25.0870, 121.5700}
 	stops := map[int64]latLng{1: s1, 2: s2, 3: s3}
-	routes := &fakeRoutes{ride: map[latLng]int{dest: 900, s1: 600, s2: 700, s3: 100}}
+	drives := &fakeDrives{ride: map[latLng]int{dest: 900, s1: 600, s2: 700, s3: 100}}
 	walks := fakeWalks{walk: map[latLng]int{dest: 60, s1: 300, s2: 120, s3: 0}}
 	eta := 120
 	trip := matchTrip{ID: 1, PickupPointID: 1, Active: true, Destination: dest, Capacity: 3,
 		ETASeconds: &eta, RouteStops: []int64{1, 2, 3}}
 	r := matchRequest{PickupPointID: 1, Destination: offsetM(dest, 10), AcceptedStops: []int64{1, 2}}
 
-	got, failed := rankRequest(context.Background(), routes, walks, proposalParams(), r, pickup, stops, []matchTrip{trip})
+	got, failed := rankRequest(context.Background(), drives, walks, proposalParams(), r, pickup, stops, []matchTrip{trip})
 	if len(failed) != 0 {
 		t.Fatal(failed)
 	}
@@ -55,8 +55,8 @@ func TestRankRequestUsesProvidersAndCandidates(t *testing.T) {
 	if got[0].DropOff.RideS != 700 || got[0].DropOff.WalkS != 120 {
 		t.Errorf("times = %+v, want ride 700 walk 120", got[0].DropOff)
 	}
-	if routes.n != 3 {
-		t.Errorf("route calls = %d, want 3 (destination, S1, S2)", routes.n)
+	if drives.n != 3 {
+		t.Errorf("drive time calls = %d, want 3 (destination, S1, S2)", drives.n)
 	}
 	// 2 min wait x2 + 700 s ride + 120 s walk x1.5
 	if want := 240.0 + 700 + 180; got[0].CostS != want {
@@ -68,7 +68,7 @@ func TestRankRequestUsesProvidersAndCandidates(t *testing.T) {
 func TestRankRequestOrdersByProviderTimes(t *testing.T) {
 	pickup := latLng{25.0800, 121.5700}
 	dA, dB, dC := latLng{25.0900, 121.5700}, latLng{25.0910, 121.5700}, latLng{25.0920, 121.5700}
-	routes := &fakeRoutes{ride: map[latLng]int{dA: 900, dB: 600, dC: 100}}
+	drives := &fakeDrives{ride: map[latLng]int{dA: 900, dB: 600, dC: 100}}
 	walks := fakeWalks{walk: map[latLng]int{dA: 0, dB: 0, dC: 0}}
 	eta := 0
 	mk := func(id int64, d latLng) matchTrip {
@@ -82,22 +82,22 @@ func TestRankRequestOrdersByProviderTimes(t *testing.T) {
 	p := proposalParams()
 	p.AddressMatchM = 5000
 
-	got, failed := rankRequest(context.Background(), routes, walks, p, r, pickup, nil, []matchTrip{mk(1, dA), mk(2, dB), c})
+	got, failed := rankRequest(context.Background(), drives, walks, p, r, pickup, nil, []matchTrip{mk(1, dA), mk(2, dB), c})
 	if len(failed) != 0 {
 		t.Fatal(failed)
 	}
 	if ids := tripIDs(got); !equalIDs(ids, []int64{2, 1}) {
 		t.Errorf("order = %v, want [2 1]", ids)
 	}
-	if routes.n != 2 {
-		t.Errorf("route calls = %d, want 2 (the passed car is skipped)", routes.n)
+	if drives.n != 2 {
+		t.Errorf("drive time calls = %d, want 2 (the passed car is skipped)", drives.n)
 	}
 }
 
-// selectiveRoutes fails for one destination only.
-type selectiveRoutes struct{ bad latLng }
+// selectiveDrives fails for one destination only.
+type selectiveDrives struct{ bad latLng }
 
-func (f selectiveRoutes) DriveTime(_ context.Context, _, to latLng) (Travel, error) {
+func (f selectiveDrives) DriveTime(_ context.Context, _, to latLng) (Travel, error) {
 	if to == f.bad {
 		return Travel{}, errors.New("boom")
 	}
@@ -117,7 +117,7 @@ func TestRankRequestProviderErrorDropsOnlyThatTrip(t *testing.T) {
 	p := proposalParams()
 	p.AddressMatchM = 5000
 
-	got, failed := rankRequest(context.Background(), selectiveRoutes{bad: dBad}, fakeWalks{}, p, r, pickup, nil,
+	got, failed := rankRequest(context.Background(), selectiveDrives{bad: dBad}, fakeWalks{}, p, r, pickup, nil,
 		[]matchTrip{mk(1, dBad), mk(2, dOK)})
 	if ids := tripIDs(got); !equalIDs(ids, []int64{2}) {
 		t.Errorf("ranked = %v, want [2]", ids)
@@ -135,7 +135,7 @@ func TestRankRequestProviderErrorDropsOnlyThatTrip(t *testing.T) {
 		if name == "walk error" {
 			stops[9] = dOK
 		}
-		got, failed := rankRequest(context.Background(), &fakeRoutes{}, w, p, r, pickup, stops, []matchTrip{trip})
+		got, failed := rankRequest(context.Background(), &fakeDrives{}, w, p, r, pickup, stops, []matchTrip{trip})
 		if len(got) != 0 || len(failed) != 1 || failed[0].TripID != 3 {
 			t.Errorf("%s: got %v, failed %+v", name, got, failed)
 		}
@@ -177,7 +177,7 @@ func TestRankRequestKeepsSimulatedMark(t *testing.T) {
 		{"ride simulated", true, false, true},
 		{"walk simulated", false, true, true},
 	} {
-		got, failed := rankRequest(context.Background(), &fakeRoutes{sim: c.rideSim}, fakeWalks{sim: c.walkSim},
+		got, failed := rankRequest(context.Background(), &fakeDrives{sim: c.rideSim}, fakeWalks{sim: c.walkSim},
 			proposalParams(), r, pickup, nil, []matchTrip{trip})
 		if len(failed) != 0 || len(got) != 1 || got[0].DropOff.Simulated != c.want {
 			t.Errorf("%s: got %+v %v, want Simulated=%v", c.name, got, failed, c.want)

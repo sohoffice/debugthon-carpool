@@ -928,7 +928,7 @@ func TestETAsAreMarkedSimulated(t *testing.T) {
 
 	// A real provider: the same views say not simulated.
 	deps := testDeps(t)
-	deps.Drives = realRoutes{}
+	deps.Drives = realDrives{}
 	get := func(path string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -946,9 +946,9 @@ func TestETAsAreMarkedSimulated(t *testing.T) {
 	}
 }
 
-// realRoutes is a DriveTimer that is not the simulated fallback.
-type realRoutes struct{}
+// realDrives is a DriveTimer that is not the simulated fallback.
+type realDrives struct{}
 
-func (realRoutes) DriveTime(_ context.Context, from, to latLng) (Travel, error) {
+func (realDrives) DriveTime(_ context.Context, from, to latLng) (Travel, error) {
 	return Travel{DurationS: int(distanceM(from, to) / 10), Simulated: false}, nil
 }
