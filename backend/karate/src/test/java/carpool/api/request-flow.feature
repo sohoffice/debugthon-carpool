@@ -34,6 +34,8 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * def submit = function() { return karate.call('classpath:carpool/api/submit-request.feature', { token: pt, body: { pickup_point_id: pickup.id, location: { lat: pickup.lat, lng: pickup.lng }, destination: inPark, stop_ids: [stop.id], tag_filters: [{ tag_id: tagId, intent: 'required' }] } }).response }
     * def doPost = function(token, path) { return karate.call('classpath:carpool/api/act-post.feature', { token: token, path: path }) }
     * def doGet = function(token, path) { return karate.call('classpath:carpool/api/act-get.feature', { token: token, path: path }) }
+    # a request the car's driver has confirmed (DD-33: the backend never confirms on its own)
+    * def confirmed = function(name) { var r = submit(); karate.match(r.status, 'waiting_driver'); return doPost(driverToken(name), 'api/driver/requests/' + r.id + '/accept').response }
 
   Scenario: the driver sees the request with pickup and drop-off and accepts it
     * def tripId = car('accept', 500, false)
@@ -84,8 +86,9 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match status.response contains { status: 'no_match', reassigned_count: 2, reason: 'no_match', message: '目前沒有可搭的車' }
     * match doGet(pt, 'api/passenger/requests/current').response.request == null
 
-  Scenario: a request the driver does not answer in time is reassigned by the backend
-    * def first = car('slow', 500, false)
+  Scenario Outline: a request the driver does not answer in time is reassigned by the backend (auto-accept <auto>)
+    # DD-13, DD-33: an auto-accept car whose driver UI does not confirm times out like any car
+    * def first = car('slow', 500, <auto>)
     * def second = car('next', 1500, false)
     * def req = submit()
     * match req.trip_id == first
@@ -95,11 +98,32 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * eval var n = 0; while (waitFor() == first && n < 15) { java.lang.Thread.sleep(500); n++ }
     * def status = doGet(pt, 'api/passenger/requests/' + req.id)
     * match status.response contains { status: 'waiting_driver', trip_id: '#(second)', reassigned_count: 1 }
-    * match doGet(driverToken('slow'), 'api/trips/' + first).response contains { seats_held: 0 }
+    * match doGet(driverToken('slow'), 'api/trips/' + first).response contains { seats_held: 0, seats_confirmed: 0 }
+
+    Examples:
+      | auto  |
+      | false |
+      | true  |
+
+  Scenario: an auto-accept car waits for its driver's confirm, on assignment and on reassignment
+    # REQ-022, DD-33: the backend does not confirm for an auto-accept trip; the driver UI calls accept
+    * def first = car('autofirst', 500, true)
+    * def second = car('autonext', 1500, true)
+    * def req = submit()
+    * match req contains { status: 'waiting_driver', trip_id: '#(first)', confirmed_at: null }
+    * match doGet(driverToken('autofirst'), 'api/trips/' + first).response contains { seats_held: 1, seats_confirmed: 0 }
+    * def declined = doPost(driverToken('autofirst'), 'api/driver/requests/' + req.id + '/decline')
+    * match declined.response contains { status: 'waiting_driver', trip_id: '#(second)', confirmed_at: null }
+    * match declined.response.response_deadline_at == '#string'
+    * match doGet(driverToken('autonext'), 'api/trips/' + second).response contains { seats_held: 1, seats_confirmed: 0 }
+    * def accepted = doPost(driverToken('autonext'), 'api/driver/requests/' + req.id + '/accept')
+    * match accepted.responseStatus == 200
+    * match accepted.response contains { status: 'confirmed', trip_id: '#(second)', response_deadline_at: null }
+    * match doGet(driverToken('autonext'), 'api/trips/' + second).response contains { seats_held: 0, seats_confirmed: 1 }
 
   Scenario: the confirmed status shows the car's position and heading until boarding
-    * def tripId = car('track', 500, true)
-    * def req = submit()
+    * def tripId = car('track', 500, false)
+    * def req = confirmed('track')
     * match req.status == 'confirmed'
     * def d = driverToken('track')
     * def at = function(northM, eastM) { return karate.call('classpath:carpool/api/post-location.feature', { token: d, lat: pickup.lat + northM * 0.000009, lng: pickup.lng + eastM * 0.00001 }) }
@@ -122,8 +146,8 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match doGet(pt, 'api/passenger/requests/' + req.id).response contains { status: 'boarded', vehicle_position: null, passed_pickup: null, eta_simulated: null }
 
   Scenario: a car that drove past the pickup has no ETA and the status says so
-    * def tripId = car('past', 500, true)
-    * def req = submit()
+    * def tripId = car('past', 500, false)
+    * def req = confirmed('past')
     * match req.status == 'confirmed'
     * def d = driverToken('past')
     * def at = function(northM) { return karate.call('classpath:carpool/api/post-location.feature', { token: d, lat: pickup.lat + northM * 0.000009, lng: pickup.lng }) }
@@ -134,8 +158,8 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match status.vehicle_position.lat == pickup.lat - (pickup.radius_m + 100) * 0.000009
 
   Scenario Outline: boarding is marked once, by <first> first, and the later side gets the same answer
-    * def tripId = car('board', 500, true)
-    * def req = submit()
+    * def tripId = car('board', 500, false)
+    * def req = confirmed('board')
     * match req.status == 'confirmed'
     * def d = driverToken('board')
     * def mark = function(who) { return who == 'passenger' ? doPost(pt, 'api/passenger/requests/' + req.id + '/board') : doPost(d, 'api/driver/requests/' + req.id + '/board') }
@@ -169,8 +193,9 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match doGet(pt, 'api/passenger/requests/' + req.id).response.status == 'waiting_driver'
 
   Scenario Outline: the ride can be ended <how>, and ending it twice is harmless
-    * def tripId = car('end', 500, true)
-    * def req = submit()
+    * def tripId = car('end', 500, false)
+    * def req = confirmed('end')
+    * match req.status == 'confirmed'
     * def d = driverToken('end')
     * eval if ('<boarded>' == 'yes') doPost(pt, 'api/passenger/requests/' + req.id + '/board')
     * def end = function(who) { return who == 'passenger' ? doPost(pt, 'api/passenger/requests/' + req.id + '/complete') : doPost(d, 'api/driver/requests/' + req.id + '/complete') }
