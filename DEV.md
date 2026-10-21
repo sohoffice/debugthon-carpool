@@ -64,6 +64,7 @@
 | `just infra reset` | 移除容器與資料卷後重新啟動（資料全部清空，之後需再執行 `just backend db-apply`） |
 
 - 資料庫名稱、帳號、密碼與連接埠可透過 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_PORT` 覆寫（資料庫預設 `carpool`，帳號與密碼預設 `postgres`，連接埠 `5432`）。這是超級使用者，供 goose 遷移使用；後端以第一個遷移建立的 `carpool` 使用者連線。
+- `docker-compose.yml` 固定專案名稱 `debugthon-carpool`，所以共用 checkout 和每個 git worktree 用的都是同一個 Postgres（容器 `debugthon-carpool-postgres-1`、資料卷 `debugthon-carpool_pgdata`）。從任何 worktree 執行 `just infra down`／`just infra reset` 都會作用在這個共用的 Postgres 上，`reset` 會清掉 Demo 的資料；Demo 或演練前後不要從 worktree 執行。需要另一套獨立的資料庫時，用 `COMPOSE_PROJECT_NAME=<名稱> POSTGRES_PORT=55432 just infra up`（`COMPOSE_PROJECT_NAME` 會蓋過固定的名稱）。
 
 ### 前端
 
