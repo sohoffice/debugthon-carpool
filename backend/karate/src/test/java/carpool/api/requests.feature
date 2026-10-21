@@ -79,7 +79,8 @@ Feature: ride requests (POST /api/passenger/requests)
     * status 201
     * match response contains { status: 'no_match', reason: 'no_match', message: '目前沒有可搭的車', trip_id: null, response_deadline_at: null }
 
-  Scenario: an auto-accept trip confirms at once and takes the passenger's latest activity
+  Scenario: an auto-accept trip waits for the driver too, and the confirm takes the passenger's latest activity
+    # REQ-022, DD-13, DD-33: the backend never confirms on its own; the driver UI sends the confirm
     * def tagId = tags[1].id
     * def tripId = car('auto', tagId, true)
     * path 'api', 'activities'
@@ -91,8 +92,23 @@ Feature: ride requests (POST /api/passenger/requests)
     * request submission([{ tag_id: tagId, intent: 'required' }], 0)
     * method post
     * status 201
-    * match response contains { status: 'confirmed', trip_id: '#(tripId)', response_deadline_at: null }
-    * match response.confirmed_at == '#string'
+    * match response contains { status: 'waiting_driver', trip_id: '#(tripId)', confirmed_at: null }
+    * match response.response_deadline_at == '#string'
+    * def requestId = response.id
+    * path 'api', 'trips', tripId
+    * method get
+    * status 200
+    * match response contains { seats_held: 1, seats_confirmed: 0 }
+    # not yet confirmed: the activity is not the trip's
+    * path 'api', 'location'
+    * request { lat: '#(pickup.lat)', lng: '#(pickup.lng)' }
+    * method post
+    * status 201
+    * match response contains { activity_id: '#(activityId)', trip_id: null }
+    * def accepted = karate.call('classpath:carpool/api/act-post.feature', { token: 'driver:karate-request-driver-auto-' + suffix, path: 'api/driver/requests/' + requestId + '/accept' })
+    * match accepted.responseStatus == 200
+    * match accepted.response contains { status: 'confirmed', trip_id: '#(tripId)', response_deadline_at: null }
+    * match accepted.response.confirmed_at == '#string'
     * path 'api', 'trips', tripId
     * method get
     * status 200

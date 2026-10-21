@@ -83,7 +83,8 @@ func currentRank(ctx context.Context, db DB, id, tripID int64) (int, error) {
 
 // reassign gives up the current assignment of a waiting request (outcome is declined,
 // timed_out or trip_ended) and moves it to the next candidate whose seat can be held, or to no_match when
-// none is left (REQ-050, DD-12). It auto-confirms when that trip auto-accepts (REQ-022).
+// none is left (REQ-050, DD-12). The new assignment waits for the driver like the first one (DD-13,
+// DD-33).
 // s.db must be the transaction that holds the request lock.
 func (s *Server) reassign(ctx context.Context, q lockedRequest, outcome string) error {
 	rank, err := currentRank(ctx, s.db, q.ID, *q.TripID)
@@ -103,14 +104,12 @@ func (s *Server) reassign(ctx context.Context, q lockedRequest, outcome string) 
 	}
 
 	type next struct {
-		rank     int
 		tripID   int64
 		stopID   *int64
-		auto     bool
 		driverID int64
 	}
 	rows, err := s.db.Query(ctx, `
-		SELECT c.rank, c.trip_id, c.dropoff_bus_stop_id, t.auto_accept, t.driver_id
+		SELECT c.trip_id, c.dropoff_bus_stop_id, t.driver_id
 		  FROM request_candidates c JOIN trips t ON t.id = c.trip_id
 		 WHERE c.request_id = $1 AND c.rank > $2 AND t.status = 'active' AND NOT t.passed_pickup
 		 ORDER BY c.rank`, q.ID, rank)
@@ -120,7 +119,7 @@ func (s *Server) reassign(ctx context.Context, q lockedRequest, outcome string) 
 	var rest []next
 	for rows.Next() {
 		var n next
-		if err := rows.Scan(&n.rank, &n.tripID, &n.stopID, &n.auto, &n.driverID); err != nil {
+		if err := rows.Scan(&n.tripID, &n.stopID, &n.driverID); err != nil {
 			rows.Close()
 			return err
 		}
@@ -147,9 +146,6 @@ func (s *Server) reassign(ctx context.Context, q lockedRequest, outcome string) 
 			`trip_id = $4, dropoff_bus_stop_id = $5, relaxed = $6, response_deadline_at = now() + make_interval(secs => $7)`,
 			n.tripID, n.stopID, relaxed, timeout); err != nil {
 			return err
-		}
-		if n.auto {
-			return confirmRequest(ctx, s.db, q.ID, n.tripID, q.PassengerID, n.rank)
 		}
 		return nil
 	}

@@ -13,10 +13,10 @@ import (
 	"github.com/sohoffice/debugthon-carpool/backend/internal/settings"
 )
 
-// Ride request flow, submission half (REQ-034..REQ-036, REQ-047, REQ-048, REQ-022, DD-12,
-// DD-25). A request is answered at once: rejected, assigned to the first ranked car with a seat
-// held, confirmed (auto-accept), or "no car". Driver response, timeout, reassignment, boarding
-// and completion are in request_flow.go.
+// Ride request flow, submission half (REQ-034..REQ-036, REQ-047, REQ-048, DD-12, DD-25). A
+// request is answered at once: rejected, assigned to the first ranked car with a seat held, or
+// "no car". An assigned request always waits for the driver, auto-accept included (DD-33).
+// Driver response, timeout, reassignment, boarding and completion are in request_flow.go.
 
 // Request statuses, as in ride_requests.status.
 const (
@@ -297,7 +297,7 @@ func (s *Server) placeRequest(ctx context.Context, db DB, in requestInput) (requ
 
 	// REQ-048, DD-12: the first car whose seat can still be held wins; a car filled by an
 	// earlier request in the meantime is skipped, its candidate outcome left empty.
-	for i, r := range ranked {
+	for _, r := range ranked {
 		held, err := holdSeat(ctx, db, r.TripID)
 		if err != nil {
 			return requestView{}, err
@@ -305,7 +305,7 @@ func (s *Server) placeRequest(ctx context.Context, db DB, in requestInput) (requ
 		if !held {
 			continue
 		}
-		return ts.assign(ctx, id, i+1, r, relaxedFor(in.Filters, tripByID(trips, r.TripID).Tags))
+		return ts.assign(ctx, id, r, relaxedFor(in.Filters, tripByID(trips, r.TripID).Tags))
 	}
 	if err := transition(ctx, db, id, reqSubmitted, reqNoMatch, ""); err != nil {
 		return requestView{}, err
@@ -313,9 +313,10 @@ func (s *Server) placeRequest(ctx context.Context, db DB, in requestInput) (requ
 	return ts.loadRequestView(ctx, id, "no_match", "目前沒有可搭的車")
 }
 
-// assign records the held seat on the request and, when the trip auto-accepts, confirms it at
-// once (REQ-022).
-func (s *Server) assign(ctx context.Context, id int64, rank int, r rankedTrip, relaxed bool) (requestView, error) {
+// assign records the held seat on the request, which then waits for the driver to confirm or
+// for the timeout (DD-13). Auto-accept is the driver UI confirming for the driver (DD-33), so the
+// request flow never confirms on assignment.
+func (s *Server) assign(ctx context.Context, id int64, r rankedTrip, relaxed bool) (requestView, error) {
 	timeout, err := settings.New(s.db).Get(ctx, "driver_confirm_timeout")
 	if err != nil {
 		return requestView{}, err
@@ -324,20 +325,6 @@ func (s *Server) assign(ctx context.Context, id int64, rank int, r rankedTrip, r
 		`trip_id = $4, dropoff_bus_stop_id = $5, relaxed = $6, response_deadline_at = now() + make_interval(secs => $7)`,
 		r.TripID, r.DropOff.StopID, relaxed, timeout)
 	if err != nil {
-		return requestView{}, err
-	}
-
-	var auto bool
-	var passengerID int64
-	if err := s.db.QueryRow(ctx, `SELECT t.auto_accept, q.passenger_id FROM trips t, ride_requests q
-		 WHERE t.id = $1 AND q.id = $2`, r.TripID, id).Scan(&auto, &passengerID); err != nil {
-		return requestView{}, err
-	}
-	if !auto {
-		return s.loadRequestView(ctx, id, "", "")
-	}
-
-	if err := confirmRequest(ctx, s.db, id, r.TripID, passengerID, rank); err != nil {
 		return requestView{}, err
 	}
 	return s.loadRequestView(ctx, id, "", "")

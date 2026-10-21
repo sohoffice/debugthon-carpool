@@ -73,9 +73,11 @@ test('auto-accept on Go: the passenger is confirmed without the driver doing any
   await driveTowardsPickup(request)
   await expect(passenger.getByRole('region', { name: '松山車站的接近車輛' }).getByText(/^\d+ 台車接近中$/)).toBeVisible()
 
-  // REQ-022: the request is confirmed on submit; the driver is never asked.
+  // REQ-022, DD-33: the driver never touches the screen. The backend leaves the request waiting;
+  // the driver UI sees it on its next poll and confirms it, and the passenger sees that on its
+  // own next poll, so allow two poll intervals and some margin.
   await requestWithStageTagRequired(passenger)
-  await expect(passenger.getByText('分鐘後到').first()).toBeVisible()
+  await expect(passenger.getByText('分鐘後到').first()).toBeVisible({ timeout: 15_000 })
   await expect(passenger.getByRole('button', { name: '我已上車' })).toBeVisible()
   await expect(driver.getByRole('heading', { name: '有乘客要搭車' })).toBeHidden()
   await expect(driver.getByRole('button', { name: '確認' })).toBeHidden()

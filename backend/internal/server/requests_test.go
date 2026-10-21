@@ -22,7 +22,7 @@ func TestRequestTransitions(t *testing.T) {
 		{reqSubmitted, reqRejected}:          true, // beyond the submit distance
 		{reqSubmitted, reqWaitingDriver}:     true, // assigned to the first ranked car
 		{reqSubmitted, reqNoMatch}:           true, // no car passes screening
-		{reqWaitingDriver, reqConfirmed}:     true, // driver confirms / auto-accept
+		{reqWaitingDriver, reqConfirmed}:     true, // driver (or the driver UI's auto-accept) confirms
 		{reqWaitingDriver, reqWaitingDriver}: true, // declined or timed out: next car
 		{reqWaitingDriver, reqNoMatch}:       true, // no car left in the ranking
 		{reqConfirmed, reqCompleted}:         true,
@@ -243,30 +243,46 @@ func TestRequestBehindTheLastSeatGetsNoMatch(t *testing.T) {
 	}
 }
 
-func TestAutoAcceptConfirmsAndLinksTheActivity(t *testing.T) {
+// REQ-022, DD-13, DD-33: a trip with auto-accept on gets the request like any other trip; it
+// waits for the driver UI to confirm, and only that confirm takes the seat and the activity.
+func TestAutoAcceptTripWaitsForTheDriverToConfirm(t *testing.T) {
 	e := newSupplyEnv(t)
 	trip := e.addTrip(t, tripSpec{})
 	mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, trip)
 	oldAct := declare(t, e.tx, e.token) // an earlier activity must stay unlinked
 	newAct := declare(t, e.tx, e.token)
-
-	r := e.submit(t, e.near(), nil)
-	if r.Status != reqConfirmed || r.ConfirmedAt == nil || r.ResponseDeadlineAt != nil || r.TripID == nil || *r.TripID != trip {
-		t.Fatalf("request = %+v, want confirmed on trip %d at once, no deadline", r, trip)
-	}
-	if held, confirmed := e.seats(t, trip); held != 0 || confirmed != 1 {
-		t.Errorf("seats held/confirmed = %d/%d, want 0/1", held, confirmed)
-	}
-	var outcome string
-	if err := e.tx.QueryRow(context.Background(), `SELECT outcome FROM request_candidates WHERE request_id = $1 AND rank = 1`, r.ID).Scan(&outcome); err != nil || outcome != "accepted" {
-		t.Errorf("candidate outcome = %q (%v), want accepted", outcome, err)
-	}
 	linked := func(id int64) *int64 {
 		var tid *int64
 		if err := e.tx.QueryRow(context.Background(), `SELECT trip_id FROM activities WHERE id = $1`, id).Scan(&tid); err != nil {
 			t.Fatal(err)
 		}
 		return tid
+	}
+
+	r := e.submit(t, e.near(), nil)
+	assigned(t, r, trip)
+	if r.ConfirmedAt != nil || r.ResponseDeadlineAt == nil {
+		t.Errorf("request = %+v, want a response deadline and no confirmation", r)
+	}
+	if held, confirmed := e.seats(t, trip); held != 1 || confirmed != 0 {
+		t.Errorf("seats held/confirmed before the confirm = %d/%d, want 1/0", held, confirmed)
+	}
+	if o := e.outcomes(t, r.ID); o[1] != "" {
+		t.Errorf("candidate outcomes before the confirm = %v, want rank 1 undecided", o)
+	}
+	if got := linked(newAct.ID); got != nil {
+		t.Errorf("latest activity trip before the confirm = %d, want none", *got)
+	}
+
+	got := e.answer(t, "accept", r.ID, e.driverToken(t, trip), http.StatusOK)
+	if got.Status != reqConfirmed || got.ConfirmedAt == nil || got.ResponseDeadlineAt != nil || got.TripID == nil || *got.TripID != trip {
+		t.Fatalf("after the confirm = %+v, want confirmed on trip %d, no deadline", got.requestResp, trip)
+	}
+	if held, confirmed := e.seats(t, trip); held != 0 || confirmed != 1 {
+		t.Errorf("seats held/confirmed = %d/%d, want 0/1", held, confirmed)
+	}
+	if o := e.outcomes(t, r.ID); o[1] != "accepted" {
+		t.Errorf("candidate outcomes = %v, want rank 1 accepted", o)
 	}
 	if got := linked(newAct.ID); got == nil || *got != trip {
 		t.Errorf("latest activity trip = %v, want %d", got, trip)
@@ -276,16 +292,8 @@ func TestAutoAcceptConfirmsAndLinksTheActivity(t *testing.T) {
 	}
 }
 
-func TestAutoAcceptWithoutAnActivityStillConfirms(t *testing.T) {
-	e := newSupplyEnv(t)
-	trip := e.addTrip(t, tripSpec{})
-	mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, trip)
-	if r := e.submit(t, e.near(), nil); r.Status != reqConfirmed {
-		t.Errorf("request = %+v, want confirmed", r)
-	}
-}
-
-func TestAutoAcceptLeavesOtherActivitiesAlone(t *testing.T) {
+// DD-25: confirming links only a passenger activity not yet linked.
+func TestConfirmLeavesOtherActivitiesAlone(t *testing.T) {
 	tripOf := func(e *supplyEnv, id int64) *int64 {
 		var tid *int64
 		if err := e.tx.QueryRow(context.Background(), `SELECT trip_id FROM activities WHERE id = $1`, id).Scan(&tid); err != nil {
@@ -293,21 +301,30 @@ func TestAutoAcceptLeavesOtherActivitiesAlone(t *testing.T) {
 		}
 		return tid
 	}
+	confirm := func(e *supplyEnv, trip int64) {
+		t.Helper()
+		r := e.submit(t, e.near(), nil)
+		assigned(t, r, trip)
+		if got := e.answer(t, "accept", r.ID, e.driverToken(t, trip), http.StatusOK); got.Status != reqConfirmed {
+			t.Fatalf("request = %+v, want confirmed", got.requestResp)
+		}
+	}
+
+	t.Run("no activity at all", func(t *testing.T) {
+		e := newSupplyEnv(t)
+		confirm(e, e.addTrip(t, tripSpec{}))
+	})
 
 	t.Run("latest activity is a driver activity", func(t *testing.T) {
 		e := newSupplyEnv(t)
 		trip := e.addTrip(t, tripSpec{})
-		mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, trip)
-		other := e.addTrip(t, tripSpec{}) // the account's own trip as a driver
+		other := e.addTrip(t, tripSpec{northM: 2000}) // the account's own trip as a driver
 		var act int64
 		if err := e.tx.QueryRow(context.Background(), `INSERT INTO activities (user_id, role, trip_id) VALUES ($1, 'driver', $2) RETURNING id`,
 			e.userID, other).Scan(&act); err != nil {
 			t.Fatal(err)
 		}
-		r := e.submit(t, e.near(), nil)
-		if r.Status != reqConfirmed {
-			t.Fatalf("request = %+v, want confirmed", r)
-		}
+		confirm(e, trip)
 		if got := tripOf(e, act); got == nil || *got != other {
 			t.Errorf("driver activity trip = %v, want it left at %d", got, other)
 		}
@@ -316,14 +333,10 @@ func TestAutoAcceptLeavesOtherActivitiesAlone(t *testing.T) {
 	t.Run("latest passenger activity already belongs to an earlier trip", func(t *testing.T) {
 		e := newSupplyEnv(t)
 		trip := e.addTrip(t, tripSpec{})
-		mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, trip)
-		earlier := e.addTrip(t, tripSpec{})
+		earlier := e.addTrip(t, tripSpec{northM: 2000})
 		act := declare(t, e.tx, e.token)
 		mustExec(t, e.tx, `UPDATE activities SET trip_id = $2 WHERE id = $1`, act.ID, earlier)
-		r := e.submit(t, e.near(), nil)
-		if r.Status != reqConfirmed {
-			t.Fatalf("request = %+v, want confirmed", r)
-		}
+		confirm(e, trip)
 		if got := tripOf(e, act.ID); got == nil || *got != earlier {
 			t.Errorf("earlier ride's activity trip = %v, want it left at %d", got, earlier)
 		}

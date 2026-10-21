@@ -396,8 +396,9 @@ func TestReassignSkipsACarThatNoLongerHasASeat(t *testing.T) {
 	}
 }
 
-// REQ-022: a car that auto-accepts confirms a reassigned request at once.
-func TestReassignToAnAutoAcceptCarConfirms(t *testing.T) {
+// REQ-022, DD-33: a reassigned request waits for an auto-accept car's driver UI to confirm,
+// like a first assignment.
+func TestReassignToAnAutoAcceptCarWaitsForTheDriver(t *testing.T) {
 	e := newSupplyEnv(t)
 	first := e.addTrip(t, tripSpec{northM: 500})
 	second := e.addTrip(t, tripSpec{northM: 2000})
@@ -407,16 +408,59 @@ func TestReassignToAnAutoAcceptCarConfirms(t *testing.T) {
 	assigned(t, r, first)
 
 	got := e.answer(t, "decline", r.ID, e.driverToken(t, first), http.StatusOK)
+	assigned(t, got.requestResp, second)
+	if got.ConfirmedAt != nil || got.ResponseDeadlineAt == nil {
+		t.Errorf("request = %+v, want a new deadline and no confirmation", got.requestResp)
+	}
+	if held, confirmed := e.seats(t, second); held != 1 || confirmed != 0 {
+		t.Errorf("seats held/confirmed before the confirm = %d/%d, want 1/0", held, confirmed)
+	}
+
+	got = e.answer(t, "accept", r.ID, e.driverToken(t, second), http.StatusOK)
 	if got.Status != reqConfirmed || got.TripID == nil || *got.TripID != second {
 		t.Fatalf("request = %+v, want confirmed on trip %d", got.requestResp, second)
 	}
 	if held, confirmed := e.seats(t, second); held != 0 || confirmed != 1 {
 		t.Errorf("seats held/confirmed = %d/%d, want 0/1", held, confirmed)
 	}
+	if o := e.outcomes(t, r.ID); o[1] != "declined" || o[2] != "accepted" {
+		t.Errorf("outcomes = %v, want rank 1 declined and rank 2 accepted", o)
+	}
 	var linked *int64
 	if err := e.tx.QueryRow(context.Background(), `SELECT trip_id FROM activities WHERE id = $1`, act.ID).Scan(&linked); err != nil || linked == nil || *linked != second {
 		t.Errorf("activity trip = %v (%v), want %d", linked, err, second)
 	}
+}
+
+// DD-13, DD-33: an auto-accept car whose driver UI does not confirm in time times out and the
+// request moves to the next car, as with any car.
+func TestAutoAcceptCarThatDoesNotConfirmTimesOut(t *testing.T) {
+	e := newSupplyEnv(t)
+	first := e.addTrip(t, tripSpec{northM: 500})
+	second := e.addTrip(t, tripSpec{northM: 2000})
+	mustExec(t, e.tx, `UPDATE trips SET auto_accept = true WHERE id = $1`, first)
+	r := e.submit(t, e.near(), nil)
+	assigned(t, r, first)
+	ctx := context.Background()
+
+	if _, err := SweepTimeouts(ctx, e.tx); err != nil {
+		t.Fatal(err)
+	}
+	assigned(t, e.status(t, r.ID).requestResp, first)
+
+	e.overdue(t, r.ID)
+	if _, err := SweepTimeouts(ctx, e.tx); err != nil {
+		t.Fatal(err)
+	}
+	assigned(t, e.status(t, r.ID).requestResp, second)
+	if held, confirmed := e.seats(t, first); held != 0 || confirmed != 0 {
+		t.Errorf("timed-out auto-accept car seats held/confirmed = %d/%d, want 0/0", held, confirmed)
+	}
+	if o := e.outcomes(t, r.ID); o[1] != "timed_out" {
+		t.Errorf("outcomes = %v, want rank 1 timed_out", o)
+	}
+	// The late confirm from the first car is refused.
+	e.answer(t, "accept", r.ID, e.driverToken(t, first), http.StatusNotFound)
 }
 
 // REQ-047: the "relaxed" mark follows the car the request is on now.
