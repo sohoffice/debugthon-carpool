@@ -39,7 +39,7 @@ export function DriverDebugMode() {
 
       <h2 className="mt-8 text-lg font-semibold text-ink-soft">模擬器</h2>
       <p className="mt-1 text-base text-ink-soft">
-        勾選的駕駛有進行中的行程時，沿預先定義的路徑回報位置，到終點就停止。分頁在背景也會繼續移動；重新整理後要再按開始，從起點重來。
+        勾選的駕駛有進行中的行程時，沿預先定義的路徑回報位置，到終點就停止。driver1～driver3 的模擬行程啟用自動接受，由模擬器替它們確認請求。分頁在背景也會繼續移動；重新整理後要再按開始，從起點重來。
       </p>
       <ul className="mt-3 divide-y divide-rule border-y border-rule">
         {SIMULATED_ACCOUNTS.map((name) => (
