@@ -133,3 +133,6 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * match profile.accepted_stops == '#[1]'
     * match profile.accepted_stops[0].id == stopOther.id
     * match profile.usual_destination.name == inPark.name
+    # DD-19: the next query carries no stops and falls back on the stored one, so it is not refused with stops_required
+    * def next = karate.http(baseUrl + '/api/passenger/supply').header('Authorization', 'Bearer ' + pt).params({ pickup_point_id: pickup.id, dest_lat: inPark.lat, dest_lng: inPark.lng }).get()
+    * match next.status == 200

@@ -2,8 +2,11 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -285,5 +288,52 @@ func TestSeedShowsWaitWalkTagTradeoff(t *testing.T) {
 				t.Errorf("order = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// DD-19, REQ-025: passenger1 completes a ride that ends at the trip's destination (no bus stop used).
+// The seeded accepted stops stay, so a later request or supply query without stops is not refused.
+func TestSeededStopsSurviveARideToTheDestination(t *testing.T) {
+	e := newSupplyEnv(t)
+	freshDemoSeed(t, e.tx)
+	// A clean demo state for passenger1, as after a reset: no earlier requests or service records.
+	mustExec(t, e.tx, `DELETE FROM service_records WHERE passenger_id = (SELECT id FROM users WHERE username = 'passenger1')`)
+	mustExec(t, e.tx, `DELETE FROM ride_requests WHERE passenger_id = (SELECT id FROM users WHERE username = 'passenger1')`)
+	e.token = "passenger:passenger1"
+
+	trip := e.addTrip(t, tripSpec{})
+	driver := e.driverToken(t, trip)
+	r := e.submit(t, e.near(), nil)
+	assigned(t, r, trip)
+	e.answer(t, "accept", r.ID, driver, http.StatusOK)
+	e.passengerAct(t, "complete", r.ID, e.token, http.StatusOK)
+	if n := queryInt(t, e.tx, `SELECT count(*) FROM service_records WHERE request_id = $1 AND dropoff_bus_stop_id IS NULL`, r.ID); n != 1 {
+		t.Fatalf("service records without a drop-off stop = %d, want 1: the ride must end at the trip's destination", n)
+	}
+
+	w := call(t, e.tx, http.MethodGet, "/api/passenger/profile", e.token, "")
+	wantStatus(t, w, http.StatusOK, "")
+	p := decode[struct {
+		Stops []struct {
+			StopID int `json:"stop_id"`
+		} `json:"accepted_stops"`
+	}](t, w)
+	var got []int
+	for _, s := range p.Stops {
+		got = append(got, s.StopID)
+	}
+	sort.Ints(got)
+	if !reflect.DeepEqual(got, []int{1013, 1106}) {
+		t.Errorf("accepted stops = %v, want the seeded [1013 1106]", got)
+	}
+
+	// The next query and request carry no stops and fall back on the profile.
+	if w := call(t, e.tx, http.MethodGet, e.query(map[string]string{"stop_ids": ""}), e.token, ""); w.Code != http.StatusOK {
+		t.Errorf("supply without stops = %d %s, want 200 (not stops_required)", w.Code, w.Body)
+	}
+	body := fmt.Sprintf(`{"pickup_point_id":%d,"location":{"lat":%s,"lng":%s},"destination":{"name":"目的地","lat":%s,"lng":%s}}`,
+		e.pickupID, ftoa(e.pickup.Lat), ftoa(e.pickup.Lng), ftoa(e.dest.Lat), ftoa(e.dest.Lng))
+	if w := call(t, e.tx, http.MethodPost, "/api/passenger/requests", e.token, body); w.Code != http.StatusCreated {
+		t.Errorf("request without stops = %d %s, want 201 (not stops_required)", w.Code, w.Body)
 	}
 }
