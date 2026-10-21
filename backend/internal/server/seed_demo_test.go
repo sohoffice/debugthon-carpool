@@ -149,9 +149,19 @@ func TestSeedDemoMigrationIsRepeatable(t *testing.T) {
 	}
 }
 
+// realRouteStops are the bus stops (open-data stop_id) along each seeded car's route as Google
+// Routes returned it on 2026-10-21 (T23), in travel order. The demo runs on real routes; the
+// simulated straight lines pass other stops, so the trade-off is checked on these.
+var realRouteStops = map[string][]int{
+	"driver1": {1165609496},                                     // 堤頂大道一段
+	"driver2": {1165609496, 1000895, 1013, 1165608385, 1000896}, // 堤頂大道一段, 瑞光港墘路口 x3, 仁寶大樓
+	"driver3": {1165609496, 1106, 8613},                         // 堤頂大道一段, 港墘路 x2
+}
+
 // seedRanking ranks the seeded cars at 松山車站 for passenger1's demo request (瑞光路 513 巷,
 // stops 1013 and 1106). etaMin gives each driver's wait in minutes, since positions are not
-// seeded; the rest, including routes, tags and capacities, comes from the seed.
+// seeded; the stops along each route are realRouteStops; the rest, including destinations, tags
+// and capacities, comes from the seed.
 func seedRanking(t *testing.T, tx pgx.Tx, etaMin map[string]float64, prefer bool, mutate func(*matchParams)) []string {
 	t.Helper()
 	ctx := context.Background()
@@ -171,6 +181,7 @@ func seedRanking(t *testing.T, tx pgx.Tx, etaMin map[string]float64, prefer bool
 		req.Filters = preferred(tagID)
 	}
 	stops := map[int64]latLng{}
+	byStopID := map[int]int64{}
 	rows, err := tx.Query(ctx, `SELECT id, stop_id, lat, lng FROM bus_stops`)
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +194,7 @@ func seedRanking(t *testing.T, tx pgx.Tx, etaMin map[string]float64, prefer bool
 			t.Fatal(err)
 		}
 		stops[id] = p
+		byStopID[stopID] = id
 		if stopID == 1013 || stopID == 1106 {
 			req.AcceptedStops = append(req.AcceptedStops, id)
 		}
@@ -210,6 +222,10 @@ func seedRanking(t *testing.T, tx pgx.Tx, etaMin map[string]float64, prefer bool
 	for i := range trips {
 		eta := int(minutes(etaMin[owner[trips[i].ID]]))
 		trips[i].ETASeconds = &eta
+		trips[i].RouteStops = nil
+		for _, stopID := range realRouteStops[owner[trips[i].ID]] {
+			trips[i].RouteStops = append(trips[i].RouteStops, byStopID[stopID])
+		}
 	}
 
 	p, err := loadMatchParams(ctx, tx)

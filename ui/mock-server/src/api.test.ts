@@ -235,8 +235,8 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     expect(json<{ trip_ended: boolean }>('POST', '/api/location', DRIVER, SONGSHAN).trip_ended).toBe(true)
   })
 
-  it('moves driver2’s destination like the Go seed does (T03)', () => {
-    expect(data.seed.simulatedTrips.find((t) => t.username === 'driver2')?.destination).toEqual({ name: '瑞光路 內科大樓 B', lat: 25.0815, lng: 121.5705 })
+  it('moves driver2’s destination like the Go seed does (T03, T23)', () => {
+    expect(data.seed.simulatedTrips.find((t) => t.username === 'driver2')?.destination).toEqual({ name: '瑞光路 內科大樓 B', lat: 25.079, lng: 121.569 })
   })
 
   it('reset clears trips and requests but keeps the simulated trips', () => {

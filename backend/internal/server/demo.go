@@ -53,8 +53,10 @@ func resetDemoData(ctx context.Context, db DB) error {
 }
 
 // restartSimulatedTrips starts each demo driver's latest simulated trip again as a new active trip
-// with the same settings and stored route, and links the driver's new activity to it (DD-14, DD-25),
-// so the simulator can report positions right away.
+// with the same settings, and links the driver's new activity to it (DD-14, DD-25),
+// so the simulator can report positions right away. A real route is copied; a simulated one is
+// left out, so the new trip builds its route on first use from the current source (DD-09, DD-21)
+// and a demo that started offline gets real routes back after a reset.
 func restartSimulatedTrips(ctx context.Context, db DB) error {
 	rows, err := db.Query(ctx, `
 		SELECT DISTINCT ON (t.driver_id) t.id
@@ -86,13 +88,18 @@ func restartSimulatedTrips(ctx context.Context, db DB) error {
 			                   route_polyline, route_distance_m, route_duration_s, route_simulated, simulated)
 			SELECT driver_id, pickup_point_id, destination_name, destination_lat, destination_lng,
 			       capacity, auto_accept, 'active', true, now(),
-			       route_polyline, route_distance_m, route_duration_s, route_simulated, true
-			  FROM trips WHERE id = $1
+			       r.polyline, r.distance_m, r.duration_s, r.simulated, true
+			  FROM trips t
+			  LEFT JOIN LATERAL (SELECT t.route_polyline, t.route_distance_m, t.route_duration_s, t.route_simulated
+			                      WHERE NOT t.route_simulated) r (polyline, distance_m, duration_s, simulated) ON true
+			 WHERE t.id = $1
 			RETURNING id, driver_id`, src).Scan(&tripID, &driverID); err != nil {
 			return err
 		}
 		for _, sql := range []string{
-			`INSERT INTO trip_route_stops (trip_id, seq, bus_stop_id) SELECT $2, seq, bus_stop_id FROM trip_route_stops WHERE trip_id = $1`,
+			`INSERT INTO trip_route_stops (trip_id, seq, bus_stop_id)
+			 SELECT $2, s.seq, s.bus_stop_id FROM trip_route_stops s JOIN trips t ON t.id = s.trip_id
+			  WHERE s.trip_id = $1 AND NOT t.route_simulated`,
 			`INSERT INTO trip_tag_filters (trip_id, tag_id, intent) SELECT $2, tag_id, intent FROM trip_tag_filters WHERE trip_id = $1`,
 		} {
 			if _, err := db.Exec(ctx, sql, src, tripID); err != nil {

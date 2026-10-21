@@ -40,7 +40,7 @@
 | `just backend up` | 編譯後端並在背景啟動，預設監聽 `:8080`；若已在執行則不重複啟動 |
 | `just backend down` | 停止由 `up` 啟動的後端 |
 | `just backend test` | 執行後端 Go 測試（`go test ./...`），需先 `just infra up` 與 `just backend db-apply` |
-| `just backend karate` | 先停止執行中的後端，以空的 `MAP_API_KEY` 重新啟動（測試不呼叫真實 Google），再以 Karate 執行 API 整合測試（見下方說明） |
+| `just backend karate` | 另外啟動一個 Karate 專用的後端（`:18080`，空的 `MAP_API_KEY`，測試不呼叫真實 Google），以 Karate 執行 API 整合測試，結束後關掉；不會動到執行中的 `just backend up`／`just demo` 後端（見下方說明） |
 | `just backend db-apply` | 套用尚未執行的資料庫遷移（需先 `just infra up`） |
 | `just backend db-rollback` | 回滾最近一次已套用的遷移（執行該檔的 `-- +goose Down`） |
 | `just backend migrate-status` | 顯示各遷移的套用狀態 |
@@ -101,7 +101,7 @@
   - `VITE_GOOGLE_MAPS_API_KEY`：瀏覽器用的 Google Maps 金鑰，會公開給使用者。請限制為 HTTP 參照網址，且只開 Maps JavaScript API；不要沿用伺服器端的 `MAP_API_KEY`。未設定時地圖顯示提示文字，其他功能照常運作。
   - `VITE_GOOGLE_MAPS_MAP_ID`：選填，留空則使用 Google 的 `DEMO_MAP_ID`。
   - `MAP_API_KEY`：後端用的 Google Routes 金鑰，只放在伺服器端，且只開 Routes API。有設定時行程路線、行車時間與步行時間來自 Google；留空則用模擬。
-  - Go 後端啟動時只載入找到的第一個 `.env`：先找目前目錄，沒有再找上一層（從 `backend/` 執行時就是根目錄的 `.env`），不再往上找，也不會合併兩個檔案；都沒有只記一行 log，不算錯誤。環境中已設定的變數優先，包含設為空值的（例如 `MAP_API_KEY= just backend up` 強制用模擬）。Go 測試不讀 `.env`；`just backend karate` 一律以空的 `MAP_API_KEY` 啟動後端。
+  - Go 後端啟動時只載入找到的第一個 `.env`：先找目前目錄，沒有再找上一層（從 `backend/` 執行時就是根目錄的 `.env`），不再往上找，也不會合併兩個檔案；都沒有只記一行 log，不算錯誤。環境中已設定的變數優先，包含設為空值的（例如 `MAP_API_KEY= just backend up` 強制用模擬）。Go 測試不讀 `.env`；`just backend karate` 的專用後端一律以空的 `MAP_API_KEY` 啟動。
 
 ### Demo
 
@@ -118,7 +118,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
   - 刪除 Demo 乘客的請求與這些請求的服務紀錄；這些請求暫留或佔用的座位還給原本的行程。
   - 常用資料還原為種子（DD-19）：刪除 Demo 帳號的常用資料，再呼叫資料庫函式 `seed_demo_habitual_data()`（遷移 `20261021120000_demo_seed_function.sql`，值和種子遷移相同，由 `TestDemoSeedFunctionMatchesMigration` 驗證）。這個函式每次都替 `driver4` 新增一趟和種子相同、已結束的行程，所以重設後駕駛介面帶入的是種子的設定，而不是 Demo 中最後一趟的設定。
   - Demo 駕駛尚未結束的行程改為 `cancelled`（不是 `completed`：行程沒有抵達目的地，駕駛介面不會顯示「行程結束」）。
-  - `driver1`～`driver3` 最近一趟模擬行程以新的行程重新開始：設定與保存的路線相同，並建立關聯到新行程的參與主檔，模擬器可以直接回報位置。
+  - `driver1`～`driver3` 最近一趟模擬行程以新的行程重新開始：設定相同，並建立關聯到新行程的參與主檔，模擬器可以直接回報位置。保存的路線只在是真實路線時複製；模擬的直線不複製，新行程第一次讀取時用目前的來源重建，所以斷網時開始的 Demo 在有金鑰時重設，地圖會回到真實路線（DD-09、DD-21）。
   - 不刪除位置紀錄（DD-06），舊的行程與參與主檔都保留。
   - 不動的資料：非 Demo 帳號的請求一律不動（即使在 Demo 駕駛的車上）；使用者自選的標籤（`user_tags`）不還原。
   - 限制：非 Demo 乘客如果正搭 Demo 駕駛的車，重設後他的請求仍是已確認，卻指向一趟已取消的行程；乘客介面不讓有未結束請求的人再送出（REQ-069），他會卡住。Demo 只用 Demo 帳號，Karate 也用自己建立的駕駛，所以實際上不會發生。
@@ -181,7 +181,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 
 測試位於 `backend/karate/`（Maven 專案，[Karate](https://github.com/karatelabs/karate) 2.1.3、Java 21 以上），以 `just backend karate` 執行。
 
-- 針對**已啟動**的後端與資料庫；需先 `just infra up` 與 `just backend db-apply`。測試依賴種子資料：測試帳號（見下節）、標籤、上車點與公車站，不自行建立。
+- `just backend karate` 另外編譯並啟動一個 Karate 專用的後端（`KARATE_PORT`，預設 `:18080`；`MAP_API_KEY` 一律為空，蓋過 `.env` 的金鑰，所以只用模擬路線；`DEMO_RESET` 開啟），跑完就關掉，不會停掉或重開 `:8080` 上的 Demo 後端。資料庫則是共用的：`demo-reset.feature` 會重設 Demo 帳號，所以 Demo 演練時不要跑 Karate。需先 `just infra up` 與 `just backend db-apply`。測試依賴種子資料：測試帳號（見下節）、標籤、上車點與公車站，不自行建立。
 - 測試資料的原則：**有 REST API 可寫入就用 API**（例如以 `PUT`／`DELETE /api/me/tags/:id` 選擇與取消標籤，並在情境結束前還原）；**只有沒有 API 可用時才用 SQL**（目前是帳號與常用資料，見 DD-19），寫在 `profiles.feature`，由 `Db.java` 以 `carpool` 角色寫入。
 - SQL 建立的帳號名稱帶 `karate-` 前綴與隨機後綴；每個情境結束時由 `cleanup.feature` 刪除（常用資料隨帳號連動刪除），因此情境可平行執行，也不會留下資料。新增這類情境時沿用同一做法。
 - **新增或修改 API 的任務，一律要同時補上 Karate 情境**，覆蓋成功、被拒絕與未帶 token 的情況。
@@ -189,8 +189,8 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 - 請求（`requests.feature`）在最後一個上車點（大巨蛋）建立車輛，並讓每個情境各用一個專屬標籤隔離自己的車（乘客要求該標籤，只有該情境的車帶有），因此情境可平行執行；送出過請求的乘客帳號會留在資料庫（`ride_requests` 參照 `users`），行程由 `cleanup-tracking.feature` 結束。
 - 位置回報（`location.feature`）是例外：`location_reports` 只新增（DD-06），觸發器擋下 `DELETE`，且回報掛在 `activities` 之下、`activities.user_id` 的外鍵不連動刪除，所以表示過參與的帳號無法被刪除。做法：每個情境各用一個全新的 `karate-track-` 帳號（可平行、斷言精確）；目前沒有行程 API，進行中的行程以 SQL 建立；情境結束時由 `cleanup-tracking.feature` 將該帳號的行程設為 `completed`，並刪除從未表示過參與的帳號。表示過參與的 `karate-track-` 帳號會留在資料庫，不影響其他測試與供給查詢。
 - 行程（`trips.feature`）同理：出發會建立參與主檔，所以每個情境各用一個全新的 `karate-trip-` 駕駛帳號，結束時由 `cleanup-tracking.feature` 結束其行程；帳號本身會留在資料庫。
-- Demo 重設（`demo-reset.feature`）需要後端開啟 `DEMO_RESET`（`just backend up` 預設開啟）。重設只動 Demo 帳號，在一個交易內換掉資料，平行讀取種子資料的情境看到的前後都是種子；情境送出的請求都要求一個只屬於它、沒有車帶有的標籤，結果是 `no_match`，不佔其他情境的車。
-- 以 `-DbaseUrl=...` 指定後端位址（預設 `http://localhost:8080`），以 `-DdbUrl=...`、`-DdbUser=...`、`-DdbPassword=...` 指定 JDBC 連線（預設 `jdbc:postgresql://localhost:5432/carpool`、`carpool`／`carpool`）；`just backend karate` 會依 `PORT`、`POSTGRES_PORT`、`POSTGRES_DB` 帶入。
+- Demo 重設（`demo-reset.feature`）需要後端開啟 `DEMO_RESET`（`just backend karate` 的專用後端已開啟）。重設只動 Demo 帳號，在一個交易內換掉資料，平行讀取種子資料的情境看到的前後都是種子；情境送出的請求都要求一個只屬於它、沒有車帶有的標籤，結果是 `no_match`，不佔其他情境的車。
+- 直接執行 mvn 時，以 `-DbaseUrl=...` 指定後端位址（預設 `http://localhost:8080`），以 `-DdbUrl=...`、`-DdbUser=...`、`-DdbPassword=...` 指定 JDBC 連線（預設 `jdbc:postgresql://localhost:5432/carpool`、`carpool`／`carpool`）；`just backend karate` 會依 `KARATE_PORT`、`POSTGRES_PORT`、`POSTGRES_DB` 帶入。
 - `.feature` 檔放在 `backend/karate/src/test/java/carpool/api/`；報表在 `backend/karate/target/karate-reports/`。
 
 ## 測試帳號
@@ -219,7 +219,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 - 模擬行程：`driver1`～`driver3` 皆從松山車站出發、座位 3／4／2、自動接受，狀態為進行中（`active`、設定已鎖定、`started_at = now()`）；`driver4`、`driver5` 無行程，供真人從駕駛介面操作。`driver3` 帶有「不抽菸」「安靜通勤」標籤，`driver2` 帶有「可載行李」。
 - 車輛與位置回報主檔：由遷移 `backend/migrations/20261019130000_activities_and_vehicles.sql` 建立 `vehicles`、`activities` 兩張表。`driver1`～`driver5` 各有 1 輛車（車牌與描述為暫定的範例資料，可自行修改）；3 筆模擬行程的駕駛各有 1 筆關聯到該行程的主檔，讓模擬器可直接回報位置。乘客的主檔在乘客呼叫 `POST /api/activities` 時才建立。
 - Demo 預先帶入的資料（DD-19）由遷移 `backend/migrations/20261020120000_seed_demo_habitual_data.sql` 建立：`passenger1` 的常用目的地瑞光路 513 巷（25.0765, 121.5742）與可接受的公車站「瑞光港墘路口」（`stop_id` 1013）、「港墘路」（`stop_id` 1106），平常抵達時間不寫入；`driver4` 一趟已結束的行程（松山車站 → 瑞光路 513 巷，可載 3 人、不自動接受、「不抽菸」為建議標籤，非模擬行程，沒有服務紀錄與常用資料）。`passenger2`、`driver5` 不寫入，用來展示第一次使用。這些值在帳號第一次完成共乘時被重新計算的結果取代；手動跑過 Demo 後想還原請用 `just demo-reset`（見〈[Demo](#demo)〉）。
-- 取捨 Demo 腳本：乘客用 `passenger1`（松山車站出發，目的地瑞光路 513 巷，可接受瑞光港墘路口與港墘路），建議標籤選「不抽菸」。`driver1`、`driver3` 的目的地在 200 m 內，不必步行；`driver3` 帶有「不抽菸」但只有 2 個座位；`driver2` 的路線經過瑞光港墘路口（遷移 `20261020120100_seed_driver2_via_accepted_stop.sql` 將其目的地移到該站之後），要下車走路。預設參數下（等待 ×2、步行 ×1.5、標籤加分上限 4 分鐘、等待上限 10 分鐘），結果取決於各車的等待時間，由 `internal/server/seed_demo_test.go` 的 `TestSeedShowsWaitWalkTagTradeoff` 驗證：
+- 取捨 Demo 腳本：乘客用 `passenger1`（松山車站出發，目的地瑞光路 513 巷，可接受瑞光港墘路口與港墘路），建議標籤選「不抽菸」。`driver1`、`driver3` 的目的地在 200 m 內，不必步行；`driver3` 帶有「不抽菸」但只有 2 個座位；`driver2` 的路線經過瑞光港墘路口（遷移 `20261021150000_seed_driver2_real_route.sql` 將其目的地移到 25.0790, 121.5690，Google Routes 的真實路線依序經過堤頂大道一段、瑞光港墘路口、仁寶大樓），要下車走路。這個取捨以真實路線為準：斷網只靠模擬的直線時，`driver2` 的路線不經過可接受的公車站，不參與取捨（已知的取捨，T23）。預設參數下（等待 ×2、步行 ×1.5、標籤加分上限 4 分鐘、等待上限 10 分鐘），結果取決於各車的等待時間，由 `internal/server/seed_demo_test.go` 的 `TestSeedShowsWaitWalkTagTradeoff` 驗證（沿途公車站用 2026-10-21 記錄的真實路線，`realRouteStops`）：
   - 三車等待相同：選了建議標籤 → `driver3` 第一；沒選 → `driver1` 第一；`driver2` 都排最後。
   - `driver3` 多等 3 分鐘：標籤加分（4 分鐘）抵不過多出的等待（6 分鐘），`driver1` 勝出。
   - `driver2` 只等 1 分鐘、其他車等 8 分鐘：短等待勝過步行，`driver2` 勝出；把步行加重 `walk_weight` 調高（例如 6，以 SQL 修改系統設定，DD-20）則回到 `driver3`。
