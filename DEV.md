@@ -92,7 +92,7 @@
   - 不帶地圖金鑰，地圖只顯示提示文字。園區範圍檢查的測試（`park-check.spec.ts`）要搜尋目的地，改連 `:5185`、`:5186`，並由 Playwright 攔截 Maps 的腳本、換成 `ui/e2e/fakeGoogleMaps.ts` 的假 API（只認得固定的兩個地點），其他 Google 請求一律擋下，不會呼叫真的 Google。
   - 失敗時的紀錄（trace）在 `ui/test-results/`，可用 `npx playwright show-trace <檔案>` 查看。
   - 接 Go 後端（`just ui e2e-go`，測試在 `ui/e2e/go/`）：
-    - `ui/e2e/go/backend.sh` 建立並遷移資料庫 `carpool_e2e`、建置 Go 後端，以 `DEMO_RESET=1` 在 `:8092` 啟動；介面在 `:5187`、`:5188`。開發用的資料庫 `carpool`、Demo 與 Karate 都不受影響，可以同時執行。
+    - `ui/e2e/go/backend.sh` 建立並遷移資料庫 `carpool_e2e`、建置 Go 後端，以 `DEMO_RESET=1` 與空的 `MAP_API_KEY` 在 `:8092` 啟動：Go e2e 一律用模擬路線，不呼叫 Google（空值優先於根目錄 `.env` 的金鑰）；介面在 `:5187`、`:5188`。開發用的資料庫 `carpool`、Demo 與 Karate 都不受影響，可以同時執行。
     - 每個測試前後都呼叫 `POST /api/demo/reset`（DD-29），並取消 `driver4` 自選的標籤（重設不還原自選標籤），不留下資料。
     - 測試替模擬器回報 `driver4` 的位置；快樂路徑讓乘客把只有台上駕駛帶的標籤設成「強制」，請求才會配給 `driver4`（同 Demo 劇本）。
     - 不帶地圖金鑰，只用預先帶入的目的地；目的地搜尋與園區範圍檢查的 e2e 只在示範後端跑（`park-check.spec.ts`）。

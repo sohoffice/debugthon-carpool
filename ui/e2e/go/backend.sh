@@ -13,4 +13,5 @@ GOOSE_DRIVER=postgres GOOSE_MIGRATION_DIR=migrations \
   go tool goose up >/dev/null
 mkdir -p .run
 go build -o .run/e2e-server ./cmd/server
-exec env DEMO_RESET=1 PORT="$1" POSTGRES_DB="$db" .run/e2e-server
+# An empty key wins over any .env the backend finds: the e2e never calls Google, only simulated routes.
+exec env DEMO_RESET=1 MAP_API_KEY= PORT="$1" POSTGRES_DB="$db" .run/e2e-server
