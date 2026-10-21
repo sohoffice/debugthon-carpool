@@ -1,4 +1,6 @@
 port := env_var_or_default("PORT", "8080")
+# Karate runs on a backend of its own, so a running demo backend is left alone
+karate_port := env_var_or_default("KARATE_PORT", "18080")
 # Local runs are the demo environment (DD-24), so the demo reset API is on unless DEMO_RESET=0 (DD-29)
 demo_reset := env_var_or_default("DEMO_RESET", "1")
 pg_db := env_var_or_default("POSTGRES_DB", "carpool")
@@ -46,11 +48,23 @@ down:
 test:
     cd "{{source_directory()}}" && go test ./...
 
-# Run the Karate API tests against a freshly restarted backend with MAP_API_KEY empty, so tests never call Google (needs `just infra up` and `db-apply`)
+# Run the Karate API tests on a backend of their own on KARATE_PORT, with simulated routes and the demo reset on, leaving a running demo backend alone (needs `just infra up` and `db-apply`)
 karate:
-    just --justfile "{{source_directory()}}/justfile" down
-    MAP_API_KEY= just --justfile "{{source_directory()}}/justfile" up
-    cd "{{source_directory()}}/karate" && mvn -q test -DbaseUrl=http://localhost:{{port}} -DdbUrl=jdbc:postgresql://localhost:{{pg_port}}/{{pg_db}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{source_directory()}}"
+    mkdir -p "{{run_dir}}"
+    go build -o "{{run_dir}}/karate-server" ./cmd/server
+    # Tests never call the real Google Routes: an empty MAP_API_KEY wins over the one in .env
+    PORT={{karate_port}} DEMO_RESET=1 MAP_API_KEY= "{{run_dir}}/karate-server" >"{{run_dir}}/karate-server.log" 2>&1 &
+    pid=$!
+    trap 'kill $pid 2>/dev/null || true' EXIT
+    for _ in $(seq 50); do
+        curl -sf http://localhost:{{karate_port}}/api/ping >/dev/null && break
+        kill -0 $pid 2>/dev/null || { cat "{{run_dir}}/karate-server.log"; exit 1; }
+        sleep 0.2
+    done
+    cd karate && mvn -q test -DbaseUrl=http://localhost:{{karate_port}} -DdbUrl=jdbc:postgresql://localhost:{{pg_port}}/{{pg_db}}
 
 # Apply all pending migrations (needs `just infra up`)
 db-apply:

@@ -196,10 +196,10 @@ func TestDemoReset(t *testing.T) {
 				t.Errorf("%s: trip %d (old %d) same settings=%v fresh=%v activity trip=%d", d, id, old, same, fresh, activityTrip)
 			}
 		}
-		// driver2 restarts the moved destination (20261020120100), not the first seeded one.
+		// driver2 restarts the latest moved destination (20261021150000), not an earlier seeded one.
 		if n := queryInt(t, tx, `
 			SELECT count(*) FROM trips t JOIN users u ON u.id = t.driver_id
-			 WHERE u.username = 'driver2' AND t.status = 'active' AND t.destination_lat = 25.0815`); n != 1 {
+			 WHERE u.username = 'driver2' AND t.status = 'active' AND t.destination_lat = 25.0790`); n != 1 {
 			t.Errorf("driver2's restarted trip is not the moved destination")
 		}
 		// The simulator reports straight into the new trip; driver4 can depart again.
@@ -238,5 +238,35 @@ func TestDemoResetTwice(t *testing.T) {
 		SELECT count(*) FROM trips t JOIN users u ON u.id = t.driver_id
 		 WHERE u.username IN ('driver1', 'driver2', 'driver3') AND t.status = 'active' AND t.simulated`); n != 3 {
 		t.Errorf("active simulated trips = %d, want 3", n)
+	}
+}
+
+// DD-09, DD-21: the reset copies a real stored route but not a simulated one, which the new trip
+// rebuilds on first use from the current source.
+func TestDemoResetRebuildsSimulatedRoutes(t *testing.T) {
+	tx := testTx(t)
+	trip := func(driver string) int64 {
+		return queryInt(t, tx, `
+			SELECT t.id FROM trips t JOIN users u ON u.id = t.driver_id
+			 WHERE u.username = $1 AND t.simulated AND t.status = 'active'`, driver)
+	}
+	// driver1's route was planned while offline; driver3's came from the real source.
+	mustExec(t, tx, `UPDATE trips SET route_polyline = 'abc', route_distance_m = 100, route_duration_s = 10, route_simulated = true WHERE id = $1`, trip("driver1"))
+	mustExec(t, tx, `UPDATE trips SET route_polyline = 'xyz', route_distance_m = 200, route_duration_s = 20, route_simulated = false WHERE id = $1`, trip("driver3"))
+	mustExec(t, tx, `DELETE FROM trip_route_stops WHERE trip_id IN ($1, $2)`, trip("driver1"), trip("driver3"))
+	stop := queryInt(t, tx, `SELECT id FROM bus_stops ORDER BY id LIMIT 1`)
+	mustExec(t, tx, `INSERT INTO trip_route_stops (trip_id, seq, bus_stop_id) VALUES ($1, 1, $3), ($2, 1, $3)`, trip("driver1"), trip("driver3"), stop)
+
+	wantStatus(t, resetCall(t, tx, true), http.StatusNoContent, "")
+
+	if n := queryInt(t, tx, `
+		SELECT count(*) FROM trips WHERE id = $1 AND route_polyline IS NULL AND route_simulated IS NULL
+		   AND NOT EXISTS (SELECT 1 FROM trip_route_stops WHERE trip_id = $1)`, trip("driver1")); n != 1 {
+		t.Errorf("driver1's restarted trip kept the simulated route")
+	}
+	if n := queryInt(t, tx, `
+		SELECT count(*) FROM trips WHERE id = $1 AND route_polyline = 'xyz' AND route_simulated = false
+		   AND EXISTS (SELECT 1 FROM trip_route_stops WHERE trip_id = $1 AND bus_stop_id = $2)`, trip("driver3"), stop); n != 1 {
+		t.Errorf("driver3's restarted trip lost the real route")
 	}
 }
