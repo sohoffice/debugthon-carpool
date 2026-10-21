@@ -174,7 +174,7 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     expect(call('POST', `/api/driver/requests/${id}/accept`, DRIVER)).toMatchObject({ status: 409, body: { error: { code: 'not_waiting' } } })
 
     const confirmed = statusOf(id)
-    expect(confirmed).toMatchObject({ status: 'confirmed', vehicle: { plate: 'DEF-4567', description: '藍色 Mazda 3' }, pickup_point: { name: '松山車站' } })
+    expect(confirmed).toMatchObject({ status: 'confirmed', vehicle: { plate: 'ABC-0004', description: '藍色 Mazda 3' }, pickup_point: { name: '松山車站' } })
     expect(confirmed.eta_s).toBeGreaterThan(0)
     // Every mock ETA is simulated; the car's position and heading as DD-31 names them.
     expect(confirmed).toMatchObject({ eta_simulated: true, passed_pickup: false, vehicle_position: { heading_deg: expect.any(Number), reported_at: expect.any(String) } })
@@ -218,7 +218,7 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     // The driver UI sends the same confirm as the 確認 button; a second one is 409 not_waiting.
     expect(json<RequestView>('POST', `/api/driver/requests/${id}/accept`, DRIVER)).toMatchObject({ id, status: 'confirmed' })
     expect(call('POST', `/api/driver/requests/${id}/accept`, DRIVER)).toMatchObject({ status: 409, body: { error: { code: 'not_waiting' } } })
-    expect(statusOf(id)).toMatchObject({ status: 'confirmed', vehicle: { plate: 'DEF-4567' } })
+    expect(statusOf(id)).toMatchObject({ status: 'confirmed', vehicle: { plate: 'ABC-0004' } })
   })
 
   it('reassign: the driver times out; the simulated car waits for the simulator to confirm (DD-14, DD-33)', () => {

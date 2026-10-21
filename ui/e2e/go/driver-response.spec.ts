@@ -55,9 +55,9 @@ test('decline on Go, another car: the request goes to the next car (REQ-050, REQ
   // driver5 confirms: the passenger is confirmed on driver5's car, not driver4's.
   await driver5.getByRole('button', { name: '確認' }).click()
   await expect(passenger.getByText('分鐘後到').first()).toBeVisible()
-  await expect(passenger.getByText('EFG-5678', { exact: true })).toBeVisible()
+  await expect(passenger.getByText('ABC-0005', { exact: true })).toBeVisible()
   await expect(passenger.getByText('紅色 Toyota Yaris', { exact: true })).toBeVisible()
-  await expect(passenger.getByText('DEF-4567', { exact: true })).toBeHidden()
+  await expect(passenger.getByText('ABC-0004', { exact: true })).toBeHidden()
   await Promise.all([driver.context().close(), driver5.context().close(), passenger.context().close()])
 })
 
