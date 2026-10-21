@@ -225,9 +225,18 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     const { id } = submit()
     call('POST', `/api/driver/requests/${id}/accept`, DRIVER)
     call('POST', `/api/passenger/requests/${id}/board`, PASSENGER)
+    const tripId = statusOf(id).trip_id!
+    expect(json<TripView>('GET', `/api/trips/${tripId}`, DRIVER)).toMatchObject({ status: 'active', ended_at: null, completed_rides: 0 })
     advance(3600)
     expect(driverRequests()).toEqual({ trip_id: null, pending: [], passengers: [] })
     expect(statusOf(id).status).toBe('completed')
+    // Like the Go backend after T21: the ended trip carries its finished rides, and reports say it ended.
+    expect(json<TripView>('GET', `/api/trips/${tripId}`, DRIVER)).toMatchObject({ status: 'completed', ended_at: expect.any(String), completed_rides: 1 })
+    expect(json<{ trip_ended: boolean }>('POST', '/api/location', DRIVER, SONGSHAN).trip_ended).toBe(true)
+  })
+
+  it('moves driver2’s destination like the Go seed does (T03)', () => {
+    expect(data.seed.simulatedTrips.find((t) => t.username === 'driver2')?.destination).toEqual({ name: '瑞光路 內科大樓 B', lat: 25.0815, lng: 121.5705 })
   })
 
   it('reset clears trips and requests but keeps the simulated trips', () => {

@@ -35,7 +35,7 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
       [25.0768, 121.5738],
     ],
   },
-  // 1200 m before 松山車站, then on to 基湖路 內科大樓 B.
+  // 1200 m before 松山車站, then on past 瑞光港墘路口 and up 港墘路 to 瑞光路 內科大樓 B (moved by T03).
   driver2: {
     speedKmh: 25,
     path: [
@@ -61,9 +61,9 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
       [25.075848, 121.574502],
       [25.077273, 121.573134],
       [25.077753, 121.571868],
-      [25.078782, 121.57046],
-      [25.080516, 121.565903],
-      [25.0805, 121.5668],
+      [25.079, 121.5714],
+      [25.0803, 121.571],
+      [25.0815, 121.5705],
     ],
   },
   // 1800 m before 松山車站, then on to 瑞光路 內科大樓 C.

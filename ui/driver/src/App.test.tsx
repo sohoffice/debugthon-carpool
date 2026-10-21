@@ -60,6 +60,8 @@ function trip(change: Partial<TripView>): TripView {
     tag_filters: [],
     route: ROUTE,
     started_at: '2026-10-23T08:00:00Z',
+    ended_at: null,
+    completed_rides: 0,
     ...change,
   }
 }
@@ -83,7 +85,7 @@ function request(change: Partial<DriverRequestItem>): DriverRequestItem {
  * Answers like the Go backend. `polls` are served in order for GET /driver/requests, the last one
  * repeats; accept and board move the request like the backend does.
  */
-function fakeBackend(polls: DriverRequests[], { defaults = LAST_DEPARTURE, departStatus = 201, route = ROUTE } = {}) {
+function fakeBackend(polls: DriverRequests[], { defaults = LAST_DEPARTURE, departStatus = 201, route = ROUTE, ended = trip({ status: 'completed', completed_rides: 2 }) } = {}) {
   const calls: { method: string; path: string; body: unknown }[] = []
   let index = 0
   let state: DriverRequests | null = null
@@ -96,7 +98,7 @@ function fakeBackend(polls: DriverRequests[], { defaults = LAST_DEPARTURE, depar
     const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
     if (path === '/driver/requests') return reply(state ?? polls[Math.min(index++, polls.length - 1)])
     if (path === '/driver/trips/defaults') return reply(defaults)
-    if (path === '/trips/5') return reply(trip({ status: 'completed' }))
+    if (path === '/trips/5') return reply(ended)
     if (path === '/pickup-points') return reply(PICKUP_POINTS)
     if (path === '/tags') return reply([{ id: 1, name: '不抽菸', issuer: 'self', selected: tagSelected }])
     if (path === '/me/tags/1' && (method === 'PUT' || method === 'DELETE')) {
@@ -295,6 +297,49 @@ describe('driver App', () => {
     expect(screen.queryByRole('button', { name: '除錯' })).not.toBeInTheDocument()
   })
 
+  it('says no rider was taken when the trip ended empty (SC-D4)', async () => {
+    fakeBackend([DRIVING, NO_TRIP], { ended: trip({ status: 'completed', completed_rides: 0 }) })
+    render(<App />)
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    await nextPoll()
+    expect(await screen.findByText('這趟沒有載到乘客')).toBeInTheDocument()
+  })
+
+  it('goes back to the departure screen when a Demo reset cancels the running trip (DD-29)', async () => {
+    fakeBackend([DRIVING, NO_TRIP], { ended: trip({ status: 'cancelled' }) })
+    render(<App />)
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    await nextPoll()
+    expect(await screen.findByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '已到達目的地' })).not.toBeInTheDocument()
+  })
+
+  it('has no map, settings entry or end-trip button anywhere while driving (DD-04, DD-30, REQ-019)', async () => {
+    const onBoard = request({ id: 9, status: 'boarded', boarded: true })
+    fakeBackend([{ trip_id: 5, pending: [request({})], passengers: [onBoard] }, { trip_id: 5, pending: [], passengers: [onBoard] }, DRIVING])
+    render(<App />)
+    const inTrip = () => {
+      expect(screen.queryByTestId('map')).not.toBeInTheDocument()
+      expect(screen.queryByText(/地圖未設定/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/設定|篩選乘客|可載人數|我的標籤|自動接受|結束行程/)).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '除錯' })).not.toBeInTheDocument()
+    }
+    // A request, with a passenger already on board.
+    await screen.findByRole('heading', { name: '有乘客要搭車' })
+    inTrip()
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['確認', '婉拒'])
+    // The passenger on board, no request.
+    await nextPoll()
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    inTrip()
+    expect(screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['瑞光路的乘客已下車'])
+    // Nobody on board, no request: no buttons at all.
+    await nextPoll()
+    await waitFor(() => expect(screen.queryByRole('region', { name: '乘客' })).not.toBeInTheDocument())
+    inTrip()
+    expect(screen.queryAllByRole('button')).toEqual([])
+  })
+
   it('shows the arrival screen when the running trip ends by itself (UD-16)', async () => {
     fakeBackend([DRIVING, NO_TRIP])
     render(<App />)
@@ -303,6 +348,8 @@ describe('driver App', () => {
     await nextPoll()
     expect(await screen.findByRole('heading', { name: '已到達目的地' })).toBeInTheDocument()
     expect(screen.getByText('瑞光路 513 巷')).toBeInTheDocument()
+    // The rides finished on this trip (SC-D4, REQ-070).
+    expect(screen.getByText('這趟載了 2 位乘客')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '好' }))
     expect(await screen.findByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()

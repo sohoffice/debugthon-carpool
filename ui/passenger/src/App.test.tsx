@@ -39,6 +39,8 @@ const TRIP: TripView = {
   tag_filters: [],
   route: ROUTE,
   started_at: '2026-10-24T00:08:00Z',
+  ended_at: null,
+  completed_rides: 0,
 }
 
 /** Three cars; only the second one's ETA is simulated unless `simulated` says which (REQ-063). */
