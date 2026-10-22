@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,7 @@ import (
 const (
 	roleDriver    = "driver"
 	rolePassenger = "passenger"
+	roleCity      = "city" // city admin, Phase 2 (DD-39)
 )
 
 const (
@@ -25,15 +27,15 @@ const (
 func (s *Server) authenticate(c *gin.Context) {
 	token, ok := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer ")
 	role, username, found := strings.Cut(token, ":")
-	if !ok || !found || username == "" || (role != roleDriver && role != rolePassenger) {
+	if !ok || !found || username == "" || (role != roleDriver && role != rolePassenger && role != roleCity) {
 		apiError(c, http.StatusUnauthorized, "unauthorized", "需要 Authorization: Bearer <角色>:<帳號>")
 		return
 	}
 
 	var id int64
-	var isDriver, isPassenger bool
-	err := s.db.QueryRow(c, `SELECT id, is_driver, is_passenger FROM users WHERE username = $1`, username).
-		Scan(&id, &isDriver, &isPassenger)
+	var isDriver, isPassenger, isCity bool
+	err := s.db.QueryRow(c, `SELECT id, is_driver, is_passenger, is_city_admin FROM users WHERE username = $1`, username).
+		Scan(&id, &isDriver, &isPassenger, &isCity)
 	if errors.Is(err, pgx.ErrNoRows) {
 		apiError(c, http.StatusUnauthorized, "unauthorized", "帳號不存在")
 		return
@@ -42,7 +44,7 @@ func (s *Server) authenticate(c *gin.Context) {
 		s.internalError(c, err)
 		return
 	}
-	if (role == roleDriver && !isDriver) || (role == rolePassenger && !isPassenger) {
+	if (role == roleDriver && !isDriver) || (role == rolePassenger && !isPassenger) || (role == roleCity && !isCity) {
 		apiError(c, http.StatusForbidden, "forbidden", "此帳號沒有該角色")
 		return
 	}
@@ -53,10 +55,10 @@ func (s *Server) authenticate(c *gin.Context) {
 	c.Next()
 }
 
-// requireRole limits a route group to one role.
-func requireRole(role string) gin.HandlerFunc {
+// requireRole limits a route group to the given roles.
+func requireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.GetString(ctxRole) != role {
+		if !slices.Contains(roles, c.GetString(ctxRole)) {
 			apiError(c, http.StatusForbidden, "forbidden", "此角色不能使用這個 API")
 			return
 		}

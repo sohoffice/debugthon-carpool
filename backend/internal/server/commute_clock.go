@@ -10,8 +10,9 @@ var taipei = time.FixedZone("Asia/Taipei", 8*60*60)
 
 // commuteMoment is "now" for Phase 2 data (DD-41): commute, city dashboard and pickup statistics.
 type commuteMoment struct {
-	Now   time.Time // today at demo_clock, or the real time when demo_clock is not set
-	Today time.Time // midnight of Now's Taipei date
+	Now       time.Time // today at demo_clock, or the real time when demo_clock is not set
+	Today     time.Time // midnight of Now's Taipei date
+	DemoClock bool      // demo_clock is set, so Now is the Demo time, not the real time
 }
 
 // commuteNow is the one place Phase 2 reads "now" (REQ-084, DD-41). The SQL function
@@ -19,7 +20,9 @@ type commuteMoment struct {
 // passed in so tests can pin it. Matching, trips, requests and timeouts do not use this.
 func commuteNow(ctx context.Context, db DB, realNow time.Time) (commuteMoment, error) {
 	var m commuteMoment
-	if err := db.QueryRow(ctx, `SELECT commute_now($1)`, realNow).Scan(&m.Now); err != nil {
+	if err := db.QueryRow(ctx, `
+		SELECT commute_now($1), EXISTS (SELECT 1 FROM system_settings WHERE key = 'demo_clock')`, realNow).
+		Scan(&m.Now, &m.DemoClock); err != nil {
 		return commuteMoment{}, err
 	}
 	m.Now = m.Now.In(taipei)
