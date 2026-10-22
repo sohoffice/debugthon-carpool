@@ -24,7 +24,7 @@ export function MatchNotification({ text, onClose }: { text: string; onClose: ()
         onPointerUp={(e) => startY.current !== null && startY.current - e.clientY > SWIPE_UP_PX && onClose()}
         className="notification-in w-full rounded-[22px] bg-white/90 px-4 py-3 text-left shadow-xl shadow-ink/20 ring-1 ring-ink/5 backdrop-blur"
       >
-        <span className="flex items-center justify-between text-sm text-ink-soft">
+        <span className="flex items-center justify-between text-sm text-fg-soft">
           <Wordmark className="text-sm" />
           <span>現在</span>
         </span>

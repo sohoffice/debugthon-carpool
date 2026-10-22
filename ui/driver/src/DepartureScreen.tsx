@@ -122,7 +122,7 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
   const strip = pickup && destination && route ? routeStripItems(pickup.name, route.bus_stops, destination.name) : null
 
   return (
-    <div className="relative h-full bg-white">
+    <div className="ground-asphalt relative h-full bg-canvas">
       <div className="absolute inset-x-0 top-0 h-[44%]">
         <RouteMap
           pickup={pickup}
@@ -138,10 +138,10 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
         <div className="h-[34%]" />
         {/* Room under the last row for the bar below, which is taller with an error in it. */}
         <section
-          className={`pointer-events-auto min-h-[62%] rounded-t-sheet bg-white px-6 pt-7 shadow-[0_-12px_32px_-16px_color-mix(in_srgb,var(--color-ink)_40%,transparent)] ${error ? 'pb-[calc(var(--safe-bottom)+208px)]' : 'pb-[calc(var(--safe-bottom)+112px)]'}`}
+          className={`pointer-events-auto min-h-[62%] rounded-t-sheet bg-canvas px-6 pt-7 shadow-[0_-16px_32px_-18px_color-mix(in_srgb,var(--color-asphalt)_70%,transparent)] ${error ? 'pb-[calc(var(--safe-bottom)+208px)]' : 'pb-[calc(var(--safe-bottom)+112px)]'}`}
         >
-          <h1 className="text-[32px]/tight font-bold">{firstTime ? '第一次出發' : '今天載人嗎？'}</h1>
-          <p className="mt-1 text-lg text-ink-soft">{firstTime ? '選好上車點和目的地就能出發，下次會自動帶入。' : '設定沿用上次。沒問題就出發。'}</p>
+          <h1 className="lettering-sign text-[34px]/tight font-semibold">{firstTime ? '第一次出發' : '今天載人嗎？'}</h1>
+          <p className="mt-1 text-lg text-fg-soft">{firstTime ? '選好上車點和目的地就能出發，下次會自動帶入。' : '設定沿用上次。沒問題就出發。'}</p>
 
           <div className="mt-6">
             {!loaded || (strip === null && settings !== null && routeError === null) ? (
@@ -150,20 +150,20 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
               <>
                 <RouteStrip items={strip.items} />
                 {(route?.simulated || strip.hidden > 0) && (
-                  <p className="mt-3 flex items-center gap-2 pl-9 text-sm text-ink-soft">
+                  <p className="mt-3 flex items-center gap-2 pl-9 text-sm text-fg-soft">
                     {route?.simulated && <SimulatedBadge label="路線為估算" />}
                     {strip.hidden > 0 && <span>沿途共 {strip.items.length - 2 + strip.hidden} 個公車站</span>}
                   </p>
                 )}
               </>
             ) : routeError ? (
-              <p className="text-base text-ink-soft">{routeError}</p>
+              <p className="text-base text-fg-soft">{routeError}</p>
             ) : (
               <RoutePlaceholder pickupName={pickup?.name} destinationName={destination?.name} />
             )}
           </div>
 
-          <div className="mt-6 border-t border-rule">
+          <div className="mt-6 border-t border-line">
             <SettingRow label="上車點" value={pickup?.name ?? '未選'} open={open.includes('pickup')} onToggle={() => toggle('pickup')}>
               <PickupEditor
                 pickupPoints={pickupPoints}
@@ -182,7 +182,7 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
             </SettingLine>
             <SettingRow label="篩選乘客" value={summarizeFilters(tags, draft.tagFilters)} open={open.includes('filters')} onToggle={() => toggle('filters')}>
               <TagFilterEditor tags={tags} value={draft.tagFilters} onChange={(tagFilters) => update({ tagFilters })} />
-              <p className="mt-2 text-sm text-ink-soft">強制：不符合的乘客不會配給你。建議：只供參考，不影響配對。</p>
+              <p className="mt-2 text-sm text-fg-soft">強制：不符合的乘客不會配給你。建議：只供參考，不影響配對。</p>
             </SettingRow>
             <SettingRow
               label="我的標籤"
@@ -191,7 +191,7 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
               onToggle={() => toggle('tags')}
             >
               <ChipSelect label="我的標籤" options={tags.map((t) => ({ id: t.id, label: t.name }))} selected={tags.filter((t) => t.selected).map((t) => t.id)} onToggle={myTags.toggle} />
-              <p className="mt-2 text-sm text-ink-soft">乘客篩選駕駛時會看這些標籤。</p>
+              <p className="mt-2 text-sm text-fg-soft">乘客篩選駕駛時會看這些標籤。</p>
             </SettingRow>
           </div>
           {myTags.error && (
@@ -204,14 +204,14 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
 
       {/* With an error the bar is solid white, so the message never sits over a setting row. */}
       <div
-        className={`absolute inset-x-0 bottom-0 px-6 pb-[calc(var(--safe-bottom)+12px)] ${error ? 'border-t border-rule bg-white pt-4' : 'bg-gradient-to-t from-white from-70% to-transparent pt-8'}`}
+        className={`absolute inset-x-0 bottom-0 px-6 pb-[calc(var(--safe-bottom)+12px)] ${error ? 'border-t border-line bg-canvas pt-4' : 'bg-gradient-to-t from-canvas from-70% to-transparent pt-8'}`}
       >
         {error && (
           <div className="mb-3">
             <ErrorNote>{error}</ErrorNote>
           </div>
         )}
-        <Button className="h-16 w-full text-xl" disabled={!loaded || !settings || submitting} onClick={depart}>
+        <Button className="h-[72px] w-full text-2xl" disabled={!loaded || !settings || submitting} onClick={depart}>
           {submitting ? '出發中…' : '我出發了'}
         </Button>
       </div>

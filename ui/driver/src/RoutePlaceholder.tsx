@@ -12,18 +12,18 @@ export function RoutePlaceholder({ pickupName, destinationName }: RoutePlacehold
     <ol aria-label="今天的路線" className="relative">
       <li className="flex h-11 items-center gap-4">
         <span className="flex w-5 shrink-0 justify-center">
-          <span className={`size-5 rounded-full border-[3.5px] bg-white ${pickupName ? 'border-brand' : 'border-rule'}`} />
+          <span className={`size-5 rounded-full border-[3.5px] bg-canvas ${pickupName ? 'border-route' : 'border-line'}`} />
         </span>
-        <span className={`text-lg ${pickupName ? 'font-semibold' : 'text-ink-soft'}`}>{pickupName ?? '選上車點'}</span>
+        <span className={`text-lg ${pickupName ? 'font-semibold' : 'text-fg-soft'}`}>{pickupName ?? '選上車點'}</span>
       </li>
       <li aria-hidden className="flex h-8 w-5 justify-center">
-        <span className="h-full border-l-[4px] border-dashed border-rule" />
+        <span className="h-full border-l-[4px] border-dashed border-line" />
       </li>
       <li className="flex h-11 items-center gap-4">
         <span className="flex w-5 shrink-0 justify-center">
-          <span className={`size-[18px] rounded-[3px] border-[3px] ${destinationName ? 'border-brand bg-brand' : 'border-rule bg-white'}`} />
+          <span className={`size-[18px] rounded-[3px] border-[3px] ${destinationName ? 'border-route bg-route' : 'border-line bg-canvas'}`} />
         </span>
-        <span className={`text-lg ${destinationName ? 'font-semibold' : 'text-ink-soft'}`}>{destinationName ?? '選目的地'}</span>
+        <span className={`text-lg ${destinationName ? 'font-semibold' : 'text-fg-soft'}`}>{destinationName ?? '選目的地'}</span>
       </li>
     </ol>
   )

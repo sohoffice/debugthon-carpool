@@ -70,10 +70,10 @@ export function PlaceSearch({ api, value, onChange }: PlaceSearchProps) {
         value={query}
         placeholder="輸入內科的地點名稱或地址"
         onChange={(e) => (setQuery(e.target.value), setEditing(true), setNote(null))}
-        className="h-14 w-full rounded-control bg-white px-4 text-lg ring-1 ring-rule outline-none ring-inset placeholder:text-ink-soft focus-visible:outline-3 focus-visible:outline-brand"
+        className="h-14 w-full rounded-control bg-surface px-4 text-lg text-fg ring-[1.5px] ring-line outline-none ring-inset placeholder:text-fg-soft focus-visible:outline-3 focus-visible:outline-accent"
       />
       {note && (
-        <p role="status" className="mt-2 text-sm text-danger">
+        <p role="status" className="mt-2 text-sm text-alert">
           {note}
         </p>
       )}
@@ -81,10 +81,10 @@ export function PlaceSearch({ api, value, onChange }: PlaceSearchProps) {
         {shown.map((s) => (
           <li key={s.id}>
             <button type="button" disabled={checking} onClick={() => choose(s)} className="flex min-h-12 w-full items-center gap-3 py-1 text-left disabled:opacity-60">
-              <span aria-hidden className="size-3.5 shrink-0 rounded-[2px] bg-brand" />
+              <span aria-hidden className="size-3.5 shrink-0 rounded-[2px] bg-route" />
               <span className="min-w-0">
                 <span className="block text-lg">{s.name}</span>
-                {s.detail && <span className="block truncate text-sm text-ink-soft">{s.detail}</span>}
+                {s.detail && <span className="block truncate text-sm text-fg-soft">{s.detail}</span>}
               </span>
             </button>
           </li>

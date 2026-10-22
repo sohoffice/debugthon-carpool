@@ -25,16 +25,16 @@ function remainingRoute(dropoffStopId: number | null, dropoffName: string | null
 export function BoardedScreen({ dropoffName, dropoffStopId, vehicle, trip, busy, onDone }: BoardedScreenProps) {
   const items = remainingRoute(dropoffStopId, dropoffName, trip?.destination.name ?? null)
   return (
-    <main className="flex h-full flex-col bg-paper px-6 pt-[calc(var(--safe-top)+24px)] pb-(--safe-bottom)">
-      <p className="text-lg font-semibold text-ink-soft">在車上</p>
-      <h1 className="mt-2 text-[36px]/tight font-bold">{dropoffName ? `在${dropoffName}下車` : '在車上了'}</h1>
+    <main className="flex h-full flex-col bg-canvas px-6 pt-[calc(var(--safe-top)+24px)] pb-(--safe-bottom)">
+      <p className="text-lg font-semibold text-fg-soft">在車上</p>
+      <h1 className="mt-2 text-[36px]/tight font-semibold">{dropoffName ? `在${dropoffName}下車` : '在車上了'}</h1>
       {vehicle && (
         <div className="mt-4 flex items-center gap-4">
           <Plate plate={vehicle.plate} />
           <span className="min-w-0 text-lg">{vehicle.description}</span>
         </div>
       )}
-      <div className="mt-8 min-h-0 flex-1 overflow-y-auto border-t border-rule pt-4">{items.length > 0 && <RouteStrip items={items} label="這趟的路線" />}</div>
+      <div className="mt-8 min-h-0 flex-1 overflow-y-auto border-t border-line pt-4">{items.length > 0 && <RouteStrip items={items} label="這趟的路線" />}</div>
       <Button className="h-16 w-full text-xl" disabled={busy} onClick={onDone}>
         我已下車，結束共乘
       </Button>

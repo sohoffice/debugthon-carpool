@@ -20,7 +20,7 @@ export function PickupEditor({ pickupPoints, value, onChange }: PickupEditorProp
             onClick={() => onChange(p.id)}
             className="flex h-12 items-center gap-3 text-left text-lg"
           >
-            <span className={`size-5 rounded-full border-[3.5px] ${on ? 'border-brand bg-brand' : 'border-rule bg-white'}`} />
+            <span className={`size-5 rounded-full border-[3.5px] ${on ? 'border-route bg-route' : 'border-line bg-canvas'}`} />
             <span className={on ? 'font-semibold' : ''}>{p.name}</span>
           </button>
         )

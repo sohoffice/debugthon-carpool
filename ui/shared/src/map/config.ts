@@ -12,4 +12,4 @@ export const DEFAULT_CENTER: LatLng = { lat: 25.0615, lng: 121.5705 }
 export const DEFAULT_ZOOM = 13
 
 /** Map drawing colours, the same as the brand tokens in theme.css (8.1); the Maps API needs literal values. */
-export const MAP_COLORS = { brand: '#0a7a68', white: '#ffffff', ink: '#1a242c' }
+export const MAP_COLORS = { brand: '#00707c', white: '#ffffff', ink: '#132126' }

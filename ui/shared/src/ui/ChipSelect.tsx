@@ -22,7 +22,7 @@ export function ChipSelect({ label, options, selected, onToggle }: ChipSelectPro
             type="button"
             aria-pressed={on}
             onClick={() => onToggle(o.id)}
-            className={`min-h-11 rounded-full px-4 text-base font-medium ${on ? 'bg-brand text-white' : 'bg-white text-ink ring-1 ring-inset ring-rule active:bg-paper'}`}
+            className={`min-h-11 rounded-full px-4 text-base font-medium ${on ? 'bg-accent text-on-accent' : 'bg-surface text-fg ring-[1.5px] ring-inset ring-line active:bg-sunk'}`}
           >
             {o.label}
           </button>

@@ -58,33 +58,33 @@ export function DestinationScreen({ initial, busStops, myTags, onDone }: Destina
   const ready = destination !== null && stopIds.length > 0
 
   return (
-    <div className="relative h-full bg-paper">
+    <div className="relative h-full bg-canvas">
       <main className="h-full overflow-y-auto overscroll-contain px-6 pt-[calc(var(--safe-top)+24px)] pb-[calc(var(--safe-bottom)+112px)]">
-        <h1 className="text-[32px]/tight font-bold">要去內科哪裡？</h1>
-        <p className="mt-1 text-lg text-ink-soft">用來找順路的車，下次會自動帶入。</p>
+        <h1 className="text-[34px]/tight font-semibold">要去內科哪裡？</h1>
+        <p className="mt-1 text-lg text-fg-soft">用來找順路的車，下次會自動帶入。</p>
 
-        <h2 className="mt-8 text-base font-semibold text-ink-soft">目的地地址</h2>
+        <h2 className="mt-8 text-base font-semibold text-fg-soft">目的地地址</h2>
         <div className="mt-2">
           <PlaceSearch api={api} value={destination} onChange={setDestination} />
         </div>
 
-        <h2 className="mt-6 text-base font-semibold text-ink-soft">也可以在這些公車站下車</h2>
-        <p className="mt-1 text-sm text-ink-soft">至少選一站，再走路到目的地。</p>
+        <h2 className="mt-6 text-base font-semibold text-fg-soft">也可以在這些公車站下車</h2>
+        <p className="mt-1 text-sm text-fg-soft">至少選一站，再走路到目的地。</p>
         <div className="mt-3">
           {choices.length > 0 ? (
             <ChipSelect label="可以下車的公車站" options={choices.map((c) => ({ id: c.chipId, label: c.name }))} selected={selectedChips} onToggle={toggleStop} />
           ) : (
-            <p className="text-base text-ink-soft">{destination ? '附近沒有園區內的公車站。' : '先填目的地，這裡會列出附近的公車站。'}</p>
+            <p className="text-base text-fg-soft">{destination ? '附近沒有園區內的公車站。' : '先填目的地，這裡會列出附近的公車站。'}</p>
           )}
         </div>
 
-        <h2 className="mt-8 text-base font-semibold text-ink-soft">篩選駕駛</h2>
+        <h2 className="mt-8 text-base font-semibold text-fg-soft">篩選駕駛</h2>
         <div className="mt-1">
           <TagFilterEditor tags={tags} value={filters} onChange={setFilters} />
         </div>
-        <p className="mt-2 text-sm text-ink-soft">強制：不符合就不配對。建議：盡量配對符合的駕駛，沒有時照常配對。</p>
+        <p className="mt-2 text-sm text-fg-soft">強制：不符合就不配對。建議：盡量配對符合的駕駛，沒有時照常配對。</p>
 
-        <h2 className="mt-8 text-base font-semibold text-ink-soft">我的標籤</h2>
+        <h2 className="mt-8 text-base font-semibold text-fg-soft">我的標籤</h2>
         <div className="mt-3">
           <ChipSelect label="我的標籤" options={tags.map((t) => ({ id: t.id, label: t.name }))} selected={tags.filter((t) => t.selected).map((t) => t.id)} onToggle={myTags.toggle} />
         </div>
@@ -95,7 +95,7 @@ export function DestinationScreen({ initial, busStops, myTags, onDone }: Destina
         )}
       </main>
 
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-paper from-70% to-transparent px-6 pt-8 pb-[calc(var(--safe-bottom)+12px)]">
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-canvas from-70% to-transparent px-6 pt-8 pb-[calc(var(--safe-bottom)+12px)]">
         <Button
           className="h-16 w-full text-xl"
           disabled={!ready}

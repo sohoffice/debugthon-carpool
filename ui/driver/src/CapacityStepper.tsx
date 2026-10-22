@@ -1,6 +1,6 @@
 import { CAPACITY_RANGE } from './config'
 
-const STEP_CLASS = 'flex size-11 items-center justify-center rounded-full text-2xl font-semibold ring-1 ring-inset ring-rule active:bg-paper disabled:text-rule'
+const STEP_CLASS = 'flex size-11 items-center justify-center rounded-full text-2xl font-semibold ring-[1.5px] ring-inset ring-line active:bg-sunk disabled:text-line'
 
 export function CapacityStepper({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   return (

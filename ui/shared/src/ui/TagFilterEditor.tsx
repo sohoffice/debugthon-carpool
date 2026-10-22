@@ -3,9 +3,9 @@ import type { TagFilter, TagIntent } from '../api/types'
 type Choice = TagIntent | 'none'
 
 const CHOICES: { value: Choice; label: string; on: string }[] = [
-  { value: 'none', label: '不限', on: 'bg-white text-ink shadow-sm' },
-  { value: 'preferred', label: '建議', on: 'bg-brand text-white' },
-  { value: 'required', label: '強制', on: 'bg-ink text-white' },
+  { value: 'none', label: '不限', on: 'bg-surface text-fg ring-1 ring-inset ring-line' },
+  { value: 'preferred', label: '建議', on: 'bg-accent text-on-accent' },
+  { value: 'required', label: '強制', on: 'bg-fg text-canvas' },
 ]
 
 interface TagFilterEditorProps {
@@ -22,11 +22,11 @@ export function TagFilterEditor({ tags, value, onChange }: TagFilterEditorProps)
     onChange(choice === 'none' ? others : [...others, { tag_id: id, intent: choice }])
   }
   return (
-    <ul className="divide-y divide-rule">
+    <ul className="divide-y divide-line">
       {tags.map((tag) => (
         <li key={tag.id} className="flex items-center justify-between gap-3 py-2">
           <span className="text-base">{tag.name}</span>
-          <span role="radiogroup" aria-label={`${tag.name}的篩選`} className="flex rounded-control bg-paper p-1">
+          <span role="radiogroup" aria-label={`${tag.name}的篩選`} className="flex rounded-control bg-sunk p-1">
             {CHOICES.map((c) => {
               const on = intentOf(tag.id) === c.value
               return (
@@ -36,7 +36,7 @@ export function TagFilterEditor({ tags, value, onChange }: TagFilterEditorProps)
                   role="radio"
                   aria-checked={on}
                   onClick={() => set(tag.id, c.value)}
-                  className={`h-10 min-w-14 rounded-[12px] px-3 text-base font-semibold ${on ? c.on : 'text-ink-soft'}`}
+                  className={`h-10 min-w-14 rounded-[12px] px-3 text-base font-semibold ${on ? c.on : 'text-fg-soft'}`}
                 >
                   {c.label}
                 </button>
