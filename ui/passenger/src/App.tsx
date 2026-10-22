@@ -182,7 +182,7 @@ export function App() {
         />
         {sheetOpen && (
           <SubmitSheet
-            tags={myTags.tags ?? []}
+            myTags={myTags}
             filters={search.tag_filters}
             submitting={submitting}
             error={submitError}
