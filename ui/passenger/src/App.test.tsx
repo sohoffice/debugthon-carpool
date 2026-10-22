@@ -423,6 +423,24 @@ describe('passenger App', () => {
     expect(await screen.findByText('到 瑞光路 513 巷')).toBeInTheDocument()
   })
 
+  it('opens commute info from the destination setup on the chosen pickup point, and back keeps what was typed (DD-38, SC-X4)', async () => {
+    const calls = fakeBackend({ profile: { ...PROFILE, accepted_stops: [] } })
+    render(<App />)
+    await screen.findByRole('heading', { name: '要去內科哪裡？' })
+    fireEvent.click(await screen.findByRole('button', { name: STOP.name }))
+    fireEvent.click(screen.getByRole('button', { name: /通勤資訊/ }))
+
+    expect(await screen.findByRole('heading', { name: '通勤資訊' })).toBeInTheDocument()
+    // The nearest pickup point is the one chosen now.
+    expect(await screen.findByRole('button', { name: /上車點\s*松山車站/ })).toBeInTheDocument()
+    await waitFor(() => expect(calls.some((c) => c.path.startsWith('/commute/pickup-rides?pickup_point_id=1&'))).toBe(true))
+
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+    expect(screen.queryByRole('heading', { name: '通勤資訊' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '要去內科哪裡？' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: STOP.name })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('a destination outside the park is flagged at once and not taken (DD-32, REQ-001)', async () => {
     fakeBackend({ profile: NO_PROFILE })
     render(<App />)

@@ -1,7 +1,6 @@
-import { ErrorNote, type CityHistory, type CityToday } from '@carpool/shared'
+import { ErrorNote, WeatherIcon, weatherKind, type CityHistory, type CityToday } from '@carpool/shared'
 import { monthDay, weekdayOf } from './format'
 import { SectionTitle } from './SectionTitle'
-import { WeatherIcon } from './WeatherIcon'
 
 interface HistoryBarsProps {
   history: CityHistory | undefined
@@ -27,7 +26,13 @@ export function HistoryBars({ history, historyError, today }: HistoryBarsProps) 
             </div>
             <span className="mt-1 text-sm tabular-nums">{monthDay(d.date)}</span>
             <span className="text-sm text-ink-soft">{weekdayOf(d.date)}</span>
-            <WeatherIcon weather={d.weather} />
+            {d.weather ? (
+              <span title={`${d.weather.weather} ${d.weather.air_temperature}°C`}>
+                <WeatherIcon kind={weatherKind(d.weather.weather)} className="size-5 text-ink-soft" />
+              </span>
+            ) : (
+              <span className="text-sm text-ink-soft">—</span>
+            )}
           </li>
         ))}
         {today && history && (
@@ -38,7 +43,7 @@ export function HistoryBars({ history, historyError, today }: HistoryBarsProps) 
             </div>
             <span className="mt-1 text-sm font-bold">今天</span>
             <span className="text-sm text-ink-soft">{weekdayOf(today.today)}</span>
-            <span className="text-base leading-none">&nbsp;</span>
+            <span className="size-5" />
           </li>
         )}
       </ol>

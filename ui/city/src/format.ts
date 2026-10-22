@@ -1,5 +1,3 @@
-import type { Weather } from '@carpool/shared'
-
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 /** "08:15" in Taipei time from an RFC 3339 instant. */
@@ -23,15 +21,6 @@ export function slotLabel(time: string): string {
   const [h, m] = time.split(':').map(Number)
   const end = h * 60 + m + 15
   return `${time}–${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
-}
-
-export type WeatherKind = 'rain' | 'cloud' | 'sun'
-
-/** Three icons only (晴、多雲、雨, SC-X4): any rain wins, then the station's words. */
-export function weatherKind(weather: Weather): WeatherKind {
-  if (weather.precipitation > 0 || weather.weather.includes('雨')) return 'rain'
-  if (weather.weather.includes('雲') || weather.weather.includes('陰')) return 'cloud'
-  return 'sun'
 }
 
 /** One decimal at most: 3.0 → "3", 3.25 → "3.3". */

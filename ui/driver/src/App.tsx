@@ -1,4 +1,4 @@
-import { ApiError, PhoneShell, usePolling, type DriverRequests, type StatusBarTone, type TripView } from '@carpool/shared'
+import { ApiError, CommuteInfo, PhoneShell, usePolling, type DriverRequests, type StatusBarTone, type TripView } from '@carpool/shared'
 import { useEffect, useState } from 'react'
 import { api, DEBUG, POLL_INTERVAL_MS } from './config'
 import { DriverDebugMode } from './DriverDebugMode'
@@ -20,12 +20,15 @@ export function App() {
   const [ended, setEnded] = useState<TripView | null>(null)
   const [busy, setBusy] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  /** The pickup point commute info opened on; null when closed (DD-38). */
+  const [commute, setCommute] = useState<{ pickupId: number | null } | null>(null)
 
   useEffect(() => {
     if (tripId !== null && tripId !== runningId) {
       setRunningId(tripId)
-      // A trip started (here or elsewhere): no drawer while driving, and none reopening after (DD-04).
+      // A trip started (here or elsewhere): no drawer or commute info while driving, and none reopening after (DD-04, REQ-066).
       setDrawerOpen(false)
+      setCommute(null)
     }
     if (tripId === null && runningId !== null) {
       // The running trip is gone: it ended by itself at the destination (UD-16, DD-30), or a Demo
@@ -101,7 +104,15 @@ export function App() {
     <PhoneShell roleLabel="駕駛" tone={tone}>
       {screen}
       {/* Kept mounted so a failed reload keeps the last data; never open while a trip runs (DD-04, DD-35). */}
-      <DriverDrawer open={drawerOpen && tripId === null && polling.data !== undefined} onClose={() => setDrawerOpen(false)} />
+      <DriverDrawer
+        open={drawerOpen && tripId === null && polling.data !== undefined}
+        onClose={() => setDrawerOpen(false)}
+        onOpenCommute={(pickupId) => (setCommute({ pickupId }), setDrawerOpen(false))}
+      />
+      {/* Over the screen it came from, which the back button shows again with the drawer closed (SC-X4). */}
+      {commute && tripId === null && polling.data !== undefined && (
+        <CommuteInfo api={api} ground="asphalt" defaultPickupId={commute.pickupId} onBack={() => setCommute(null)} />
+      )}
       {DEBUG && <DriverDebugMode />}
     </PhoneShell>
   )

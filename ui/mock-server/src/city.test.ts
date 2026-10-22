@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { CityHistory, CityLive, CityToday, CityTraffic } from '../../shared/src/api/types.ts'
+import type { CityHistory, CityLive, CityToday, CityTraffic, CommuteTraffic, PickupRides } from '../../shared/src/api/types.ts'
 import { createMockApi } from './api.ts'
-import { commuteToday, pastWorkdays } from './city.ts'
+import { commuteMoment, pastWorkdays } from './commute.ts'
 import { loadStaticData } from './data/load.ts'
 
 const data = loadStaticData()
@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe('mock /api/city/* (DD-39, DD-40, DD-41)', () => {
   it('moves a weekend to the next Monday and counts 10 workdays back from it', () => {
-    expect(commuteToday(clock)).toBe('2026-10-26')
+    expect(commuteMoment(clock).today).toBe('2026-10-26')
     const days = pastWorkdays('2026-10-26')
     expect(days[0]).toBe('2026-10-23')
     expect(days[9]).toBe('2026-10-12')
@@ -91,5 +91,19 @@ describe('mock /api/city/* (DD-39, DD-40, DD-41)', () => {
     get<CityLive>('/api/city/live')
     const text = ['/api/city/live', '/api/city/traffic', '/api/city/today', '/api/city/history'].map((p) => JSON.stringify(get(p))).join()
     for (const key of ['username', 'display_name', 'plate', 'driver_id', 'passenger_id', 'trip_id']) expect(text).not.toContain(`"${key}"`)
+  })
+
+  it('history agrees with the commute info: the same weather per day, rides = the pickup points\' rides (REQ-083)', () => {
+    const h = get<CityHistory>('/api/city/history')
+    const passenger = (path: string) => call(path, 'Bearer passenger:passenger1').body
+    const traffic = passenger('/api/commute/traffic') as CommuteTraffic
+    const rides = h.pickup_points.map((p) => passenger(`/api/commute/pickup-rides?pickup_point_id=${p.id}&from=07:00&to=10:00`) as PickupRides)
+    for (const day of h.days) {
+      const slots = traffic.days.find((d) => d.date === day.date)!.slots
+      const rainiest = slots.map((s) => s.weather!).reduce((a, b) => (b.precipitation > a.precipitation ? b : a))
+      expect(day.weather).toEqual(rainiest)
+      const sum = rides.reduce((n, r) => n + r.days.find((d) => d.date === day.date)!.slots.reduce((m, s) => m + s.ride_count, 0), 0)
+      expect(day.rides).toBe(sum)
+    }
   })
 })

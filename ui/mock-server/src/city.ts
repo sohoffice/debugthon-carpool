@@ -10,8 +10,8 @@ import type {
   CityTraffic,
   CityVehicle,
   PickupPoint,
-  Weather,
 } from '../../shared/src/api/types.ts'
+import { commuteMoment, pastWorkdays, type createCommute } from './commute.ts'
 import type { Lookups } from './context.ts'
 import { MockError } from './errors.ts'
 import { makePath, pointAlong, type LatLng, type Path } from './geo.ts'
@@ -19,15 +19,13 @@ import { alongAt, type World } from './world.ts'
 
 // City dashboard for the mock backend (DD-39, DD-40, DD-41): the same shapes as the Go backend's
 // /api/city/*, with simpler made-up numbers. The mock always behaves as if demo_clock were set:
-// now is today at 08:15, and a weekend today becomes the next Monday.
+// now is today at 08:15, and a weekend today becomes the next Monday. Weather and the pickup
+// statistics come from the commute mock, so the dashboard and the commute info agree (REQ-083).
 
 const DEMO_CLOCK_MIN = 8 * 60 + 15
-const PAST_WORKDAYS = 10
 const SLOT_MIN = 15
 const FIRST_SLOT_MIN = 7 * 60
 const LAST_SLOT_MIN = 9 * 60 + 45
-const DAY_MS = 86_400_000
-const TAIPEI_OFFSET_MS = 8 * 3_600_000
 
 /** Neihu detectors on the main roads (DD-36); positions are approximate. */
 const DETECTORS: { vd_id: string; road_name: string; road_direction: string; lat: number; lng: number; base: number }[] = [
@@ -68,58 +66,15 @@ const hhmm = (min: number) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`
 /** RFC 3339 in Taipei time, as the Go backend writes times (+08:00). */
 const taipeiIso = (date: string, min: number) => `${date}T${hhmm(min)}:00+08:00`
 const weekdayOf = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay()
-const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10)
-const SLOTS = Array.from({ length: (LAST_SLOT_MIN - FIRST_SLOT_MIN) / SLOT_MIN + 1 }, (_, i) => FIRST_SLOT_MIN + i * SLOT_MIN)
-
-/** Today's Taipei date, a weekend moved to the next Monday (DD-41). */
-export function commuteToday(nowMs: number): string {
-  let date = new Date(nowMs + TAIPEI_OFFSET_MS).toISOString().slice(0, 10)
-  while (weekdayOf(date) === 0 || weekdayOf(date) === 6) date = addDays(date, 1)
-  return date
-}
-
-/** The past workdays before today, newest first (DD-41). */
-export function pastWorkdays(today: string): string[] {
-  const out: string[] = []
-  for (let d = addDays(today, -1); out.length < PAST_WORKDAYS; d = addDays(d, -1)) {
-    if (weekdayOf(d) !== 0 && weekdayOf(d) !== 6) out.push(d)
-  }
-  return out
-}
-
 /** A morning peak around 08:30. */
 const peak = (min: number) => 0.35 + 0.65 * Math.exp(-(((min - 510) / 50) ** 2))
 const friday = (date: string) => (weekdayOf(date) === 5 ? 1.15 : 1)
 
-/** About 2-3 rainy days out of 10, raining 07:30-09:00 (DD-40 step 1). */
-function weatherAt(date: string, min: number): Weather {
-  const rainy = rand(`rain:${date}`) < 0.25 && min >= 450 && min < 540
-  const cloudy = rand(`cloud:${date}`) < 0.5
-  return {
-    station_id: 'C0A9F0',
-    station_name: '內湖',
-    obs_time: taipeiIso(date, min),
-    weather: rainy ? '雨' : cloudy ? '多雲' : '晴',
-    air_temperature: Math.round((22 + rand(`temp:${date}`) * 6 + (min - 420) / 60) * 10) / 10,
-    precipitation: rainy ? Math.round((1 + rand(`mm:${date}:${min}`) * 7) * 10) / 10 : 0,
-  }
-}
-
-function observation(d: (typeof DETECTORS)[number], date: string, min: number) {
-  const rain = weatherAt(date, min).precipitation > 0
-  const load = peak(min) * friday(date) * (rain ? 1.1 : 1) * (0.9 + rand(`vol:${d.vd_id}:${date}:${min}`) * 0.2)
+function observation(d: (typeof DETECTORS)[number], date: string, min: number, raining: boolean) {
+  const load = peak(min) * friday(date) * (raining ? 1.1 : 1) * (0.9 + rand(`vol:${d.vd_id}:${date}:${min}`) * 0.2)
   const volume = Math.round(d.base * load)
-  const speed = Math.round((62 - 38 * Math.min(load, 1.2) - (rain ? 6 : 0)) * 10) / 10
+  const speed = Math.round((62 - 38 * Math.min(load, 1.2) - (raining ? 6 : 0)) * 10) / 10
   return { volume, speed }
-}
-
-/** One pickup point's simulated statistics in one slot (DD-37): rides never exceed passengers. */
-function stats(pickupId: number, date: string, min: number) {
-  const rain = weatherAt(date, min).precipitation > 0
-  const scale = peak(min) * friday(date)
-  const passengers = Math.round((2 + pickupId) * scale * (rain ? 1.3 : 1) * (0.7 + rand(`p:${pickupId}:${date}:${min}`) * 0.6))
-  const drivers = Math.round((1.5 + pickupId * 0.6) * scale * (0.7 + rand(`d:${pickupId}:${date}:${min}`) * 0.6))
-  return { passengers, drivers, rides: Math.min(passengers, drivers * 2, Math.round(passengers * 0.85)) }
 }
 
 interface SimCar {
@@ -131,15 +86,18 @@ interface SimCar {
   passengers: { showMs: number; matchMs: number }[]
 }
 
-export function createCity(lookups: Lookups) {
+export function createCity(lookups: Lookups, commute: ReturnType<typeof createCommute>) {
   const pickups: PickupPoint[] = [...lookups.pickupById.values()]
   const place = (p: PickupPoint) => ({ id: p.id, name: p.name, lat: p.lat, lng: p.lng })
   let roundStartMs: number | null = null
 
   const clockOf = (nowMs: number): CityClock => {
-    const today = commuteToday(nowMs)
-    return { now: taipeiIso(today, DEMO_CLOCK_MIN), today, demo_clock: true }
+    const { today, now } = commuteMoment(nowMs)
+    return { now, today, demo_clock: true }
   }
+  const commuteToday = (nowMs: number) => commuteMoment(nowMs).today
+  const rainingAt = (date: string, min: number) => commute.weatherCells(date).find((c) => c.slot === (min - FIRST_SLOT_MIN) / SLOT_MIN)?.raining ?? false
+  const statsOf = (pickupId: number, date: string) => commute.slotStats(pickupId, date)
   /** The latest slot: the last complete one before now, 08:00 in the Demo (DD-41). */
   const LATEST_SLOT_MIN = DEMO_CLOCK_MIN - SLOT_MIN
 
@@ -254,7 +212,7 @@ export function createCity(lookups: Lookups) {
     if (!known || min < FIRST_SLOT_MIN || min > LAST_SLOT_MIN) throw new MockError(404, 'not_found', '這個時段沒有車流資料')
 
     const detectors: CityDetector[] = DETECTORS.map((d) => {
-      const o = observation(d, date, min)
+      const o = observation(d, date, min, rainingAt(date, min))
       return { vd_id: d.vd_id, road_name: d.road_name, road_direction: d.road_direction, lat: d.lat, lng: d.lng, volume: o.volume, avg_speed_kmh: o.speed, simulated: true }
     })
     const weighted = (rows: { volume: number; speed: number }[]) => {
@@ -267,8 +225,8 @@ export function createCity(lookups: Lookups) {
       const past = pastWorkdays(clock.today).filter((day) => day !== date)
       return {
         road_name: road,
-        avg_speed_kmh: weighted(on.map((d) => observation(d, date, min))),
-        past_avg_speed_kmh: weighted(past.flatMap((day) => on.map((d) => observation(d, day, min)))),
+        avg_speed_kmh: weighted(on.map((d) => observation(d, date, min, rainingAt(date, min)))),
+        past_avg_speed_kmh: weighted(past.flatMap((day) => on.map((d) => observation(d, day, min, rainingAt(day, min))))),
       }
     })
     return { ...clock, slot_start: taipeiIso(date, min), detectors, roads, simulated: true }
@@ -283,7 +241,7 @@ export function createCity(lookups: Lookups) {
     let completed = 0
     const byPickup = pickups.map((p) => {
       // Simulated slots before now (DD-40 step 4): every match counts as a ride.
-      const sim = SLOTS.filter((m) => m < DEMO_CLOCK_MIN).map((m) => stats(p.id, clock.today, m))
+      const sim = statsOf(p.id, clock.today)
       const simPassengers = sim.reduce((n, s) => n + s.passengers, 0)
       const simRides = sim.reduce((n, s) => n + s.rides, 0)
       const real = world.requests.filter((r) => r.pickupPointId === p.id)
@@ -317,17 +275,17 @@ export function createCity(lookups: Lookups) {
     const clock = clockOf(nowMs)
     const daysBack = pastWorkdays(clock.today)
     const days: CityHistoryDay[] = daysBack.map((date) => {
-      const rides = pickups.reduce((n, p) => n + SLOTS.reduce((m, s) => m + stats(p.id, date, s).rides, 0), 0)
-      // The day's weather is its rainiest slot (DD-38).
-      const weather = SLOTS.map((s) => weatherAt(date, s)).reduce((a, b) => (b.precipitation > a.precipitation ? b : a))
+      const rides = pickups.reduce((n, p) => n + statsOf(p.id, date).reduce((m, s) => m + s.rides, 0), 0)
+      // The day's weather is its rainiest slot (DD-38), the same copy as /api/commute/traffic.
+      const weather = commute.weatherCells(date).map((c) => c.weather).reduce((a, b) => (b.precipitation > a.precipitation ? b : a))
       return { date, weekday: weekdayOf(date), rides, weather, simulated: true }
     })
-    const perDay = (n: number) => Math.round((n / PAST_WORKDAYS) * 10) / 10
+    const perDay = (n: number) => Math.round((n / daysBack.length) * 10) / 10
     return {
       ...clock,
       days,
       pickup_points: pickups.map((p) => {
-        const all = daysBack.flatMap((date) => SLOTS.map((s) => stats(p.id, date, s)))
+        const all = daysBack.flatMap((date) => statsOf(p.id, date))
         return {
           ...place(p),
           drivers_per_day: perDay(all.reduce((n, s) => n + s.drivers, 0)),
