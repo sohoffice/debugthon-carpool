@@ -707,7 +707,7 @@ flowchart LR
 
 **角色色（role token）：** 共用元件（按鈕、路線圖、標籤篩選、地址搜尋、模擬標示、錯誤訊息）不直接用上面的色碼，而是用 `canvas`、`surface`、`sunk`、`fg`、`fg-soft`、`line`、`route`、`action`、`on-action`、`accent`、`sim`、`alert`。預設是淺色的值；元素加上 `ground-asphalt` 後換成深色的值。同一個元件放在乘客的白底或駕駛的柏油上都對，不必有兩個版本。除錯面板用 `ground-light` 換回淺色。
 
-- 所有文字與背景的對比至少 4.5:1。量測值：白字在 `brand` 上 5.8:1；`brand-glow` 在柏油上 9.7:1；`ink-soft` 在白底上 6.0:1；`asphalt-soft` 在柏油上 11.1:1；`simulated-light` 在看板上 9.3:1；`ink` 在 `signal` 上 10.5:1。
+- 所有文字與背景的對比至少 4.5:1。量測值：白字在 `brand` 上 5.8:1；`brand-glow` 在柏油上 9.7:1；`ink-soft` 在白底上 6.0:1；`asphalt-soft` 在柏油上 11.1:1；`simulated-light` 在看板上 9.3:1；`ink` 在 `signal` 上 10.5:1；`brand-soft` 在 `brand` 上 4.8:1（共乘完成的副標，目前最低的一組）；`ink-soft` 在 `brand-soft` 上 4.9:1（地圖載入失敗時的說明）。
 - 路線色要避開台北捷運六條線的顏色（紅、藍、綠、橘、棕、黃），以免被誤認為捷運路線。新的青色比原本的綠色離松山新店線的綠更遠；地圖上的行程路線仍加白色外框（ui-oi-17）。
 - `signal` 黃不能拿來當一般強調色，駕駛才會把「變黃」和「有人要搭」連在一起。改版後駕駛端其他畫面都是柏油底，黃色更醒目。
 
