@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ApiClient } from '../api/client'
 import type { Tag } from '../api/types'
 
-/** "我的標籤": loads the tag list and saves each change at once (REQ-008). */
+/** The caller's own tags (關於我和車／關於我): loads the tag list and saves each change at once (REQ-008). */
 export function useMyTags(api: ApiClient) {
   const [tags, setTags] = useState<Tag[] | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
@@ -21,7 +21,7 @@ export function useMyTags(api: ApiClient) {
       await (current.selected ? api.delete(`/me/tags/${id}`) : api.put(`/me/tags/${id}`))
     } catch {
       setTags((list) => (list ? flip(list) : list))
-      setError(`「${current.name}」沒有存到，請再試一次。`)
+      setError(`「${current.self_label ?? current.name}」沒有存到，請再試一次。`)
     }
   }
 

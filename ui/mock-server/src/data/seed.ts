@@ -1,4 +1,4 @@
-import type { BusStop, PickupPoint, Vehicle } from '../../../shared/src/api/types.ts'
+import type { BusStop, PickupPoint, TagSide, Vehicle } from '../../../shared/src/api/types.ts'
 import { valuesAfter } from './sql.ts'
 
 export interface SeedUser {
@@ -14,6 +14,12 @@ export interface SeedTag {
   id: number
   name: string
   issuer: string
+  /** The side the tag applies to and its wording per side and use; null where it does not apply (DD-42). */
+  applies_to: TagSide
+  driver_self_label: string | null
+  driver_filter_label: string | null
+  passenger_self_label: string | null
+  passenger_filter_label: string | null
 }
 
 export interface SeedTrip {
@@ -43,6 +49,7 @@ export interface SeedSql {
   activities: string
   passMargin: string
   points: string
+  tagRoles: string
   /** All migrations' Up parts in order, for the later moves of driver2's destination (T03, T23). */
   migrationsUp: string
 }
@@ -74,15 +81,34 @@ export function parseSeed(sql: SeedSql): Seed {
     lat: Number(lat),
     lng: Number(lng),
   }))
-  const tags = valuesAfter(sql.reference, 'INSERT INTO tags', ';').map(([name, issuer], i) => ({
-    id: i + 1,
-    name: String(name),
-    issuer: String(issuer),
-  }))
-  const userTags = valuesAfter(sql.reference, 'INSERT INTO user_tags', ') v (').map(([username, tag]) => ({
-    username: String(username),
-    tag: String(tag),
-  }))
+  // DD-42: a tag missing from the wording list was dropped, and its id is not reused.
+  const roles = new Map(valuesAfter(sql.tagRoles, 'UPDATE tags t', ') v (').map(([name, ...rest]) => [String(name), rest]))
+  const label = (v: unknown) => (v === null ? null : String(v))
+  const tags = valuesAfter(sql.reference, 'INSERT INTO tags', ';').flatMap(([name, issuer], i) => {
+    const role = roles.get(String(name))
+    if (!role) return []
+    const [appliesTo, ds, df, ps, pf] = role
+    return [{
+      id: i + 1,
+      name: String(name),
+      issuer: String(issuer),
+      applies_to: String(appliesTo) as TagSide,
+      driver_self_label: label(ds),
+      driver_filter_label: label(df),
+      passenger_self_label: label(ps),
+      passenger_filter_label: label(pf),
+    }]
+  })
+  // REQ-008: a user keeps only the tags that apply to one of their roles.
+  const applies = (username: string, tagName: string) => {
+    const user = users.find((u) => u.username === username)
+    const tag = tags.find((t) => t.name === tagName)
+    if (!user || !tag) return false
+    return (user.is_driver && tag.applies_to !== 'passenger') || (user.is_passenger && tag.applies_to !== 'driver')
+  }
+  const userTags = valuesAfter(sql.reference, 'INSERT INTO user_tags', ') v (')
+    .map(([username, tag]) => ({ username: String(username), tag: String(tag) }))
+    .filter((ut) => applies(ut.username, ut.tag))
   // The last UPDATE of driver2's trip destination wins, as on a database migrated to the latest version.
   const moves = sql.migrationsUp
     .split(';')

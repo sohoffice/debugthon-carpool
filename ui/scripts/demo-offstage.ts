@@ -114,7 +114,7 @@ async function runLoop(leadS: number, stopping: () => boolean) {
   // One round; a failed round is retried on the next tick, so a backend restart needs no rerun.
   const poll = async () => {
     if (!toldDepart && Date.now() >= departAt) {
-      say('▶ 現在請 driver4 出發：展示頁左邊的手機確認「我的標籤」有「我不抽菸」與「車上能放大件行李」，按「我出發了」。')
+      say('▶ 現在請 driver4 出發：展示頁左邊的手機確認「關於我和車」有「我不抽菸」與「車上能放大件行李」，按「我出發了」。')
       toldDepart = true
     }
     const d4 = (await api<Requests>('driver4', 'GET', '/driver/requests')).body

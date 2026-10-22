@@ -10,6 +10,9 @@ export const DRIVER5 = { Authorization: 'Bearer driver:driver5' }
  * Of the simulated drivers, driver2 has only 可載行李 and driver3 only 不抽菸 (T43).
  */
 export const STAGE_TAGS = ['不抽菸', '可載行李']
+/** The stage tags as each side sees them (DD-42): a driver describing itself, a passenger filtering drivers. */
+export const STAGE_TAG_WORDS = { driverSelf: ['我不抽菸', '車上能放大件行李'], passengerFilter: ['不抽菸', '能放大件行李'] }
+export const PASSENGER1 = { Authorization: 'Bearer passenger:passenger1' }
 
 const appUrl = (port: number, account: string) => `http://localhost:${port}/?account=${account}`
 export const DRIVER_URL = appUrl(E2E_GO_PORTS.driver, 'driver4')
@@ -18,6 +21,12 @@ export const PASSENGER_URL = appUrl(E2E_GO_PORTS.passenger, 'passenger1')
 export const driverPlacesUrl = (account: string) => appUrl(E2E_GO_PORTS.driverPlaces, account)
 export const passengerPlacesUrl = (account: string) => appUrl(E2E_GO_PORTS.passengerPlaces, account)
 
+/** The id of a tag by its internal name (`name` is never shown, DD-42). */
+export async function tagId(request: APIRequestContext, name: string): Promise<number> {
+  const tags: { id: number; name: string }[] = await (await request.get(`${API}/tags`, { headers: DRIVER4 })).json()
+  return tags.find((t) => t.name === name)!.id
+}
+
 export async function stageTagIds(request: APIRequestContext): Promise<number[]> {
   const tags: { id: number; name: string }[] = await (await request.get(`${API}/tags`, { headers: DRIVER4 })).json()
   return STAGE_TAGS.map((name) => tags.find((t) => t.name === name)!.id)
@@ -25,8 +34,8 @@ export async function stageTagIds(request: APIRequestContext): Promise<number[]>
 
 /**
  * Back to the Demo's start (DD-29). The reset keeps the tags people chose themselves, so driver4's
- * stage tags are dropped here too, and driver5's, which a test may have picked as the second car:
- * nothing a test did is left for the next one. The reset also puts driver4's trip settings back,
+ * stage tags are dropped here too, and driver5's, which a test may have picked as the second car,
+ * and passenger1's 不抽菸: nothing a test did is left for the next one. The reset also puts driver4's trip settings back,
  * auto-accept off included (DD-19), and cancels any trip still open.
  */
 export async function resetDemo(request: APIRequestContext) {
@@ -34,6 +43,7 @@ export async function resetDemo(request: APIRequestContext) {
   for (const tagId of await stageTagIds(request)) {
     for (const headers of [DRIVER4, DRIVER5]) expect((await request.delete(`${API}/me/tags/${tagId}`, { headers })).ok()).toBe(true)
   }
+  expect((await request.delete(`${API}/me/tags/${await tagId(request, '不抽菸')}`, { headers: PASSENGER1 })).ok()).toBe(true)
 }
 
 /** The simulator's part (DD-14): driver4 reports that it is coming up to 松山車站 from the south. */
@@ -61,22 +71,27 @@ export async function openWithFakePlaces(browser: Browser, url: string): Promise
   return { page, context }
 }
 
-/** driver4 picks the stage tags as its own (the departure screen is prefilled from its last trip). */
+/** driver4 picks the stage tags as its own, in its own words (the departure screen is prefilled from its last trip). */
 export async function pickStageTags(driver: Page) {
-  const tags = driver.getByRole('group', { name: '我的標籤' })
-  await driver.getByRole('button', { name: /我的標籤/ }).click()
-  for (const name of STAGE_TAGS) {
+  const tags = driver.getByRole('group', { name: '關於我和車' })
+  await driver.getByRole('button', { name: /關於我和車/ }).click()
+  for (const name of STAGE_TAG_WORDS.driverSelf) {
     await tags.getByRole('button', { name, exact: true }).click()
     await expect(tags.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'true')
   }
 }
 
-/** The passenger sends a request with both stage tags required, so only driver5 and driver4 can take it (REQ-035, REQ-040). */
-export async function requestWithStageTagsRequired(passenger: Page) {
+/**
+ * The passenger sends a request with both stage tags 一定要, so only driver5 and driver4 can take it
+ * (REQ-035, REQ-040); `preferQuiet` also sets 安靜坐車 to 最好, which neither has (REQ-047).
+ */
+export async function requestWithStageTagsRequired(passenger: Page, { preferQuiet = false } = {}) {
   await passenger.getByRole('button', { name: '今天我要搭' }).click()
-  for (const name of STAGE_TAGS) {
-    await passenger.getByRole('radiogroup', { name: `${name}的篩選` }).getByRole('radio', { name: '強制' }).click()
+  const sheet = passenger.getByRole('dialog', { name: '送出搭車請求' })
+  for (const name of STAGE_TAG_WORDS.passengerFilter) {
+    await sheet.getByRole('radiogroup', { name: `${name}的篩選` }).getByRole('radio', { name: '一定要' }).click()
   }
+  if (preferQuiet) await sheet.getByRole('radiogroup', { name: '安靜坐車的篩選' }).getByRole('radio', { name: '最好' }).click()
   await passenger.getByRole('button', { name: '送出請求' }).click()
 }
 

@@ -48,11 +48,21 @@ export interface BusStop {
   lng: number
 }
 
-/** GET /api/tags; select with PUT /api/me/tags/:id, deselect with DELETE (both 204). */
+export type TagSide = 'driver' | 'passenger' | 'both'
+
+/**
+ * GET /api/tags, worded for the caller's role (REQ-086, DD-42); select with PUT /api/me/tags/:id,
+ * deselect with DELETE (both 204). `self_label` is how the caller describes themselves with the
+ * tag, `filter_label` how they filter the other side by it; each is null where the tag does not
+ * apply. `name` is an internal identifier and never shown.
+ */
 export interface Tag {
   id: number
   name: string
   issuer: string
+  applies_to: TagSide
+  self_label: string | null
+  filter_label: string | null
   selected: boolean
 }
 

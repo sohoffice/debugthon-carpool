@@ -4,7 +4,9 @@ import {
   CompanyChip,
   distanceM,
   ErrorNote,
+  filterTags,
   PlaceSearch,
+  selfTags,
   TagFilterEditor,
   type BusStop,
   type PassengerSearch,
@@ -14,6 +16,7 @@ import {
 } from '@carpool/shared'
 import { useState } from 'react'
 import { api } from './config'
+import { INTENT_LABELS } from './intentLabels'
 import { loadFilters } from './savedFilters'
 
 /** Stops within this walk of the destination are offered (no walking-time suggestion: REQ-026 is Phase 2). */
@@ -42,7 +45,7 @@ function stopChoices(busStops: BusStop[], destination: Place | null, chosen: num
     .slice(0, Math.max(MAX_STOP_NAMES, chosen.length))
 }
 
-/** 7.1: where in the park, where else the passenger may get off, filters and own tags. */
+/** 7.1: where in the park, where else the passenger may get off, own tags and filters (UD-06). */
 export function DestinationScreen({ initial, busStops, myTags, onDone }: DestinationScreenProps) {
   const [destination, setDestination] = useState<Place | null>(initial?.destination ?? null)
   const [stopIds, setStopIds] = useState<number[]>(initial?.accepted_stop_ids ?? [])
@@ -79,20 +82,21 @@ export function DestinationScreen({ initial, busStops, myTags, onDone }: Destina
           )}
         </div>
 
-        <h2 className="mt-8 text-base font-semibold text-fg-soft">篩選駕駛</h2>
+        <h2 className="mt-8 text-base font-semibold text-fg-soft">關於我</h2>
+        <div className="mt-3">
+          <ChipSelect label="關於我" options={selfTags(tags)} selected={tags.filter((t) => t.selected).map((t) => t.id)} onToggle={myTags.toggle} />
+        </div>
+        <p className="mt-2 text-sm text-fg-soft">有些駕駛只載符合條件的乘客。符合的都標上，配得到的車會比較多。</p>
+
+        <h2 className="mt-8 text-base font-semibold text-fg-soft">這趟車要</h2>
         {/* Simulated and never sent in the filters (DD-43). */}
         <div className="mt-3">
           <CompanyChip label="同企業" />
         </div>
         <div className="mt-1">
-          <TagFilterEditor tags={tags} value={filters} onChange={setFilters} />
+          <TagFilterEditor tags={filterTags(tags)} value={filters} onChange={setFilters} intentLabels={INTENT_LABELS} />
         </div>
-        <p className="mt-2 text-sm text-fg-soft">強制：不符合就不配對。建議：盡量配對符合的駕駛，沒有時照常配對。</p>
-
-        <h2 className="mt-8 text-base font-semibold text-fg-soft">我的標籤</h2>
-        <div className="mt-3">
-          <ChipSelect label="我的標籤" options={tags.map((t) => ({ id: t.id, label: t.name }))} selected={tags.filter((t) => t.selected).map((t) => t.id)} onToggle={myTags.toggle} />
-        </div>
+        <p className="mt-2 text-sm text-fg-soft">一定要：沒有這樣的車就不配。最好：盡量配到，沒有就照常配。</p>
         {myTags.error && (
           <div className="mt-4">
             <ErrorNote>{myTags.error}</ErrorNote>

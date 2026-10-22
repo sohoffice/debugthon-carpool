@@ -31,7 +31,7 @@ test('happy path: depart, see supply, request, confirm, board, end the ride (REQ
 
   // REQ-015: the departure screen shows the day's destination, seats, pickup point and filters.
   await expect(driver.getByRole('heading', { name: '今天載人嗎？' })).toBeVisible()
-  for (const label of ['上車點', '目的地', '可載人數', '篩選乘客']) await expect(driver.getByText(label, { exact: true })).toBeVisible()
+  for (const label of ['上車點', '目的地', '可載人數', '只載']) await expect(driver.getByText(label, { exact: true })).toBeVisible()
   await expect(driver.getByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeVisible()
   await driver.getByRole('button', { name: '我出發了' }).click()
   await expect(driver.getByRole('heading', { name: /目前沒有/ })).toBeVisible()

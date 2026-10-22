@@ -9,6 +9,7 @@ import {
   type PickupPoint,
   type RequestStatusView,
   type RequestView,
+  type Tag,
   type TagFilter,
 } from '@carpool/shared'
 import { useCallback, useEffect, useState } from 'react'
@@ -18,7 +19,7 @@ import { LoadingScreen } from './LoadingScreen'
 import { PassengerDebugMode } from './PassengerDebugMode'
 import { useCurrentPosition } from './position'
 import { RequestFlow } from './RequestFlow'
-import { loadFilters, saveFilters } from './savedFilters'
+import { dropUnusableFilters, loadFilters, saveFilters } from './savedFilters'
 import { isComplete, nearestPickup, searchFromProfile } from './search'
 import { SubmitSheet } from './SubmitSheet'
 import { SupplyScreen } from './SupplyScreen'
@@ -55,13 +56,16 @@ export function App() {
     let cancelled = false
     async function boot() {
       try {
-        const [points, stops, profile, current] = await Promise.all([
+        const [points, stops, profile, current, tags] = await Promise.all([
           api.get<PickupPoint[]>('/pickup-points'),
           api.get<BusStop[]>('/bus-stops'),
           api.get<PassengerProfile>('/passenger/profile'),
           fetchCurrent(),
+          api.get<Tag[]>('/tags'),
         ])
         if (cancelled) return
+        // Before the first supply query: an old filter the backend refuses would fail it (REQ-085).
+        dropUnusableFilters(tags)
         const habitual = habitualSearch(profile)
         setPickupPoints(points)
         setBusStops(stops)

@@ -12,6 +12,7 @@ import type {
   TripDefaults,
   TripView,
 } from '../../shared/src/api/types.ts'
+import type { Role } from '../../shared/src/api/client.ts'
 import { mustGet, type Lookups } from './context.ts'
 import { pointAlong } from './geo.ts'
 import { matchTrips } from './matching.ts'
@@ -19,9 +20,18 @@ import { activeTripOf, alongAt, assignedTripId, etaToPickupS, findTrip, passedPi
 
 const iso = (ms: number) => new Date(ms).toISOString()
 
-export function tagsView(world: World, lookups: Lookups, userId: number): Tag[] {
+/** The tag list in the caller's role's wording (REQ-086, DD-42). */
+export function tagsView(world: World, lookups: Lookups, userId: number, role: Role): Tag[] {
   const mine = new Set(world.userTags)
-  return lookups.data.seed.tags.map((t) => ({ ...t, selected: mine.has(`${userId}:${t.id}`) }))
+  return lookups.data.seed.tags.map((t) => ({
+    id: t.id,
+    name: t.name,
+    issuer: t.issuer,
+    applies_to: t.applies_to,
+    self_label: role === 'driver' ? t.driver_self_label : t.passenger_self_label,
+    filter_label: role === 'driver' ? t.driver_filter_label : t.passenger_filter_label,
+    selected: mine.has(`${userId}:${t.id}`),
+  }))
 }
 
 export function passengerProfileView(world: World, lookups: Lookups, userId: number): PassengerProfile {
