@@ -94,6 +94,7 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	authed.GET("/trips/:id", s.getTrip)
 	authed.GET("/commute/traffic", s.getCommuteTraffic) // Phase 2, REQ-077
 	authed.GET("/commute/weather", s.getCommuteWeather)
+	authed.GET("/commute/pickup-rides", s.getPickupRides) // Phase 2, REQ-056
 
 	driver := authed.Group("/driver", requireRole(roleDriver))
 	driver.GET("/profile", s.getDriverProfile)
