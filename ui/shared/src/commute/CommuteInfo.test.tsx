@@ -74,12 +74,15 @@ const WEATHER: CommuteWeather = {
 
 interface FakeOptions {
   now?: string
-  down?: ('/commute/weather' | '/commute/traffic' | '/commute/pickup-rides')[]
+  down?: ('/commute/weather' | '/commute/traffic' | '/commute/pickup-rides' | '/pickup-points')[]
+  /** pickup-rides fails only after this many answers (a later change of window or pickup point). */
+  ridesDownAfter?: number
 }
 
 /** An ApiClient answering like the Go backend; `down` paths fail with a 500. */
-function fakeApi({ now = NOW, down = [] }: FakeOptions = {}) {
+function fakeApi({ now = NOW, down = [], ridesDownAfter }: FakeOptions = {}) {
   const calls: string[] = []
+  let ridesAnswered = 0
   const get = vi.fn(async (path: string) => {
     calls.push(path)
     const [pathname, qs] = path.split('?')
@@ -88,6 +91,7 @@ function fakeApi({ now = NOW, down = [] }: FakeOptions = {}) {
     if (pathname === '/commute/traffic') return { ...TRAFFIC, now }
     if (pathname === '/pickup-points') return POINTS
     if (pathname === '/commute/pickup-rides') {
+      if (ridesDownAfter !== undefined && ridesAnswered++ >= ridesDownAfter) throw new ApiError(500, '伺服器發生錯誤', 'internal')
       const q = new URLSearchParams(qs)
       return { ...ridesFor(Number(q.get('pickup_point_id')), q.get('from')!, q.get('to')!), now }
     }
@@ -313,6 +317,31 @@ describe('CommuteInfo (DD-38, UD-25, SC-X4)', () => {
 
     show({ down: ['/commute/traffic'] })
     expect(await screen.findByText('讀不到車流，請稍後再試')).toBeInTheDocument()
+  })
+
+  it('a failed pickup point list shows an error in the rides block; weather and traffic stay (ui/CLAUDE.md 6)', async () => {
+    show({ down: ['/pickup-points'] })
+    expect(await screen.findByText('讀不到上車點，請稍後再試')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: '今天的天氣' })).toBeInTheDocument()
+    expect(await screen.findByRole('group', { name: '內湖車流' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: '載客次數' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
+  it('when rides fail after a change, the rides grid keeps the last data framed on its own window, matching its summary', async () => {
+    show({ ridesDownAfter: 1 })
+    await ridesShown()
+    fireEvent.click(screen.getByRole('button', { name: /時段/ }))
+    const sheet = screen.getByRole('dialog', { name: '選擇時段' })
+    fireEvent.click(within(within(sheet).getByRole('radiogroup', { name: '開始' })).getByRole('radio', { name: '09:00' }))
+    fireEvent.click(within(within(sheet).getByRole('radiogroup', { name: '結束' })).getByRole('radio', { name: '10:00' }))
+    fireEvent.click(within(sheet).getByRole('button', { name: '看 09:00–10:00' }))
+
+    expect(await screen.findByText('讀不到載客次數，請稍後再試')).toBeInTheDocument()
+    // The kept rides and their summary are for 07:45–08:45; their frame stays there, traffic moves.
+    expect(screen.getByText(/松山車站 07:45–08:45 平均每天載客/)).toBeInTheDocument()
+    expect(frame('ride')).toEqual([3, 7])
+    expect(frame('road')).toEqual([8, 12])
   })
 
   it('the back button returns', async () => {

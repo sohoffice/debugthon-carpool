@@ -40,6 +40,7 @@ export function CommuteInfo({ api, ground, defaultPickupId, onBack }: CommuteInf
   const [traffic, setTraffic] = useState<Loaded<CommuteTraffic>>(empty)
   const [rides, setRides] = useState<Loaded<PickupRides>>(empty)
   const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([])
+  const [pickupPointsFailed, setPickupPointsFailed] = useState(false)
   const [pickupId, setPickupId] = useState<number | null>(defaultPickupId)
   const [chosenWindow, setChosenWindow] = useState<SlotWindow | null>(null)
   const [sheet, setSheet] = useState<'pickup' | 'window' | null>(null)
@@ -54,7 +55,11 @@ export function CommuteInfo({ api, ground, defaultPickupId, onBack }: CommuteInf
       )
     load('/commute/weather', setWeather)
     load('/commute/traffic', setTraffic)
-    api.get<PickupPoint[]>('/pickup-points').then((points) => current && setPickupPoints(points), () => undefined)
+    api.get<PickupPoint[]>('/pickup-points').then(
+      (points) => current && (setPickupPoints(points), setPickupPointsFailed(false)),
+      // No pickup point to ask the rides for: the rides block says so (ui/CLAUDE.md 6).
+      () => current && setPickupPointsFailed(true),
+    )
     return () => {
       current = false
     }
@@ -113,9 +118,9 @@ export function CommuteInfo({ api, ground, defaultPickupId, onBack }: CommuteInf
           <Choice label="時段" value={win ? formatWindow(win) : '—'} onClick={() => setSheet('window')} disabled={!win} />
         </div>
 
-        {rides.failed && (
+        {(pickupPointsFailed || rides.failed) && (
           <div className="mt-3">
-            <ErrorNote>讀不到載客次數，請稍後再試</ErrorNote>
+            <ErrorNote>{pickupPointsFailed ? '讀不到上車點，請稍後再試' : '讀不到載客次數，請稍後再試'}</ErrorNote>
           </div>
         )}
         {rides.data && win && (
@@ -126,7 +131,9 @@ export function CommuteInfo({ api, ground, defaultPickupId, onBack }: CommuteInf
               scale="ride"
               ground={ground}
               rows={rideRows(rides.data.days, todayWeekday)}
-              window={win}
+              // The window these rides were asked for, which the summary states: after a failed
+              // change the kept rides stay framed on their own window (UD-25).
+              window={summaryWindow(rides.data)}
               simulated={rides.data.simulated}
             />
           </>
@@ -166,6 +173,11 @@ export function CommuteInfo({ api, ground, defaultPickupId, onBack }: CommuteInf
       {sheet === 'window' && win && <WindowSheet value={win} onDone={chooseWindow} onClose={() => setSheet(null)} />}
     </div>
   )
+}
+
+function summaryWindow(rides: PickupRides): SlotWindow {
+  const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+  return { from: minutes(rides.summary.from), to: minutes(rides.summary.to) }
 }
 
 function cellDetail(day: CommuteTraffic['days'][number], slot: number): string | null {
