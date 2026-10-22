@@ -442,6 +442,52 @@ describe('passenger App', () => {
     expect(calls.find((c) => c.path.startsWith('/passenger/supply'))?.path).toContain('required_tags=1')
   })
 
+  it('the destination setup lists 同企業 above the filters, selected, simulated and not tappable (REQ-062, REQ-063, DD-43)', async () => {
+    const calls = fakeBackend({ profile: NO_PROFILE })
+    render(<App />)
+    await screen.findByRole('heading', { name: '要去內科哪裡？' })
+    const chip = screen.getByText('同企業')
+    expect(chip.closest('p')).toHaveTextContent('模擬')
+    // Apart from the operable filters, with no 強制 or 建議 of its own.
+    expect(screen.queryByRole('radiogroup', { name: /同企業/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /同企業/ })).not.toBeInTheDocument()
+    expect(chip.compareDocumentPosition(screen.getByRole('radiogroup', { name: '不抽菸的篩選' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const before = calls.length
+    fireEvent.click(chip)
+    expect(calls.slice(before).filter((c) => c.method !== 'GET')).toEqual([])
+    expect(screen.getByText('同企業')).toBeInTheDocument()
+  })
+
+  it('同企業 in the send sheet is never sent: not in the request nor in the supply query (REQ-062, DD-43)', async () => {
+    const calls = fakeBackend({})
+    render(<App />)
+    await screen.findByText('3 台車接近中')
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    const sheet = screen.getByRole('dialog', { name: '送出搭車請求' })
+    const chip = within(sheet).getByText('同企業')
+    expect(chip.closest('p')).toHaveTextContent('模擬')
+    expect(within(sheet).queryByRole('radiogroup', { name: /同企業/ })).not.toBeInTheDocument()
+    fireEvent.click(chip)
+    expect(screen.getByRole('dialog', { name: '送出搭車請求' })).toBeInTheDocument()
+    fireEvent.click(within(sheet).getByRole('radio', { name: '建議' }))
+    fireEvent.click(screen.getByRole('button', { name: '送出請求' }))
+    await screen.findByRole('heading', { name: '正在等駕駛確認' })
+
+    // Only the operable filter goes out; the simulated company never does.
+    expect(calls.find((c) => c.path === '/passenger/requests')?.body).toMatchObject({ tag_filters: [{ tag_id: 1, intent: 'preferred' }] })
+    const supplyQueries = calls.filter((c) => c.path.startsWith('/passenger/supply')).map((c) => c.path)
+    expect(supplyQueries.length).toBeGreaterThan(0)
+    for (const q of supplyQueries) expect(decodeURIComponent(q)).not.toMatch(/同企業|內科示範科技|company/)
+    expect(JSON.stringify(calls.map((c) => c.body))).not.toMatch(/同企業|內科示範科技/)
+  })
+
+  it('confirmed: says the driver is from the same simulated company (REQ-062, REQ-063)', async () => {
+    fakeBackend({ current: [CONFIRMED], statuses: [CONFIRMED] })
+    render(<App />)
+    const line = await screen.findByText(/駕駛與你同企業：內科示範科技/)
+    expect(line).toHaveTextContent('模擬')
+  })
+
   it('has no debug mode without ?debug=1 (DD-26)', async () => {
     fakeBackend({})
     render(<App />)

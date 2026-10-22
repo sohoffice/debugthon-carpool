@@ -462,6 +462,51 @@ describe('driver App', () => {
     expect(screen.queryAllByRole('button')).toEqual([])
   })
 
+  it('my tags carry the simulated 同企業 tag, selected and not tappable; the departure is unchanged (REQ-062, REQ-063, DD-43)', async () => {
+    const calls = fakeBackend([NO_TRIP])
+    render(<App />)
+    // Shown as selected while collapsed, before any tag of the driver's own.
+    // Open the row only once the prefill is in: loading it collapses every row (DepartureScreen).
+    expect(await screen.findByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /我的標籤\s*同企業$/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /我的標籤/ }))
+
+    const chip = await screen.findByText('同企業・內科示範科技')
+    expect(chip.closest('p')).toHaveTextContent('模擬')
+    expect(chip.closest('button')).toBeNull()
+    // The chip renders at once; the operable tags come with the my-tags fetch.
+    expect(within(await screen.findByRole('group', { name: '我的標籤' })).queryByText(/同企業/)).not.toBeInTheDocument()
+    const before = calls.length
+    fireEvent.click(chip)
+    expect(calls.slice(before).filter((c) => c.method !== 'GET')).toEqual([])
+    expect(screen.getByText('同企業・內科示範科技')).toBeInTheDocument()
+
+    await within(await screen.findByRole('list', { name: '今天的路線' })).findByText('陽光街')
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/driver/trips')?.body).toEqual({
+      pickup_point_id: 1,
+      destination: DESTINATION,
+      capacity: 3,
+      auto_accept: false,
+      tag_filters: [],
+      preview_id: 1,
+    })
+    expect(calls.some((c) => c.path.startsWith('/me/tags'))).toBe(false)
+  })
+
+  it('a request says 同企業乘客 with the pickup and drop-off, marked simulated, and adds no action (DD-04, DD-43, REQ-063)', async () => {
+    fakeBackend([{ trip_id: 5, pending: [request({})], passengers: [] }])
+    render(<App />)
+    await screen.findByRole('heading', { name: '有乘客要搭車' })
+    const line = screen.getByText('同企業乘客')
+    expect(line).toHaveTextContent('模擬')
+    expect(screen.getByText('松山車站')).toBeInTheDocument()
+    expect(screen.getByText('瑞光路')).toBeInTheDocument()
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['確認', '婉拒'])
+  })
+
   it('shows the arrival screen when the running trip ends by itself (UD-16)', async () => {
     fakeBackend([DRIVING, NO_TRIP])
     render(<App />)

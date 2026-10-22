@@ -2,6 +2,8 @@ import {
   ApiError,
   Button,
   ChipSelect,
+  CompanyChip,
+  DEMO_COMPANY_NAME,
   ErrorNote,
   PlaceSearch,
   RouteMap,
@@ -186,10 +188,14 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
             </SettingRow>
             <SettingRow
               label="我的標籤"
-              value={tags.filter((t) => t.selected).map((t) => t.name).join('、') || '未選'}
+              // The simulated 同企業 tag is always selected (DD-43).
+              value={['同企業', ...tags.filter((t) => t.selected).map((t) => t.name)].join('、')}
               open={open.includes('tags')}
               onToggle={() => toggle('tags')}
             >
+              <div className="mb-2">
+                <CompanyChip label={`同企業・${DEMO_COMPANY_NAME}`} />
+              </div>
               <ChipSelect label="我的標籤" options={tags.map((t) => ({ id: t.id, label: t.name }))} selected={tags.filter((t) => t.selected).map((t) => t.id)} onToggle={myTags.toggle} />
               <p className="mt-2 text-sm text-fg-soft">乘客篩選駕駛時會看這些標籤。</p>
             </SettingRow>

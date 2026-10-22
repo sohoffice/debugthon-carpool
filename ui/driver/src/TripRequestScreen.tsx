@@ -1,4 +1,4 @@
-import type { DriverRequestItem } from '@carpool/shared'
+import { SimulatedBadge, type DriverRequestItem } from '@carpool/shared'
 import { ConnectionNote } from './ConnectionNote'
 
 interface TripRequestScreenProps {
@@ -35,6 +35,10 @@ export function TripRequestScreen({ passengers, request, busy, offline, onAccept
           <dd className="text-drive font-bold break-words">{request.dropoff.name}</dd>
         </div>
       </dl>
+      {/* One line of text with the pickup and drop-off, no action (DD-04, DD-43). */}
+      <p className="mt-4 flex items-center gap-3 text-xl font-semibold">
+        同企業乘客 <SimulatedBadge />
+      </p>
 
       {others.length > 0 && <p className="mt-8 text-xl font-semibold">其他乘客在 {others.join('、')} 下車</p>}
       {offline && <ConnectionNote />}
