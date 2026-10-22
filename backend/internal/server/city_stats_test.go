@@ -204,6 +204,54 @@ func TestCityTodayAddsArrivedSimulatedPassengers(t *testing.T) {
 	}
 }
 
+// REQ-083, DD-40 step 5: the live simulation's arrived passengers count on the dashboard only:
+// on the same backend, /api/city/today grows with them while every pickup point's pickup-rides
+// today, for drivers and passengers, stays as it was.
+func TestCityLiveArrivalsStayOutOfPickupRides(t *testing.T) {
+	tx := testTx(t)
+	setDemoClock(t, tx, 495)
+	start := taipeiTime(t, "2026-10-22 18:00")
+	regenerateAt(t, tx, start)
+	a := newCityApp(t, tx, start)
+	points, err := (&Server{db: tx}).cityPickupPoints(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pickupToday := func(token string) map[int64]rideDayResp {
+		t.Helper()
+		out := map[int64]rideDayResp{}
+		for _, p := range points {
+			w := a.do(http.MethodGet, pickupRidesPath(p.ID, "07:00", "10:00"), token)
+			wantStatus(t, w, http.StatusOK, "")
+			out[p.ID] = decode[pickupRidesResp](t, w).Today
+		}
+		return out
+	}
+	tokens := []string{"driver:driver1", "passenger:passenger1"}
+	before := map[string]map[int64]rideDayResp{}
+	for _, token := range tokens {
+		before[token] = pickupToday(token)
+	}
+	base := cityGet[cityTodayResp](a, "/api/city/today")
+
+	cityGet[cityLiveResp](a, "/api/city/live") // starts the round
+	plan := liveSimPlan(simDay(t, "2026-10-22"), liveSimRoutes)
+	after := 15 * time.Minute
+	arrived := simArrived(liveSimAt(plan, after))
+	if arrived == 0 {
+		t.Fatalf("nobody arrived after %v", after)
+	}
+	a.clock = start.Add(after)
+	if got := cityGet[cityTodayResp](a, "/api/city/today"); got.Completed != base.Completed+arrived {
+		t.Errorf("city today %d, want %d + %d arrived", got.Completed, base.Completed, arrived)
+	}
+	for _, token := range tokens {
+		if got := pickupToday(token); !jsonEqual(t, got, before[token]) {
+			t.Errorf("%s: pickup-rides today changed with the simulated arrivals", token)
+		}
+	}
+}
+
 // REQ-080, REQ-082, REQ-083, DD-41: on Saturday 10/24 the history is 10/12-10/23, the days and the
 // weather those of /api/commute/traffic; each day's rides are the pickup points' rides added up,
 // and its no car (passengers - rides) never negative; each pickup point's numbers per day are the
