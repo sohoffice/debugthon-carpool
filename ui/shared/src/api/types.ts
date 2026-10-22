@@ -56,11 +56,29 @@ export interface Tag {
   selected: boolean
 }
 
-/** GET /api/driver/profile. Every field is null before the first completed ride (DD-19). */
+/**
+ * GET /api/driver/profile. The usual fields are null before the first completed ride (DD-19).
+ * `vehicle` is null for a driver without one; `point_balance` is 0 before any points (REQ-074, DD-34).
+ */
 export interface DriverProfile {
   usual_pickup_point: PickupPoint | null
   usual_destination: Place | null
   capacity: number | null
+  vehicle: Vehicle | null
+  point_balance: number
+}
+
+/** One driver point ledger row: a finished ride (`service_record_id` set) or the Demo's starting points (DD-34). */
+export interface PointEntry {
+  delta: number
+  reason: 'ride' | 'seed'
+  service_record_id: number | null
+  created_at: string
+}
+
+/** GET /api/driver/points?limit=1..50 (default 5): the latest rows, newest first (REQ-074, DD-35). */
+export interface DriverPoints {
+  points: PointEntry[]
 }
 
 /** GET /api/passenger/profile */

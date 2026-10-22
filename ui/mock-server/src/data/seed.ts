@@ -31,6 +31,8 @@ export interface Seed {
   simulatedTrips: SeedTrip[]
   /** By driver username. */
   vehicles: Record<string, Vehicle>
+  /** The Demo drivers' starting points (DD-34): `rows` seed rows of `delta` each, by driver username. */
+  seedPoints: { username: string; rows: number; delta: number }[]
   settings: Record<string, number>
 }
 
@@ -40,6 +42,7 @@ export interface SeedSql {
   reference: string
   activities: string
   passMargin: string
+  points: string
   /** All migrations' Up parts in order, for the later moves of driver2's destination (T03, T23). */
   migrationsUp: string
 }
@@ -107,10 +110,20 @@ export function parseSeed(sql: SeedSql): Seed {
   )) {
     if (vehicles[username]) vehicles[username].plate = plate
   }
+  // seed_demo_driver_points(): every seed row is worth the same delta.
+  const seedDelta = /SELECT u\.id, (\d+), 'seed'/.exec(sql.points)
+  if (!seedDelta) throw new Error('Seed SQL changed: no seed point delta in the points migration')
+  const seedPoints = valuesAfter(sql.points, 'JOIN (VALUES', ') s (').map(([username, rows]) => ({
+    username: String(username),
+    rows: Number(rows),
+    delta: Number(seedDelta[1]),
+  }))
   const settings = Object.fromEntries(
-    [...valuesAfter(sql.schema, 'INSERT INTO system_settings', ';'), ...valuesAfter(sql.passMargin, 'INSERT INTO system_settings', ';')].map(
-      ([key, value]) => [String(key), Number(value)],
-    ),
+    [
+      ...valuesAfter(sql.schema, 'INSERT INTO system_settings', ';'),
+      ...valuesAfter(sql.passMargin, 'INSERT INTO system_settings', ';'),
+      ...valuesAfter(sql.points, 'INSERT INTO system_settings', ';'),
+    ].map(([key, value]) => [String(key), Number(value)]),
   )
-  return { users, pickupPoints, busStops, tags, userTags, simulatedTrips, vehicles, settings }
+  return { users, pickupPoints, busStops, tags, userTags, simulatedTrips, vehicles, seedPoints, settings }
 }

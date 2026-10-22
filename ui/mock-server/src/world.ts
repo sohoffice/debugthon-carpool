@@ -69,6 +69,15 @@ export interface DriverProfileState {
   capacity: number
 }
 
+/** A driver point ledger row (DD-34). The mock has no service records, so a ride row points at its request. */
+export interface PointRow {
+  driverId: number
+  delta: number
+  reason: 'ride' | 'seed'
+  requestId: number | null
+  atMs: number
+}
+
 export interface PassengerProfileState {
   arrival: string | null
   destination: Place | null
@@ -108,6 +117,8 @@ export interface World {
   userTags: string[]
   driverProfiles: Record<number, DriverProfileState>
   passengerProfiles: Record<number, PassengerProfileState>
+  /** Oldest first; a driver's balance is the sum of their rows, as on the Go backend (REQ-071). */
+  points: PointRow[]
 }
 
 // ---------------------------------------------------------------- progress along the path
@@ -219,6 +230,12 @@ export function initialWorld(lookups: Lookups, scenario: MockScenario, now: numb
     lastReports: {},
     userTags: seed.userTags.map((ut) => `${user(ut.username).id}:${tag(ut.tag).id}`),
     driverProfiles: {},
+    // seed_demo_driver_points(): row d is d days old (REQ-073).
+    points: seed.seedPoints
+      .flatMap(({ username, rows, delta }) =>
+        Array.from({ length: rows }, (_, i) => ({ driverId: user(username).id, delta, reason: 'seed' as const, requestId: null, atMs: now - (i + 1) * 24 * 3600 * 1000 })),
+      )
+      .sort((a, b) => a.atMs - b.atMs),
     passengerProfiles: Object.fromEntries(
       Object.entries(PASSENGER_PROFILES).map(([name, p]) => [
         user(name).id,
