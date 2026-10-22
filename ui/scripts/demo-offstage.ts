@@ -77,29 +77,42 @@ async function main() {
   // the Maps quota is left to the showcase.
   // Ctrl-C is ours: stop the loop and close the browser here, not inside Playwright.
   const browser = await chromium.launch({ handleSIGINT: false })
-  const context = await browser.newContext()
-  await context.route(/googleapis\.com|gstatic\.com/, (route) => route.abort())
-  const sim = await context.newPage()
-  await sim.goto(`${DRIVER_APP}/?debug=1&account=driver1`)
-  await sim.getByRole('button', { name: '除錯' }).click()
-  await sim.getByRole('button', { name: '開始模擬' }).click()
-  say('模擬器開始了：模擬車與 driver5 開始移動。')
+  try {
+    const context = await browser.newContext()
+    await context.route(/googleapis\.com|gstatic\.com/, (route) => route.abort())
+    const sim = await context.newPage()
+    await sim.goto(`${DRIVER_APP}/?debug=1&account=driver1`)
+    await sim.getByRole('button', { name: '除錯' }).click()
+    await sim.getByRole('button', { name: '開始模擬' }).click()
+    say('模擬器開始了：模擬車與 driver5 開始移動。')
 
-  let stopping = false
-  process.on('SIGINT', () => {
-    stopping = true
-  })
+    let stopping = false
+    process.on('SIGINT', () => {
+      stopping = true
+    })
+    await runLoop(LEAD_S, () => stopping)
+  } finally {
+    // Also on an error, else the headless browser keeps the process alive and Ctrl-C is ignored.
+    await browser.close()
+  }
+  say('台下操作結束。Demo 的資料沒有動，後端與介面照常執行。')
+}
 
-  const departAt = Date.now() + LEAD_S * 1000
+/** Polls until Ctrl-C: cues for the speaker, and driver5 declines what it gets. */
+async function runLoop(leadS: number, stopping: () => boolean) {
+  const departAt = Date.now() + leadS * 1000
   let toldDepart = false
   let toldStart = false
   let toldPassed = false
   let toldEnded = false
   let driver4Seen = false
   const declined = new Set<number>()
-  say(`${LEAD_S} 秒後請 driver4 出發（展示頁左邊的手機按「我出發了」）。`)
+  say(`${leadS} 秒後請 driver4 出發（展示頁左邊的手機按「我出發了」）。`)
 
-  while (!stopping) {
+  let offline = false
+
+  // One round; a failed round is retried on the next tick, so a backend restart needs no rerun.
+  const poll = async () => {
     if (!toldDepart && Date.now() >= departAt) {
       say('▶ 現在請 driver4 出發：展示頁左邊的手機確認「我的標籤」有「女性友善」，按「我出發了」。')
       toldDepart = true
@@ -134,11 +147,19 @@ async function main() {
       say('driver5 沒有進行中的行程了（Demo 重設或已到目的地）。要再演一次：重設後按 Ctrl-C，重新執行本指令。')
       toldEnded = true
     }
-    await sleep(POLL_MS)
   }
 
-  await browser.close()
-  say('台下操作結束。Demo 的資料沒有動，後端與介面照常執行。')
+  while (!stopping()) {
+    try {
+      await poll()
+      if (offline) say('後端恢復了，繼續執行。')
+      offline = false
+    } catch (err) {
+      if (!offline) say(`連不到後端（${err instanceof Error ? err.message : err}），每秒重試；後端恢復後會自己繼續。`)
+      offline = true
+    }
+    await sleep(POLL_MS)
+  }
 }
 
 main().catch((err: unknown) => {
