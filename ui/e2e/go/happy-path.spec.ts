@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { driveTowardsPickup, openApps, PASSENGER_URL, pickStageTag, requestWithStageTagRequired, resetDemo } from './support'
+import { driveTowardsPickup, openApps, PASSENGER_URL, pickStageTags, requestWithStageTagsRequired, resetDemo } from './support'
 
 /** passenger1 rides to its usual destination (DD-19). */
 const DROPOFF = '瑞光路 513 巷'
@@ -14,7 +14,7 @@ test('happy path on Go: depart, see supply, request, confirm, board, end the rid
   // REQ-015, REQ-016: the departure screen comes prefilled from driver4's seeded last trip.
   await expect(driver.getByRole('heading', { name: '今天載人嗎？' })).toBeVisible()
   await expect(driver.getByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeVisible()
-  await pickStageTag(driver)
+  await pickStageTags(driver)
   await driver.getByRole('button', { name: '我出發了' }).click()
   await expect(driver.getByRole('heading', { name: /目前沒有/ })).toBeVisible()
 
@@ -30,8 +30,8 @@ test('happy path on Go: depart, see supply, request, confirm, board, end the rid
   await expect(board.getByRole('heading', { name: /最快 \d+ 分鐘到/ }).getByText('估算', { exact: true })).toBeVisible()
   await expect(passenger.getByText('模擬車輛', { exact: true })).toBeVisible()
 
-  // REQ-035, REQ-036, REQ-040: with the stage tag required, the request goes to driver4 and waits for it.
-  await requestWithStageTagRequired(passenger)
+  // REQ-035, REQ-036, REQ-040: with the stage tags required, the request goes to driver4 and waits for it.
+  await requestWithStageTagsRequired(passenger)
   await expect(passenger.getByRole('heading', { name: '正在等駕駛確認' })).toBeVisible()
 
   // REQ-049: the driver sees the pickup and drop-off and confirms.

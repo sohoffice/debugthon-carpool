@@ -1,11 +1,11 @@
 // The Demo's off-stage part (T18E, docs/demo-script.md), so the speaker only works the two phones
-// on the showcase: driver4 and driver5 take the required tag, driver5 departs, the simulator runs
+// on the showcase: driver4 and driver5 take the required tags, driver5 departs, the simulator runs
 // (DD-14), the terminal says when driver4 should depart and when the 2 minutes start, and driver5
 // declines every request it gets, which reassigns it to driver4 (REQ-049).
 // Runs against `just demo` (backend :8080, driver UI :5173); it never resets the Demo or starts
 // a server of its own. Ctrl-C stops it. Not a test.
 import { chromium } from '@playwright/test'
-import { selectStageTag, STAGE_ACCOUNTS, STAGE_TAG } from './stageTag.ts'
+import { selectStageTags, STAGE_ACCOUNTS, STAGE_TAGS } from './stageTag.ts'
 
 const API = process.env.DEMO_API ?? 'http://localhost:8080/api'
 const DRIVER_APP = process.env.DEMO_DRIVER_APP ?? 'http://localhost:5173'
@@ -49,7 +49,7 @@ async function departDriver5() {
     tag_filters: [],
   })
   if (trip.status !== 201) throw new Error(`driver5 出發失敗：${trip.status} ${JSON.stringify(trip.body)}`)
-  say(`driver5 帶「${STAGE_TAG}」出發了，往${destination.name}（台下，觀眾看不到）。`)
+  say(`driver5 帶「${STAGE_TAGS.join('」「')}」出發了，往${destination.name}（台下，觀眾看不到）。`)
 }
 
 /** Lead in seconds, from the first argument or DEMO_LEAD_S; anything but a non-negative integer is an error. */
@@ -68,9 +68,9 @@ async function main() {
   const app = await fetch(DRIVER_APP).catch(() => null)
   if (!app?.ok) throw new Error(`連不到駕駛介面 ${DRIVER_APP}，請先執行 just demo`)
 
-  // Both stage drivers carry the required tag, else the request has no second car (T34).
-  for (const account of STAGE_ACCOUNTS) await selectStageTag(api, account)
-  say(`driver4、driver5 都帶「${STAGE_TAG}」。`)
+  // Both stage drivers carry the required tags, else the request has no second car (T34).
+  for (const account of STAGE_ACCOUNTS) await selectStageTags(api, account)
+  say(`driver4、driver5 都帶「${STAGE_TAGS.join('」「')}」。`)
   await departDriver5()
 
   // The simulator page, headless. Its Google requests are blocked: this page shows no map, and
@@ -114,7 +114,7 @@ async function runLoop(leadS: number, stopping: () => boolean) {
   // One round; a failed round is retried on the next tick, so a backend restart needs no rerun.
   const poll = async () => {
     if (!toldDepart && Date.now() >= departAt) {
-      say('▶ 現在請 driver4 出發：展示頁左邊的手機確認「我的標籤」有「女性友善」，按「我出發了」。')
+      say('▶ 現在請 driver4 出發：展示頁左邊的手機確認「我的標籤」有「我不抽菸」與「車上能放大件行李」，按「我出發了」。')
       toldDepart = true
     }
     const d4 = (await api<Requests>('driver4', 'GET', '/driver/requests')).body

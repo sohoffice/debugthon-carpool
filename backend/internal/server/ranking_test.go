@@ -149,26 +149,6 @@ func TestTagBonus(t *testing.T) {
 	}
 }
 
-// REQ-046: the driver's preferred filters change neither cost nor order.
-func TestDriverPreferredFiltersIgnored(t *testing.T) {
-	r, cands := proposalCandidates()
-	before := rankTrips(proposalParams(), r, cands)
-	for i := range cands {
-		cands[i].Trip.Filters = preferred(1, 2, 3)
-		cands[i].Trip.Tags = append(cands[i].Trip.Tags, 9)
-	}
-	r.Tags = []int64{1, 2, 3} // passenger fully matches the driver's preferred filters
-	after := rankTrips(proposalParams(), r, cands)
-	if len(before) != len(after) {
-		t.Fatalf("len %d → %d", len(before), len(after))
-	}
-	for i := range before {
-		if before[i].TripID != after[i].TripID || before[i].CostS != after[i].CostS {
-			t.Errorf("rank %d changed: %+v → %+v", i, before[i], after[i])
-		}
-	}
-}
-
 // Ineligible trips never appear, whatever their cost would be.
 func TestRankExcludesIneligible(t *testing.T) {
 	r, cands := proposalCandidates()

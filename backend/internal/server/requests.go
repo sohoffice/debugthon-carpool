@@ -198,14 +198,8 @@ func (s *Server) submitRequest(c *gin.Context) {
 		apiError(c, http.StatusBadRequest, "invalid_request", "標籤篩選的意圖需為 required 或 preferred，且同一標籤只能出現一次")
 		return
 	}
-	if len(body.TagFilters) > 0 {
-		if ok, err := s.tagsExist(c, s.db, body.TagFilters); err != nil {
-			s.internalError(c, err)
-			return
-		} else if !ok {
-			apiError(c, http.StatusBadRequest, "invalid_tag", "標籤不在清單中")
-			return
-		}
+	if !s.checkFilterTags(c, body.TagFilters, roleDriver) { // REQ-085
+		return
 	}
 	// REQ-001, DD-32: the final destination, including the prefilled usual one, must be in the park.
 	if !s.park.Contains(in.Dest.Lat, in.Dest.Lng) {

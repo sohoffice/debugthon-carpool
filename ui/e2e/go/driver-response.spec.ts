@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { E2E_GO_PORTS } from '../../playwright.go.config'
-import { departDriver5Behind, driveTowardsPickup, openApps, pickStageTag, requestWithStageTagRequired, resetDemo } from './support'
+import { departDriver5Behind, driveTowardsPickup, openApps, pickStageTags, requestWithStageTagsRequired, resetDemo } from './support'
 
 const DRIVER5_URL = `http://localhost:${E2E_GO_PORTS.driver}/?account=driver5`
 
@@ -10,14 +10,14 @@ test.afterEach(async ({ request }) => resetDemo(request))
 
 test('decline on Go, no other car: the request no longer waits for the declining driver (REQ-050)', async ({ browser, request }) => {
   const { driver, passenger } = await openApps(browser)
-  await pickStageTag(driver)
+  await pickStageTags(driver)
   await driver.getByRole('button', { name: '我出發了' }).click()
   await expect(driver.getByRole('heading', { name: /目前沒有/ })).toBeVisible()
   await driveTowardsPickup(request)
   await expect(passenger.getByRole('region', { name: '松山車站的接近車輛' }).getByText(/^\d+ 台車接近中$/)).toBeVisible()
 
-  // The stage tag is required and only driver4 has it, so driver4 is the only car that can take the request.
-  await requestWithStageTagRequired(passenger)
+  // The stage tags are required and only driver4 has both, so driver4 is the only car that can take the request.
+  await requestWithStageTagsRequired(passenger)
   await expect(passenger.getByRole('heading', { name: '正在等駕駛確認' })).toBeVisible()
   await expect(driver.getByRole('heading', { name: '有乘客要搭車' })).toBeVisible()
   await driver.getByRole('button', { name: '婉拒' }).click()
@@ -33,15 +33,15 @@ test('decline on Go, another car: the request goes to the next car (REQ-050, REQ
   const { driver, passenger } = await openApps(browser)
   const driver5 = await (await browser.newContext()).newPage()
   await driver5.goto(DRIVER5_URL)
-  await pickStageTag(driver)
+  await pickStageTags(driver)
   await driver.getByRole('button', { name: '我出發了' }).click()
   await expect(driver.getByRole('heading', { name: /目前沒有/ })).toBeVisible()
   await driveTowardsPickup(request)
   await departDriver5Behind(request)
   await expect(passenger.getByRole('region', { name: '松山車站的接近車輛' }).getByText(/^2 台車接近中$/)).toBeVisible()
 
-  // Both cars carry the required stage tag and driver4 is nearer, so the request goes to driver4 first.
-  await requestWithStageTagRequired(passenger)
+  // Both cars carry the required stage tags and driver4 is nearer, so the request goes to driver4 first.
+  await requestWithStageTagsRequired(passenger)
   await expect(driver.getByRole('heading', { name: '有乘客要搭車' })).toBeVisible()
   await expect(driver5.getByRole('heading', { name: '有乘客要搭車' })).toBeHidden()
   await driver.getByRole('button', { name: '婉拒' }).click()
@@ -63,7 +63,7 @@ test('decline on Go, another car: the request goes to the next car (REQ-050, REQ
 
 test('auto-accept on Go: the passenger is confirmed without the driver doing anything (REQ-021, REQ-022)', async ({ browser, request }) => {
   const { driver, passenger } = await openApps(browser)
-  await pickStageTag(driver)
+  await pickStageTags(driver)
   // REQ-021: the driver turns auto-accept on before departing.
   const autoAccept = driver.getByRole('switch', { name: '自動接受搭車請求' })
   await autoAccept.click()
@@ -76,7 +76,7 @@ test('auto-accept on Go: the passenger is confirmed without the driver doing any
   // REQ-022, DD-33: the driver never touches the screen. The backend leaves the request waiting;
   // the driver UI sees it on its next poll and confirms it, and the passenger sees that on its
   // own next poll, so allow two poll intervals and some margin.
-  await requestWithStageTagRequired(passenger)
+  await requestWithStageTagsRequired(passenger)
   await expect(passenger.getByText('分鐘後到').first()).toBeVisible({ timeout: 15_000 })
   await expect(passenger.getByRole('button', { name: '我已上車' })).toBeVisible()
   await expect(driver.getByRole('heading', { name: '有乘客要搭車' })).toBeHidden()

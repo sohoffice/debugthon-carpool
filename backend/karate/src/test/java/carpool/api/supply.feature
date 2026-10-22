@@ -24,8 +24,11 @@ Feature: supply query (GET /api/passenger/supply)
     * def stop = response[0]
     * path 'api', 'tags'
     * method get
-    * def tagA = response[0].id
-    * def tagB = response[1].id
+    # tags for both sides, so a driver may require them and the passenger may carry them (DD-42)
+    * def both = karate.filter(response, function(g) { return g.applies_to == 'both' })
+    * def tagA = both[0].id
+    * def tagB = both[1].id
+    * def luggage = karate.filter(response, function(g) { return g.name == '可載行李' })[0].id
     * def inPark = { name: '瑞光路 內科大樓 A', lat: 25.0768, lng: 121.5738 }
     * def query = { pickup_point_id: '#(pickup.id)', dest_lat: '#(inPark.lat)', dest_lng: '#(inPark.lng)', stop_ids: '#(stop.id)' }
     * def car = function(name, northM, tagIds, filters) { var u = 'karate-supply-driver-' + name + '-' + suffix; drivers.push(u); return karate.call('classpath:carpool/api/supply-car.feature', { user: u, pickup: pickup, northM: northM, tagIds: tagIds, body: { pickup_point_id: pickup.id, destination: inPark, capacity: 3, auto_accept: true, tag_filters: filters } }).tripId }
@@ -78,7 +81,6 @@ Feature: supply query (GET /api/passenger/supply)
     * def withA = car('with-a', 1000, [tagA], [])
     # this driver carries A but requires B, which the passenger does not carry
     * def wantsB = car('wants-b', 1000, [tagA], [{ tag_id: tagB, intent: 'required' }])
-    * def preferB = car('prefer-b', 1000, [], [{ tag_id: tagB, intent: 'preferred' }])
 
     # the driver's requirement alone excludes the car
     * path 'api', 'passenger', 'supply'
@@ -86,7 +88,7 @@ Feature: supply query (GET /api/passenger/supply)
     * method get
     * status 200
     * def ids = idsOf(response)
-    * match ids contains [#(plain), #(withA), #(preferB)]
+    * match ids contains [#(plain), #(withA)]
     * match ids !contains wantsB
 
     # the passenger requires A: only cars carrying A remain
@@ -97,7 +99,6 @@ Feature: supply query (GET /api/passenger/supply)
     * def ids = idsOf(response)
     * match ids contains withA
     * match ids !contains plain
-    * match ids !contains preferB
     * match ids !contains wantsB
 
     # a preferred filter never hides a car
@@ -105,7 +106,7 @@ Feature: supply query (GET /api/passenger/supply)
     * params karate.merge(query, { preferred_tags: '#(tagA)' })
     * method get
     * status 200
-    * match idsOf(response) contains [#(plain), #(withA), #(preferB)]
+    * match idsOf(response) contains [#(plain), #(withA)]
 
     # once the passenger carries B the driver's requirement is met
     * karate.call('classpath:carpool/api/put-tag.feature', { token: 'passenger:' + passenger, id: tagB })
@@ -114,6 +115,28 @@ Feature: supply query (GET /api/passenger/supply)
     * method get
     * status 200
     * match idsOf(response) contains wantsB
+
+  # REQ-085: the passenger filters only by tags that apply to drivers.
+  Scenario: the supply takes a driver tag and refuses a tag that does not apply to drivers
+    * def tripId = car('luggage', 1000, [luggage], [])
+    * def withLuggage = supply(karate.merge(query, { required_tags: luggage }))
+    * match idsOf(withLuggage) contains tripId
+
+    # tags have no API, so the passenger-only tag is made by SQL and removed afterwards
+    * def own = Db.queryLong("INSERT INTO tags (name, applies_to, passenger_self_label, driver_filter_label) VALUES (?, 'passenger', 'karate', 'karate') RETURNING id", 'karate-supply-passenger-tag-' + suffix)
+    * configure afterScenario = function() { Db.exec('DELETE FROM tags WHERE id = ?', own); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: passenger }); drivers.forEach(function(u) { karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: u }) }) }
+    # supply() above went through karate.http, which leaves the url on its request
+    * url baseUrl
+    * path 'api', 'passenger', 'supply'
+    * params karate.merge(query, { required_tags: '#(own)' })
+    * method get
+    * status 400
+    * match response.error.code == 'tag_not_applicable'
+    * path 'api', 'passenger', 'supply'
+    * params karate.merge(query, { preferred_tags: '#(own)' })
+    * method get
+    * status 400
+    * match response.error.code == 'tag_not_applicable'
 
   Scenario: the timeline range follows the wait limit
     # a car about 3 km away needs roughly 12 minutes with the simulated route

@@ -13,7 +13,7 @@ Feature: demo reset (POST /api/demo/reset)
     * def Db = Java.type('carpool.api.Db')
     * def suffix = java.util.UUID.randomUUID().toString().substring(0, 8)
     * def other = 'karate-reset-passenger-' + suffix
-    * def tagId = Db.queryLong('INSERT INTO tags (name) VALUES (?) RETURNING id', 'karate-reset-' + suffix)
+    * def tagId = Db.queryLong("INSERT INTO tags (name, applies_to, driver_self_label, passenger_filter_label) VALUES (?, 'driver', 'karate', 'karate') RETURNING id", 'karate-reset-' + suffix)
     * Db.exec('INSERT INTO users (username, display_name, is_passenger) VALUES (?, ?, true)', other, other)
     * def afterAll = function() { Db.exec('DELETE FROM request_tag_filters WHERE tag_id = ?', tagId); Db.exec('DELETE FROM tags WHERE id = ?', tagId); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: other }) }
     * configure afterScenario = afterAll

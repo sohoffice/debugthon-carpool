@@ -16,7 +16,7 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * def tagName = 'karate-flow-' + suffix
     * Db.exec('INSERT INTO users (username, display_name, is_passenger) VALUES (?, ?, true)', passenger, passenger)
     * Db.exec('INSERT INTO users (username, display_name, is_passenger) VALUES (?, ?, true)', other, other)
-    * def tagId = Db.queryLong('INSERT INTO tags (name) VALUES (?) RETURNING id', tagName)
+    * def tagId = Db.queryLong("INSERT INTO tags (name, applies_to, driver_self_label, passenger_filter_label) VALUES (?, 'driver', 'karate', 'karate') RETURNING id", tagName)
     * def drivers = []
     * def afterAll = function() { Db.exec('DELETE FROM request_tag_filters WHERE tag_id = ?', tagId); Db.exec('DELETE FROM trip_tag_filters WHERE tag_id = ?', tagId); Db.exec('DELETE FROM tags WHERE id = ?', tagId); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: passenger }); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: other }); drivers.forEach(function(u) { karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: u }) }) }
     * configure afterScenario = afterAll

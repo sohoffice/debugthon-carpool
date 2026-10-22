@@ -2,7 +2,7 @@ package server
 
 import "sort"
 
-// Ranking of the matching engine (REQ-042..REQ-046, DD-11). Pure like the screening: the
+// Ranking of the matching engine (REQ-042..REQ-045, DD-11). Pure like the screening: the
 // ride and walk times arrive on each dropOff; assemble.go fetches them from the providers.
 
 // dropOff is a place the passenger can get off: the driver's destination (StopID nil) or a
@@ -30,7 +30,7 @@ type rankedTrip struct {
 }
 
 // rankTrips drops the trips that fail screening and orders the rest by perceived cost,
-// then by shorter wait. The driver's preferred filters are never read (REQ-046).
+// then by shorter wait.
 func rankTrips(p matchParams, r matchRequest, cands []rankCandidate) []rankedTrip {
 	var out []rankedTrip
 	for _, c := range cands {

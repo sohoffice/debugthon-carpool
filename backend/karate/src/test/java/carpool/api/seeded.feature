@@ -8,9 +8,10 @@ Feature: tag selection and seeded reference data
     * url baseUrl
 
   Scenario Outline: select and deselect a tag from the list - <token>
-    # Pick a tag that neither user has selected, so ending deselected restores the seeded state
-    # and the "other user" check cannot be affected by seed selections. The rows run in
-    # parallel, so each takes tags from its own half of the list (by position parity).
+    # Pick a tag that applies to the caller's role and that neither user has selected, so ending
+    # deselected restores the seeded state and the "other user" check cannot be affected by seed
+    # selections. The rows run in parallel, so each takes tags from its own half of the list (by
+    # position parity).
     * configure headers = { Authorization: 'Bearer <token>' }
     * path 'api', 'tags'
     * method get
@@ -25,7 +26,7 @@ Feature: tag selection and seeded reference data
       """
       function(mine, theirs, parity) {
         for (var i = parity; i < mine.length; i += 2) {
-          if (!mine[i].selected && !theirs[i].selected) return mine[i].id;
+          if (mine[i].self_label != null && !mine[i].selected && !theirs[i].selected) return mine[i].id;
         }
         return null;
       }
@@ -74,6 +75,50 @@ Feature: tag selection and seeded reference data
       | driver:driver1       | passenger:passenger1 | 0      |
       | passenger:passenger1 | driver:driver1       | 1      |
 
+  # REQ-086, DD-42: the list carries the wording for the caller's role; null where it does not apply.
+  Scenario Outline: the tag list uses the wording of <token>
+    * configure headers = { Authorization: 'Bearer <token>' }
+    * path 'api', 'tags'
+    * method get
+    * status 200
+    # other scenarios add karate- tags in parallel, so check the seeded ones by name
+    * match response[*].name contains ['不抽菸', '可載行李', '安靜通勤', '可聊天']
+    * match response[*].name !contains ['可帶寵物', '女性友善']
+    * match response contains deep { name: '可載行李', applies_to: 'driver', self_label: <luggageSelf>, filter_label: <luggageFilter> }
+    * match response contains deep { name: '不抽菸', applies_to: 'both', self_label: '我不抽菸', filter_label: <noSmokingFilter> }
+
+    Examples:
+      | token                | luggageSelf | luggageFilter | noSmokingFilter |
+      | driver:driver1       | '車上能放大件行李'  | null          | '不抽菸的乘客'        |
+      | passenger:passenger1 | null        | '能放大件行李'      | '不抽菸'           |
+
+  # REQ-008: only tags for the caller's own role can be selected.
+  Scenario: a passenger cannot select a driver-only tag; a driver can
+    * configure headers = { Authorization: 'Bearer passenger:passenger1' }
+    * path 'api', 'tags'
+    * method get
+    * def luggage = karate.filter(response, function(g) { return g.name == '可載行李' })[0]
+    * match luggage.selected == false
+    * path 'api', 'me', 'tags', luggage.id
+    * method put
+    * status 400
+    * match response.error.code == 'tag_not_applicable'
+    * path 'api', 'tags'
+    * method get
+    * match response contains deep { id: '#(luggage.id)', selected: false }
+
+    # driver1 has not selected it in the seed; deselecting restores that
+    * configure headers = { Authorization: 'Bearer driver:driver1' }
+    * path 'api', 'me', 'tags', luggage.id
+    * method put
+    * status 204
+    * path 'api', 'tags'
+    * method get
+    * match response contains deep { id: '#(luggage.id)', selected: true }
+    * path 'api', 'me', 'tags', luggage.id
+    * method delete
+    * status 204
+
   Scenario: pickup points and bus stops are listed from the seed data
     * configure headers = { Authorization: 'Bearer passenger:passenger1' }
 
@@ -118,14 +163,12 @@ Feature: tag selection and seeded reference data
     * path 'api', 'pickup-points'
     * method get
     * def pickup = karate.filter(response, function(p) { return p.name == '松山車站' })[0]
-    * path 'api', 'tags'
-    * method get
-    * def tag = karate.filter(response, function(g) { return g.name == '不抽菸' })[0]
 
+    # REQ-013: no suggested filter is seeded for a driver
     * path 'api', 'driver', 'trips', 'defaults'
     * method get
     * status 200
-    * match response == { pickup_point_id: '#(pickup.id)', destination: { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }, capacity: 3, auto_accept: false, tag_filters: [{ tag_id: '#(tag.id)', intent: 'preferred' }] }
+    * match response == { pickup_point_id: '#(pickup.id)', destination: { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }, capacity: 3, auto_accept: false, tag_filters: [] }
 
     # the seeded trip is over: nothing is running
     * path 'api', 'driver', 'trips', 'current'
