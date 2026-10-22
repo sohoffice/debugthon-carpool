@@ -1,0 +1,65 @@
+@api @commute
+Feature: commute traffic and weather (REQ-063, REQ-076, REQ-077, REQ-084, DD-36, DD-41)
+
+  # Reads the simulated data the migration and the Demo reset generate. Nothing is written, so the
+  # scenarios run in parallel with the others; demo-reset.feature regenerates the same data, seeded
+  # by today's date (DD-40), so a reset in between does not change what these see.
+
+  Background:
+    * url baseUrl
+    * def weatherShape = { station_id: '#string', station_name: '#string', obs_time: '#string', weather: '#string', air_temperature: '#number', precipitation: '#number? _ >= 0' }
+
+  Scenario Outline: traffic for the past 10 workdays - <token>
+    * path 'api', 'commute', 'traffic'
+    * header Authorization = 'Bearer <token>'
+    * method get
+    * status 200
+    * match response contains { now: '#string', today: '#string', simulated: true }
+    * match response.days == '#[10]'
+    # workdays only, newest first, each with its weekday
+    * match each response.days contains { date: '#string', weekday: '#? _ >= 1 && _ <= 5', slots: '#[12]' }
+    * def ds = karate.map(response.days, function(d) { return d.date })
+    * match ds == karate.sort(ds, function(x) { return x }).reverse()
+    * match each response.days[0].slots == { slot_start: '#string', volume: '#number? _ > 0', avg_speed_kmh: '#number? _ > 0', weather: '#(weatherShape)', simulated: true }
+
+    Examples:
+      | token                |
+      | driver:driver1       |
+      | passenger:passenger1 |
+
+  Scenario Outline: today's weather before now - <token>
+    * path 'api', 'commute', 'weather'
+    * header Authorization = 'Bearer <token>'
+    * method get
+    * status 200
+    * match response == { now: '#string', today: '#string', weather: '##(weatherShape)', simulated: '#boolean' }
+    # the observation is no later than now (DD-41)
+    * if (response.weather) karate.match(new Date(response.weather.obs_time).getTime() <= new Date(response.now).getTime(), true)
+
+    Examples:
+      | token                |
+      | driver:driver1       |
+      | passenger:passenger1 |
+
+  Scenario Outline: an account without the role is refused - <resource>
+    # passenger1 is a passenger only, so a driver token for it is refused by authentication (DD-18)
+    * path 'api', 'commute', '<resource>'
+    * header Authorization = 'Bearer driver:passenger1'
+    * method get
+    * status 403
+    * match response.error.code == 'forbidden'
+
+    Examples:
+      | resource |
+      | traffic  |
+      | weather  |
+
+  Scenario Outline: no token is refused - <resource>
+    * path 'api', 'commute', '<resource>'
+    * method get
+    * status 401
+
+    Examples:
+      | resource |
+      | traffic  |
+      | weather  |
