@@ -119,9 +119,10 @@ description: 建立工作單（GitHub issue，如 T20、T18A）的慣例——�
 | `backend` | `backend/`（Go 程式碼、遷移、Karate） |
 | `ui/passenger` | `ui/passenger/`；`ui/shared/` 的修改影響乘客介面時也加 |
 | `ui/driver` | `ui/driver/`；`ui/shared/` 的修改影響駕駛介面時也加 |
+| `ui/city` | `ui/city/`；`ui/shared/` 的修改影響市府管理介面時也加 |
 | `docs` | 只修改文件（`docs/`、`DEV.md`、`README`）；程式碼工作單順帶更新文件時不加 |
 
-- 只使用上表四個標籤；類別只記在看板的 `Category`，不用 `bug`、`enhancement`、`documentation` 標籤。
+- 只使用上表五個標籤；類別只記在看板的 `Category`，不用 `bug`、`enhancement`、`documentation` 標籤。
 - `ui/e2e/`、`ui/showcase/`、`ui/mock-server/` 不對應任何標籤；範圍只修改這些位置時不加標籤。
 - 沒有修改任何檔案的工作單（例如 Demo 預演）不加標籤。
 - 父工作單：所有子工作單的類別相同時才設定，不同時不設；標籤取子工作單標籤的聯集，不受 `docs` 的限制。
