@@ -466,13 +466,16 @@ describe('driver App', () => {
     const calls = fakeBackend([NO_TRIP])
     render(<App />)
     // Shown as selected while collapsed, before any tag of the driver's own.
-    expect(await screen.findByRole('button', { name: /我的標籤\s*同企業$/ })).toBeInTheDocument()
+    // Open the row only once the prefill is in: loading it collapses every row (DepartureScreen).
+    expect(await screen.findByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /我的標籤\s*同企業$/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /我的標籤/ }))
 
     const chip = await screen.findByText('同企業・內科示範科技')
     expect(chip.closest('p')).toHaveTextContent('模擬')
     expect(chip.closest('button')).toBeNull()
-    expect(within(screen.getByRole('group', { name: '我的標籤' })).queryByText(/同企業/)).not.toBeInTheDocument()
+    // The chip renders at once; the operable tags come with the my-tags fetch.
+    expect(within(await screen.findByRole('group', { name: '我的標籤' })).queryByText(/同企業/)).not.toBeInTheDocument()
     const before = calls.length
     fireEvent.click(chip)
     expect(calls.slice(before).filter((c) => c.method !== 'GET')).toEqual([])
