@@ -101,6 +101,10 @@ CREATE FUNCTION generate_commute_simulation(now_ timestamptz) RETURNS void LANGU
 DECLARE
     today date := (now_ AT TIME ZONE 'Asia/Taipei')::date;
 BEGIN
+    -- One generation at a time (two Demo resets, or Karate next to a reset): otherwise the second
+    -- one's DELETE misses the rows the first just inserted and its INSERT hits the primary key.
+    -- Held until the caller's transaction ends.
+    PERFORM pg_advisory_xact_lock(hashtext('generate_commute_simulation'));
     DELETE FROM traffic_observations WHERE simulated;
 
     INSERT INTO traffic_observations (vd_id, slot_start, volume, avg_speed_kmh, occupancy_pct, weather, simulated)

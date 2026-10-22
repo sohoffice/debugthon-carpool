@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // taipeiTime parses "2006-01-02 15:04" as Taipei time.
@@ -522,5 +523,34 @@ func TestDemoResetRegeneratesCommute(t *testing.T) {
 	}
 	if n := queryInt(t, tx, `SELECT count(DISTINCT (slot_start AT TIME ZONE 'Asia/Taipei')::date) FROM traffic_observations`); n != 11 {
 		t.Errorf("after the reset %d days of data, want 10 past workdays and today", n)
+	}
+}
+
+// DD-29, DD-40: two generations at once (two Demo resets, or Karate next to a reset) both succeed
+// and leave one copy of the data, instead of the second failing on the primary key. Needs real
+// transactions, so it commits; it regenerates the data for now, the same as a reset would.
+func TestCommuteSimulationConcurrent(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testDatabaseURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	errs := make(chan error, 6)
+	for i := 0; i < cap(errs); i++ {
+		go func() {
+			errs <- pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+				return regenerateCommuteSimulation(ctx, tx, time.Now())
+			})
+		}()
+	}
+	for i := 0; i < cap(errs); i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("concurrent generation: %v", err)
+		}
+	}
+	var dup int64
+	if err := pool.QueryRow(ctx, `SELECT count(*) - count(DISTINCT (vd_id, slot_start)) FROM traffic_observations`).Scan(&dup); err != nil || dup != 0 {
+		t.Errorf("duplicate rows = %d, %v", dup, err)
 	}
 }
