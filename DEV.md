@@ -25,6 +25,7 @@
 - [Go](https://go.dev/) 1.27.2
 - [just](https://github.com/casey/just) 1.31 以上（需支援 `mod`）
 - Docker（用於 `docker-compose.yml` 中的 PostgreSQL）
+- Java 21 以上與 [Maven](https://maven.apache.org/) 3.8 以上：執行 Karate API 測試（`just backend karate`）用；版本不符時 Maven 在編譯前就以訊息指出需要的版本
 - [Node.js](https://nodejs.org/) 22（22.18 以上）、24 或 26 以上：`just demo-offstage` 與示範後端直接執行 `.ts` 檔，需要 Node 原生支援 TypeScript（22.18、23.6 起）；Vitest 只支援 22.12 以上的 22、24 與 26 以上，不含 23、25
 
 ## Just 指令
@@ -205,7 +206,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 
 ### API 整合測試（Karate）
 
-測試位於 `backend/karate/`（Maven 專案，[Karate](https://github.com/karatelabs/karate) 2.1.3、Java 21 以上），以 `just backend karate` 執行。
+測試位於 `backend/karate/`（Maven 專案，[Karate](https://github.com/karatelabs/karate) 2.1.3；Java 與 Maven 版本見〈[前置需求](#前置需求)〉），以 `just backend karate` 執行。
 
 - `just backend karate` 另外編譯並啟動一個 Karate 專用的後端（`KARATE_PORT`，預設 `:18080`；`MAP_API_KEY` 一律為空，蓋過 `.env` 的金鑰，所以只用模擬路線；`DEMO_RESET` 開啟），跑完就關掉，不會停掉或重開 `:8080` 上的 Demo 後端。資料庫則是共用的：`demo-reset.feature` 會重設 Demo 帳號，所以 Demo 演練時不要跑 Karate。需先 `just infra up` 與 `just backend db-apply`。測試依賴種子資料：測試帳號（見下節）、標籤、上車點與公車站，不自行建立。
 - 測試資料的原則：**有 REST API 可寫入就用 API**（例如以 `PUT`／`DELETE /api/me/tags/:id` 選擇與取消標籤，並在情境結束前還原）；**只有沒有 API 可用時才用 SQL**（目前是帳號與常用資料，見 DD-19），寫在 `profiles.feature`，由 `Db.java` 以 `carpool` 角色寫入。
