@@ -13,11 +13,15 @@ driver:
 passenger:
     cd "{{source_directory()}}" && npm run dev:passenger
 
+# Start the city dashboard on :5175 (DD-39); open it with ?account=city1
+city:
+    cd "{{source_directory()}}" && npm run dev:city
+
 # Start the showcase page on :5170 (UD-18); it embeds the driver and passenger UIs
 showcase:
     cd "{{source_directory()}}" && npm run dev:showcase
 
-# Start the mock backend, both UIs and the showcase page against it (development, UD-14)
+# Start the mock backend, both UIs, the showcase page and the city dashboard against it (development, UD-14)
 dev-mock:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -27,9 +31,10 @@ dev-mock:
     API_PROXY_TARGET={{mock_url}} npm run dev:driver &
     API_PROXY_TARGET={{mock_url}} npm run dev:passenger &
     API_PROXY_TARGET={{mock_url}} npm run dev:showcase &
+    API_PROXY_TARGET={{mock_url}} npm run dev:city &
     wait
 
-# Start both UIs and the showcase page against the Go backend on :8080 (start it with `just backend up`)
+# Start both UIs, the showcase page and the city dashboard against the Go backend on :8080 (start it with `just backend up`)
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -38,6 +43,7 @@ dev:
     API_PROXY_TARGET={{backend_url}} npm run dev:driver &
     API_PROXY_TARGET={{backend_url}} npm run dev:passenger &
     API_PROXY_TARGET={{backend_url}} npm run dev:showcase &
+    API_PROXY_TARGET={{backend_url}} npm run dev:city &
     wait
 
 # Start only the mock backend on :8081

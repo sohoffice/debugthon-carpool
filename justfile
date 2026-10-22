@@ -2,8 +2,8 @@ mod backend
 mod infra
 mod ui
 
-# Showcase, driver and passenger dev servers; Vite uses strictPort, so each must be free
-ui_ports := "5170 5173 5174"
+# Showcase, driver, passenger and city dashboard dev servers; Vite uses strictPort, so each must be free
+ui_ports := "5170 5173 5174 5175"
 
 # Print all available commands
 help:

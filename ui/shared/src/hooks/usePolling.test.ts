@@ -86,4 +86,23 @@ describe('usePolling', () => {
     await act(() => vi.advanceTimersByTimeAsync(INTERVAL))
     expect(result.current.data).toBe('later')
   })
+
+  it('a new restartKey polls at once with the new fetcher and drops the old poll in flight', async () => {
+    let resolveOld: (v: string) => void = () => {}
+    const old = vi.fn(() => new Promise<string>((r) => (resolveOld = r)))
+    const fresh = vi.fn(async () => 'new')
+    const { result, rerender } = renderHook(({ key, fetcher }) => usePolling(fetcher, INTERVAL, true, key), {
+      initialProps: { key: 'a', fetcher: old as () => Promise<string> },
+    })
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(old).toHaveBeenCalledTimes(1)
+
+    rerender({ key: 'b', fetcher: fresh })
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(fresh).toHaveBeenCalledTimes(1)
+    expect(result.current.data).toBe('new')
+
+    await act(async () => resolveOld('old'))
+    expect(result.current.data).toBe('new')
+  })
 })

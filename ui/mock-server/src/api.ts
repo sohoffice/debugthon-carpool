@@ -1,5 +1,6 @@
 import type { Me, MockScenario, MockStatus } from '../../shared/src/api/types.ts'
-import { SCENARIOS } from './config.ts'
+import { createCity } from './city.ts'
+import { CITY_ADMINS, SCENARIOS } from './config.ts'
 import { buildLookups } from './context.ts'
 import type { StaticData } from './data/load.ts'
 import type { SeedUser } from './data/seed.ts'
@@ -48,7 +49,8 @@ export interface MockResponse {
   body?: unknown
 }
 
-type Role = 'driver' | 'passenger'
+type Role = 'driver' | 'passenger' | 'city'
+/** `any` is any driver or passenger; a city token reaches only `city` endpoints (DD-39). */
 type Access = 'public' | 'any' | Role
 
 interface Call {
@@ -83,9 +85,11 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
   // Saved route previews (T26, DD-21). Like the Go backend, a reset does not clear them.
   const previews = new Map<number, { driverId: number; pickupPointId: number; lat: number; lng: number; used: boolean }>()
   const now = () => clock() + world.clockOffsetMs
+  const city = createCity(lookups)
 
   const reset = (scenario: MockScenario) => {
     world = initialWorld(lookups, scenario, clock())
+    city.resetRound()
   }
 
   function ownRequest(passengerId: number, rawId: string): RideRequest {
@@ -104,8 +108,8 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       pattern: '/api/me',
       access: 'any',
       run: ({ user, role }): MockResponse => {
-        const roles: Role[] = [...(user.is_driver ? (['driver'] as const) : []), ...(user.is_passenger ? (['passenger'] as const) : [])]
-        const me: Me = { username: user.username, display_name: user.display_name, role, roles, simulated: user.simulated }
+        const roles = [...(user.is_driver ? (['driver'] as const) : []), ...(user.is_passenger ? (['passenger'] as const) : [])]
+        const me: Me = { username: user.username, display_name: user.display_name, role: role as Me['role'], roles, simulated: user.simulated }
         return ok(me)
       },
     },
@@ -197,7 +201,8 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       pattern: '/api/activities',
       access: 'any',
       run: ({ user, role }) => {
-        world = declareActivity(world, user.id, role, now())
+        // `any` never lets a city token in (handle), so the role is a driver or a passenger here.
+        world = declareActivity(world, user.id, role as 'driver' | 'passenger', now())
         const a = latestActivityOf(world, user.id)!
         return created({ id: a.id, role: a.role, trip_id: a.tripId, created_at: new Date(a.createdAtMs).toISOString() })
       },
@@ -307,6 +312,12 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       },
     },
 
+    // ---- City dashboard (Phase 2, DD-39)
+    { method: 'GET', pattern: '/api/city/live', access: 'city', run: () => ok(city.live(world, now())) },
+    { method: 'GET', pattern: '/api/city/traffic', access: 'city', run: ({ query }) => ok(city.traffic(now(), query.get('slot') || null)) },
+    { method: 'GET', pattern: '/api/city/today', access: 'city', run: () => ok(city.today(world, now())) },
+    { method: 'GET', pattern: '/api/city/history', access: 'city', run: () => ok(city.history(now())) },
+
     // ---- Demo control
     {
       method: 'POST',
@@ -366,11 +377,16 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
     const colon = token?.indexOf(':') ?? -1
     const role = token && colon >= 0 ? token.slice(0, colon) : ''
     const username = token && colon >= 0 ? token.slice(colon + 1) : ''
-    if (!token || colon < 0 || username === '' || (role !== 'driver' && role !== 'passenger')) {
+    if (!token || colon < 0 || username === '' || (role !== 'driver' && role !== 'passenger' && role !== 'city')) {
       throw new MockError(401, 'unauthorized', '需要 Authorization: Bearer <角色>:<帳號>')
     }
+    const admin = CITY_ADMINS.find((a) => a.username === username)
+    if (admin && role === 'city') {
+      return { user: { id: 0, ...admin, is_driver: false, is_passenger: false, simulated: false }, role }
+    }
     const user = lookups.userByName.get(username)
-    if (!user) throw new MockError(401, 'unauthorized', '帳號不存在')
+    if (!user && !admin) throw new MockError(401, 'unauthorized', '帳號不存在')
+    if (!user || role === 'city') throw new MockError(403, 'forbidden', '此帳號沒有該角色')
     if ((role === 'driver' && !user.is_driver) || (role === 'passenger' && !user.is_passenger)) {
       throw new MockError(403, 'forbidden', '此帳號沒有該角色')
     }
@@ -391,7 +407,9 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       // Public endpoints never read the identity; any user fills the slot.
       const identity =
         endpoint.access === 'public' ? { user: lookups.users[0], role: 'passenger' as const } : authenticate(req.authorization)
-      if (endpoint.access !== 'public' && endpoint.access !== 'any' && endpoint.access !== identity.role) {
+      const allowed =
+        endpoint.access === 'public' || endpoint.access === identity.role || (endpoint.access === 'any' && identity.role !== 'city')
+      if (!allowed) {
         throw new MockError(403, 'forbidden', '此角色不能使用這個 API')
       }
       if (endpoint.access !== 'public') world = tick(world, lookups, now())

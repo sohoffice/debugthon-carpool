@@ -27,9 +27,10 @@ function usePageVisible(): boolean {
  * Calls `fetcher` now and every `intervalMs` (DD-03: clients poll, no push).
  * Keeps the last good data when a poll fails, so the screen does not flicker.
  * Pauses while the page is hidden and polls at once when it is shown again.
- * Pass `enabled: false` to pause.
+ * Pass `enabled: false` to pause. A new `restartKey` (e.g. a changed query) polls at once and drops
+ * a poll still in flight for the old key; the last data stays on screen until the new one arrives.
  */
-export function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, enabled = true): Polling<T> {
+export function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, enabled = true, restartKey = ''): Polling<T> {
   const [state, setState] = useState<PollingState<T>>({ data: undefined, error: undefined })
   const visible = usePageVisible()
   const active = enabled && visible
@@ -63,7 +64,7 @@ export function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, ena
       cancelled = true
       clearTimeout(timer)
     }
-  }, [intervalMs, active])
+  }, [intervalMs, active, restartKey])
 
   const mutate = useCallback((data: T) => {
     generation.current += 1

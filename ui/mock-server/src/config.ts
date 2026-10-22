@@ -38,3 +38,6 @@ export const PREVIOUS_TRIPS: Record<string, { pickup: string; destination: Place
     autoAccept: false,
   },
 }
+
+/** City admin accounts (DD-39), as seeded by the city admin migration; not in the driver/passenger seed. */
+export const CITY_ADMINS = [{ username: 'city1', display_name: '市府 管理者' }]
