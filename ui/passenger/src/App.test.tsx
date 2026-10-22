@@ -1,4 +1,4 @@
-import type { PassengerProfile, RequestStatusView, Supply, TripView } from '@carpool/shared'
+import type { PassengerProfile, RequestStatusView, Supply, Tag, TripView } from '@carpool/shared'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -112,6 +112,14 @@ interface Backend {
   actions?: Record<string, RequestStatusView>
 }
 
+/** GET /api/tags for a passenger (T43's migration, DD-42): passenger wording, 可載行李 only to filter by. */
+const PASSENGER_TAGS: Tag[] = [
+  { id: 1, name: '不抽菸', issuer: 'self', applies_to: 'both', self_label: '我不抽菸', filter_label: '不抽菸', selected: false },
+  { id: 2, name: '可載行李', issuer: 'self', applies_to: 'driver', self_label: null, filter_label: '能放大件行李', selected: false },
+  { id: 3, name: '安靜通勤', issuer: 'self', applies_to: 'both', self_label: '喜歡安靜', filter_label: '安靜坐車', selected: false },
+  { id: 4, name: '可聊天', issuer: 'self', applies_to: 'both', self_label: '可以聊天', filter_label: '可以聊天', selected: false },
+]
+
 function fakeBackend({ profile = PROFILE, simulated, outsidePark = false, current = [null], statuses = [request({})], actions = {} }: Backend) {
   const profiles = Array.isArray(profile) ? profile : [profile]
   let profileIndex = 0
@@ -129,11 +137,20 @@ function fakeBackend({ profile = PROFILE, simulated, outsidePark = false, curren
       const pathname = path.split('?')[0]
       if (pathname === '/pickup-points') return reply([SONGSHAN, WTC])
       if (pathname === '/bus-stops') return reply([STOP])
-      if (pathname === '/tags') return reply([{ id: 1, name: '不抽菸', issuer: 'self', selected: false }])
+      if (pathname === '/tags') return reply(PASSENGER_TAGS)
       if (pathname === '/passenger/profile') return reply(profiles[Math.min(profileIndex++, profiles.length - 1)])
       if (pathname === '/passenger/requests/current') return reply({ request: current[Math.min(currentIndex++, current.length - 1)] })
       if (pathname === '/passenger/requests/7') return reply(acted ?? statuses[Math.min(statusIndex++, statuses.length - 1)])
       if (pathname === '/trips/4') return reply(TRIP)
+      // Like the backend: a filter on a tag not in the list, or not a driver's, is refused (REQ-085).
+      if (pathname === '/passenger/supply' || (method === 'POST' && pathname === '/passenger/requests')) {
+        const query = new URLSearchParams(path.split('?')[1])
+        const body = calls.at(-1)?.body as { tag_filters?: { tag_id: number }[] } | undefined
+        const ids = [...`${query.get('required_tags') ?? ''},${query.get('preferred_tags') ?? ''}`.split(',').filter(Boolean).map(Number), ...(body?.tag_filters ?? []).map((f) => f.tag_id)]
+        if (ids.some((id) => !PASSENGER_TAGS.some((t) => t.id === id && t.filter_label !== null))) {
+          return reply({ error: { code: 'invalid_tag', message: '標籤不在清單中' } }, 400)
+        }
+      }
       if (pathname === '/passenger/supply') return reply(supply(new URLSearchParams(path.split('?')[1]).get('pickup_point_id') === '2' ? WTC : SONGSHAN, simulated))
       // Like the backend's park boundary: north of the pickup points.
       if (pathname === '/park/check') return reply({ inside: Number(new URLSearchParams(path.split('?')[1]).get('lat')) > 25.05 })
@@ -431,7 +448,7 @@ describe('passenger App', () => {
     fakeBackend({})
     const first = render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: '不抽菸的篩選' })).getByRole('radio', { name: '強制' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: '不抽菸的篩選' })).getByRole('radio', { name: '一定要' }))
     fireEvent.click(screen.getByRole('button', { name: '送出請求' }))
     await screen.findByRole('heading', { name: '正在等駕駛確認' })
     first.unmount()
@@ -448,7 +465,7 @@ describe('passenger App', () => {
     await screen.findByRole('heading', { name: '要去內科哪裡？' })
     const chip = screen.getByText('同企業')
     expect(chip.closest('p')).toHaveTextContent('模擬')
-    // Apart from the operable filters, with no 強制 or 建議 of its own.
+    // Apart from the operable filters, with no 一定要 or 最好 of its own.
     expect(screen.queryByRole('radiogroup', { name: /同企業/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /同企業/ })).not.toBeInTheDocument()
     expect(chip.compareDocumentPosition(screen.getByRole('radiogroup', { name: '不抽菸的篩選' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -469,7 +486,7 @@ describe('passenger App', () => {
     expect(within(sheet).queryByRole('radiogroup', { name: /同企業/ })).not.toBeInTheDocument()
     fireEvent.click(chip)
     expect(screen.getByRole('dialog', { name: '送出搭車請求' })).toBeInTheDocument()
-    fireEvent.click(within(sheet).getByRole('radio', { name: '建議' }))
+    fireEvent.click(within(within(sheet).getByRole('radiogroup', { name: '不抽菸的篩選' })).getByRole('radio', { name: '最好' }))
     fireEvent.click(screen.getByRole('button', { name: '送出請求' }))
     await screen.findByRole('heading', { name: '正在等駕駛確認' })
 
@@ -479,6 +496,63 @@ describe('passenger App', () => {
     expect(supplyQueries.length).toBeGreaterThan(0)
     for (const q of supplyQueries) expect(decodeURIComponent(q)).not.toMatch(/同企業|內科示範科技|company/)
     expect(JSON.stringify(calls.map((c) => c.body))).not.toMatch(/同企業|內科示範科技/)
+  })
+
+  it('關於我 lists the passenger tags; 這趟車要 lists the driver tags in the passenger’s words with 不在意／最好／一定要 (REQ-008, REQ-032, REQ-086, DD-42)', async () => {
+    fakeBackend({ profile: NO_PROFILE })
+    render(<App />)
+    await screen.findByRole('heading', { name: '要去內科哪裡？' })
+    const about = screen.getByRole('group', { name: '關於我' })
+    await waitFor(() => expect(within(about).getAllByRole('button').map((b) => b.textContent)).toEqual(['我不抽菸', '喜歡安靜', '可以聊天']))
+    // 關於我 comes first: drivers' 只載 looks at it (UD-06).
+    const filters = screen.getAllByRole('radiogroup')
+    expect(about.compareDocumentPosition(filters[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(filters.map((g) => g.getAttribute('aria-label'))).toEqual(['不抽菸的篩選', '能放大件行李的篩選', '安靜坐車的篩選', '可以聊天的篩選'])
+    for (const g of filters) expect(within(g).getAllByRole('radio').map((r) => r.textContent)).toEqual(['不在意', '最好', '一定要'])
+    // No driver wording, and no 強制／建議.
+    expect(screen.queryByText(/不抽菸的乘客|喜歡安靜的乘客|車上能放大件行李|強制|建議/)).not.toBeInTheDocument()
+  })
+
+  it('the send sheet filters drivers in the passenger’s words too (REQ-035, REQ-086)', async () => {
+    const calls = fakeBackend({})
+    render(<App />)
+    await screen.findByText('3 台車接近中')
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    const sheet = screen.getByRole('dialog', { name: '送出搭車請求' })
+    expect(within(sheet).getByRole('heading', { name: '這趟車要' })).toBeInTheDocument()
+    expect(within(sheet).getAllByRole('radiogroup').map((g) => g.getAttribute('aria-label'))).toEqual(['不抽菸的篩選', '能放大件行李的篩選', '安靜坐車的篩選', '可以聊天的篩選'])
+    fireEvent.click(within(within(sheet).getByRole('radiogroup', { name: '不抽菸的篩選' })).getByRole('radio', { name: '一定要' }))
+    fireEvent.click(within(within(sheet).getByRole('radiogroup', { name: '能放大件行李的篩選' })).getByRole('radio', { name: '一定要' }))
+    fireEvent.click(within(within(sheet).getByRole('radiogroup', { name: '安靜坐車的篩選' })).getByRole('radio', { name: '最好' }))
+    fireEvent.click(screen.getByRole('button', { name: '送出請求' }))
+    await screen.findByRole('heading', { name: '正在等駕駛確認' })
+    expect(calls.find((c) => c.path === '/passenger/requests')?.body).toMatchObject({
+      tag_filters: [
+        { tag_id: 1, intent: 'required' },
+        { tag_id: 2, intent: 'required' },
+        { tag_id: 3, intent: 'preferred' },
+      ],
+    })
+  })
+
+  it('drops a remembered filter a passenger can no longer use, so the board and the request still work (REQ-085, DD-42)', async () => {
+    // 女性友善 (id 6) left the list with T43; 不抽菸 is still a driver tag.
+    localStorage.setItem('carpool.filters.passenger1', JSON.stringify([{ tag_id: 6, intent: 'required' }, { tag_id: 1, intent: 'required' }]))
+    const calls = fakeBackend({})
+    render(<App />)
+    expect(await screen.findByText('3 台車接近中')).toBeInTheDocument()
+    const supply = calls.filter((c) => c.path.startsWith('/passenger/supply')).map((c) => c.path)
+    expect(supply.length).toBeGreaterThan(0)
+    for (const q of supply) expect(q).toMatch(/required_tags=1&preferred_tags=$/)
+    expect(JSON.parse(localStorage.getItem('carpool.filters.passenger1') ?? '')).toEqual([{ tag_id: 1, intent: 'required' }])
+
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    const sheet = screen.getByRole('dialog', { name: '送出搭車請求' })
+    expect(within(within(sheet).getByRole('radiogroup', { name: '不抽菸的篩選' })).getByRole('radio', { name: '一定要' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(sheet).getAllByRole('radiogroup')).toHaveLength(4)
+    fireEvent.click(screen.getByRole('button', { name: '送出請求' }))
+    await screen.findByRole('heading', { name: '正在等駕駛確認' })
+    expect(calls.find((c) => c.path === '/passenger/requests')?.body).toMatchObject({ tag_filters: [{ tag_id: 1, intent: 'required' }] })
   })
 
   it('confirmed: says the driver is from the same simulated company (REQ-062, REQ-063)', async () => {

@@ -5,13 +5,16 @@ import {
   CompanyChip,
   DEMO_COMPANY_NAME,
   ErrorNote,
+  filterTags,
   PlaceSearch,
   RouteMap,
   RouteStrip,
   RouteStripSkeleton,
+  selfTags,
   SimulatedBadge,
   routeStripItems,
   summarizeFilters,
+  Switch,
   TagFilterEditor,
   useMyTags,
   type DriverProfile,
@@ -28,7 +31,6 @@ import { draftFrom, hasDefaults, toSettings, type DepartureDraft } from './depar
 import { PickupEditor } from './PickupEditor'
 import { RoutePlaceholder } from './RoutePlaceholder'
 import { SettingLine, SettingRow } from './SettingRow'
-import { Switch } from './Switch'
 
 type Section = 'pickup' | 'destination' | 'filters' | 'tags'
 
@@ -99,6 +101,10 @@ export function DepartureScreen({ onDeparted, onAlreadyActive, onOpenDrawer }: D
 
   const pickup = pickupPoints.find((p) => p.id === draft.pickupPointId) ?? null
   const tags = myTags.tags ?? []
+  // Each side in its own words: the driver's own tags and the passengers' to filter by (UD-06, DD-42).
+  const mine = selfTags(tags)
+  const passengerTags = filterTags(tags)
+  const selected = tags.filter((t) => t.selected).map((t) => t.id)
   const settings = toSettings(draft)
   const toggle = (s: Section) => setOpen((o) => (o.includes(s) ? o.filter((x) => x !== s) : [...o, s]))
   const close = (s: Section) => setOpen((o) => o.filter((x) => x !== s))
@@ -184,22 +190,22 @@ export function DepartureScreen({ onDeparted, onAlreadyActive, onOpenDrawer }: D
             <SettingLine label="自動接受">
               <Switch label="自動接受搭車請求" checked={draft.autoAccept} onChange={(autoAccept) => update({ autoAccept })} />
             </SettingLine>
-            <SettingRow label="篩選乘客" value={summarizeFilters(tags, draft.tagFilters)} open={open.includes('filters')} onToggle={() => toggle('filters')}>
-              <TagFilterEditor tags={tags} value={draft.tagFilters} onChange={(tagFilters) => update({ tagFilters })} />
-              <p className="mt-2 text-sm text-fg-soft">強制：不符合的乘客不會配給你。建議：只供參考，不影響配對。</p>
-            </SettingRow>
             <SettingRow
-              label="我的標籤"
-              // The simulated 同企業 tag is always selected (DD-43).
-              value={['同企業', ...tags.filter((t) => t.selected).map((t) => t.name)].join('、')}
+              label="關於我和車"
+              // The simulated 同企業 tag is always selected and first (DD-43).
+              value={['同企業', ...mine.filter((t) => selected.includes(t.id)).map((t) => t.label)].join('、')}
               open={open.includes('tags')}
               onToggle={() => toggle('tags')}
             >
               <div className="mb-2">
                 <CompanyChip label={`同企業・${DEMO_COMPANY_NAME}`} />
               </div>
-              <ChipSelect label="我的標籤" options={tags.map((t) => ({ id: t.id, label: t.name }))} selected={tags.filter((t) => t.selected).map((t) => t.id)} onToggle={myTags.toggle} />
-              <p className="mt-2 text-sm text-fg-soft">乘客篩選駕駛時會看這些標籤。</p>
+              <ChipSelect label="關於我和車" options={mine} selected={selected} onToggle={myTags.toggle} />
+              <p className="mt-2 text-sm text-fg-soft">乘客要的條件會對照這些。</p>
+            </SettingRow>
+            <SettingRow label="只載" value={summarizeFilters(passengerTags, draft.tagFilters)} open={open.includes('filters')} onToggle={() => toggle('filters')}>
+              <TagFilterEditor tags={passengerTags} value={draft.tagFilters} onChange={(tagFilters) => update({ tagFilters })} />
+              <p className="mt-2 text-sm text-fg-soft">打開的條件，不符合的乘客不會配給你。</p>
             </SettingRow>
           </div>
           {myTags.error && (

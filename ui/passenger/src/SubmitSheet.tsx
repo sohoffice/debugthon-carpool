@@ -1,5 +1,6 @@
-import { Button, CompanyChip, ErrorNote, TagFilterEditor, type Tag, type TagFilter } from '@carpool/shared'
+import { Button, CompanyChip, ErrorNote, filterTags, TagFilterEditor, type Tag, type TagFilter } from '@carpool/shared'
 import { useState } from 'react'
+import { INTENT_LABELS } from './intentLabels'
 
 interface SubmitSheetProps {
   tags: Tag[]
@@ -23,13 +24,13 @@ export function SubmitSheet({ tags, filters, submitting, error, onSubmit, onClos
       >
         <h2 className="text-[30px]/tight font-semibold">送出搭車請求</h2>
         <p className="mt-1 text-lg text-fg-soft">平台會替你分配一台最快能送你到的車。</p>
-        <h3 className="mt-6 text-base font-semibold text-fg-soft">篩選駕駛</h3>
+        <h3 className="mt-6 text-base font-semibold text-fg-soft">這趟車要</h3>
         {/* Simulated and never sent in the filters (DD-43). */}
         <div className="mt-3">
           <CompanyChip label="同企業" />
         </div>
         <div className="mt-1">
-          <TagFilterEditor tags={tags} value={value} onChange={setValue} />
+          <TagFilterEditor tags={filterTags(tags)} value={value} onChange={setValue} intentLabels={INTENT_LABELS} />
         </div>
         {error && (
           <div className="mt-4">

@@ -26,6 +26,7 @@ export function loadStaticData(): StaticData {
     activities: read('backend/migrations/20261019130000_activities_and_vehicles.sql'),
     passMargin: read('backend/migrations/20261019150000_pass_margin_setting.sql'),
     points: read('backend/migrations/20261022100000_driver_points.sql'),
+    tagRoles: read('backend/migrations/20261023100000_tag_roles.sql'),
     // Every migration's Up part in order: later ones may move driver2's destination again.
     migrationsUp: readdirSync(new URL('backend/migrations/', REPO))
       .filter((f) => f.endsWith('.sql'))

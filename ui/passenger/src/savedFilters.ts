@@ -1,4 +1,4 @@
-import type { TagFilter } from '@carpool/shared'
+import type { Tag, TagFilter } from '@carpool/shared'
 import { account } from './config'
 
 const storageKey = `carpool.filters.${account}`
@@ -26,4 +26,16 @@ export function saveFilters(filters: TagFilter[]) {
   } catch {
     // Private mode: the filters just are not remembered.
   }
+}
+
+/**
+ * Drops remembered filters on tags a passenger cannot filter by: tags no longer in the list
+ * (女性友善) or not applying to drivers. The backend refuses those with 400 on the supply query and
+ * the request (REQ-085, DD-42). Run once the tag list is known, before anything reads the filters.
+ */
+export function dropUnusableFilters(tags: Tag[]) {
+  const usable = new Set(tags.filter((t) => t.filter_label !== null).map((t) => t.id))
+  const filters = loadFilters()
+  const kept = filters.filter((f) => usable.has(f.tag_id))
+  if (kept.length !== filters.length) saveFilters(kept)
 }

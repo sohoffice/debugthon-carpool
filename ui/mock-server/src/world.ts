@@ -283,7 +283,7 @@ export function initialWorld(lookups: Lookups, scenario: MockScenario, now: numb
         destination: p.destination,
         capacity: p.capacity,
         autoAccept: p.autoAccept,
-        tagFilters: p.preferredTags.map((t) => ({ tag_id: tag(t).id, intent: 'preferred' as const })),
+        tagFilters: [],
         simulated: false,
         startEtaS: 0,
       },

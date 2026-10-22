@@ -1,4 +1,4 @@
-import type { DriverRequestItem, DriverRequests, PointEntry, TripDefaults, TripView } from '@carpool/shared'
+import type { DriverRequestItem, DriverRequests, PointEntry, Tag, TripDefaults, TripView } from '@carpool/shared'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,6 +38,14 @@ const PICKUP_POINTS = [
 ]
 const DESTINATION = { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }
 const ROUTE = { polyline: '', distance_m: 4400, duration_s: 1200, simulated: true, bus_stops: [{ id: 9, stop_id: 1116, name: '陽光街', lat: 0, lng: 0 }] }
+/** GET /api/tags for a driver (T43's migration, DD-42): driver wording, 可載行李 has no filter wording. */
+const DRIVER_TAGS: Omit<Tag, 'selected'>[] = [
+  { id: 1, name: '不抽菸', issuer: 'self', applies_to: 'both', self_label: '我不抽菸', filter_label: '不抽菸的乘客' },
+  { id: 2, name: '可載行李', issuer: 'self', applies_to: 'driver', self_label: '車上能放大件行李', filter_label: null },
+  { id: 3, name: '安靜通勤', issuer: 'self', applies_to: 'both', self_label: '開車喜歡安靜', filter_label: '喜歡安靜的乘客' },
+  { id: 4, name: '可聊天', issuer: 'self', applies_to: 'both', self_label: '可以聊天', filter_label: '可以聊天的乘客' },
+]
+
 const LAST_DEPARTURE: TripDefaults = { pickup_point_id: 1, destination: DESTINATION, capacity: 3, auto_accept: false, tag_filters: [] }
 const NEVER_DEPARTED: TripDefaults = { pickup_point_id: null, destination: null, capacity: null, auto_accept: false, tag_filters: [] }
 const NO_TRIP: DriverRequests = { trip_id: null, pending: [], passengers: [] }
@@ -112,8 +120,8 @@ function fakeBackend(
   let index = 0
   let state: DriverRequests | null = null
   let polled: DriverRequests | undefined
-  // The caller's tag choice is kept like the backend keeps it (PUT/DELETE /api/me/tags/:id).
-  let tagSelected = false
+  // The caller's tag choices are kept like the backend keeps them (PUT/DELETE /api/me/tags/:id).
+  const selectedTags = new Set<number>()
   let endedSeen = false
   const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
     const path = url.replace('/api', '')
@@ -129,9 +137,11 @@ function fakeBackend(
       return reply(ended)
     }
     if (path === '/pickup-points') return reply(PICKUP_POINTS)
-    if (path === '/tags') return reply([{ id: 1, name: '不抽菸', issuer: 'self', selected: tagSelected }])
-    if (path === '/me/tags/1' && (method === 'PUT' || method === 'DELETE')) {
-      tagSelected = method === 'PUT'
+    if (path === '/tags') return reply(DRIVER_TAGS.map((t) => ({ ...t, selected: selectedTags.has(t.id) })))
+    const tagPath = /^\/me\/tags\/(\d+)$/.exec(path)
+    if (tagPath && (method === 'PUT' || method === 'DELETE')) {
+      if (method === 'PUT') selectedTags.add(Number(tagPath[1]))
+      else selectedTags.delete(Number(tagPath[1]))
       return new Response(null, { status: 204 })
     }
     // The ledger gains this trip's ride once the trip has ended with it (REQ-072).
@@ -217,15 +227,68 @@ describe('driver App', () => {
     fakeBackend([NO_TRIP])
     const first = render(<App />)
     await nextPoll()
-    fireEvent.click(await screen.findByRole('button', { name: /我的標籤/ }))
-    fireEvent.click(await within(await screen.findByRole('group', { name: '我的標籤' })).findByRole('button', { name: '不抽菸' }))
-    await waitFor(() => expect(within(screen.getByRole('group', { name: '我的標籤' })).getByRole('button', { name: '不抽菸' })).toHaveAttribute('aria-pressed', 'true'))
+    fireEvent.click(await screen.findByRole('button', { name: /關於我和車/ }))
+    fireEvent.click(await within(await screen.findByRole('group', { name: '關於我和車' })).findByRole('button', { name: '我不抽菸' }))
+    await waitFor(() => expect(within(screen.getByRole('group', { name: '關於我和車' })).getByRole('button', { name: '我不抽菸' })).toHaveAttribute('aria-pressed', 'true'))
     first.unmount()
 
     render(<App />)
     await nextPoll()
-    fireEvent.click(await screen.findByRole('button', { name: /我的標籤/ }))
-    await waitFor(() => expect(within(screen.getByRole('group', { name: '我的標籤' })).getByRole('button', { name: '不抽菸' })).toHaveAttribute('aria-pressed', 'true'))
+    fireEvent.click(await screen.findByRole('button', { name: /關於我和車/ }))
+    await waitFor(() => expect(within(screen.getByRole('group', { name: '關於我和車' })).getByRole('button', { name: '我不抽菸' })).toHaveAttribute('aria-pressed', 'true'))
+  })
+
+  it('關於我和車 lists the driver tags in the driver’s own words, 可載行李 included (REQ-008, REQ-086, DD-42)', async () => {
+    fakeBackend([NO_TRIP])
+    render(<App />)
+    expect(await screen.findByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /關於我和車/ }))
+    const group = await screen.findByRole('group', { name: '關於我和車' })
+    await waitFor(() =>
+      expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['我不抽菸', '車上能放大件行李', '開車喜歡安靜', '可以聊天']),
+    )
+  })
+
+  it('只載 is one switch per passenger tag in the driver’s filter words, on = required, no 建議 (REQ-013, REQ-015, REQ-086, DD-42)', async () => {
+    const calls = fakeBackend([NO_TRIP])
+    render(<App />)
+    expect(await screen.findByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeInTheDocument()
+    // Nothing on: the collapsed row says 不限 (UD-02).
+    expect(screen.getByRole('button', { name: /只載\s*不限/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /只載/ }))
+
+    const filter = await screen.findByRole('switch', { name: '不抽菸的乘客' })
+    // Only tags passengers can carry; 可載行李 is the driver's (REQ-085).
+    expect(screen.getAllByRole('switch').map((s) => s.getAttribute('aria-label'))).toEqual(['自動接受搭車請求', '不抽菸的乘客', '喜歡安靜的乘客', '可以聊天的乘客'])
+    expect(screen.queryByText(/能放大件行李/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    expect(screen.queryByText(/建議|強制/)).not.toBeInTheDocument()
+
+    fireEvent.click(filter)
+    expect(filter).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('button', { name: /只載\s*不抽菸的乘客/ })).toBeInTheDocument()
+    await within(await screen.findByRole('list', { name: '今天的路線' })).findByText('陽光街')
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    expect((calls.find((c) => c.method === 'POST' && c.path === '/driver/trips')?.body as { tag_filters: unknown }).tag_filters).toEqual([
+      { tag_id: 1, intent: 'required' },
+    ])
+  })
+
+  it('does not carry an old suggestion into today’s 只載 (REQ-013, DD-42)', async () => {
+    const calls = fakeBackend([NO_TRIP], {
+      defaults: { ...LAST_DEPARTURE, tag_filters: [{ tag_id: 1, intent: 'preferred' }, { tag_id: 3, intent: 'required' }] },
+    })
+    render(<App />)
+    expect(await screen.findByRole('button', { name: /只載\s*喜歡安靜的乘客$/ })).toBeInTheDocument()
+    await within(await screen.findByRole('list', { name: '今天的路線' })).findByText('陽光街')
+    await waitFor(() => expect(screen.getByRole('button', { name: '我出發了' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '我出發了' }))
+    await screen.findByRole('heading', { name: /目前沒有/ })
+    expect((calls.find((c) => c.method === 'POST' && c.path === '/driver/trips')?.body as { tag_filters: unknown }).tag_filters).toEqual([
+      { tag_id: 3, intent: 'required' },
+    ])
   })
 
   it('cannot depart the first time until a destination is chosen', async () => {
@@ -466,7 +529,7 @@ describe('driver App', () => {
     const inTrip = () => {
       expect(screen.queryByTestId('map')).not.toBeInTheDocument()
       expect(screen.queryByText(/地圖未設定/)).not.toBeInTheDocument()
-      expect(screen.queryByText(/設定|篩選乘客|可載人數|我的標籤|自動接受|結束行程/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/設定|只載|可載人數|關於我和車|自動接受|結束行程/)).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: '除錯' })).not.toBeInTheDocument()
       // No account tag, so no driver drawer (DD-35, REQ-066).
       expect(screen.queryByRole('button', { name: /駕駛資訊/ })).not.toBeInTheDocument()
@@ -494,14 +557,14 @@ describe('driver App', () => {
     // Shown as selected while collapsed, before any tag of the driver's own.
     // Open the row only once the prefill is in: loading it collapses every row (DepartureScreen).
     expect(await screen.findByRole('button', { name: /目的地\s*瑞光路 513 巷/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /我的標籤\s*同企業$/ })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /我的標籤/ }))
+    expect(screen.getByRole('button', { name: /關於我和車\s*同企業$/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /關於我和車/ }))
 
     const chip = await screen.findByText('同企業・內科示範科技')
     expect(chip.closest('p')).toHaveTextContent('模擬')
     expect(chip.closest('button')).toBeNull()
     // The chip renders at once; the operable tags come with the my-tags fetch.
-    expect(within(await screen.findByRole('group', { name: '我的標籤' })).queryByText(/同企業/)).not.toBeInTheDocument()
+    expect(within(await screen.findByRole('group', { name: '關於我和車' })).queryByText(/同企業/)).not.toBeInTheDocument()
     const before = calls.length
     fireEvent.click(chip)
     expect(calls.slice(before).filter((c) => c.method !== 'GET')).toEqual([])

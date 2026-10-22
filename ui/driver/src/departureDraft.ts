@@ -22,7 +22,8 @@ export function draftFrom(defaults: TripDefaults | null, profile: DriverProfile 
       destination: defaults.destination,
       capacity: defaults.capacity ?? CAPACITY_RANGE.fallback,
       autoAccept: defaults.auto_accept,
-      tagFilters: defaults.tag_filters.map(({ tag_id, intent }) => ({ tag_id, intent })),
+      // A driver only filters with required tags (REQ-013, DD-42): an older suggestion is not carried over.
+      tagFilters: defaults.tag_filters.filter((f) => f.intent === 'required').map(({ tag_id }) => ({ tag_id, intent: 'required' })),
     }
   }
   return {

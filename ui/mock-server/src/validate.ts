@@ -1,5 +1,7 @@
 import type { DepartureSettings, LatLngBody, PassengerSearch, Place, RoutePreviewRequest, TagFilter } from '../../shared/src/api/types.ts'
+import type { Role } from '../../shared/src/api/client.ts'
 import type { Lookups } from './context.ts'
+import type { SeedTag } from './data/seed.ts'
 import { MockError } from './errors.ts'
 import type { Submission } from './operations.ts'
 import { insidePark } from './park.ts'
@@ -20,14 +22,20 @@ function parkPlace(v: unknown, lookups: Lookups): Place {
   return p
 }
 
-function tagFilters(v: unknown, lookups: Lookups): TagFilter[] {
+/** Whether a tag applies to a side (DD-42). */
+export const appliesTo = (tag: SeedTag, side: Role) => tag.applies_to === side || tag.applies_to === 'both'
+
+/** Filters on the tags of `side`, the role being filtered (REQ-085, DD-42). */
+function tagFilters(v: unknown, lookups: Lookups, side: Role): TagFilter[] {
   if (!Array.isArray(v)) throw bad('tag_filters')
   const filters = v.map((f): TagFilter => {
     if (!isObject(f) || !isNumber(f.tag_id) || (f.intent !== 'required' && f.intent !== 'preferred')) throw bad('tag_filters')
     return { tag_id: f.tag_id, intent: f.intent }
   })
   if (new Set(filters.map((f) => f.tag_id)).size !== filters.length) throw bad('tag_filters')
-  if (!filters.every((f) => lookups.tagById.has(f.tag_id))) throw new MockError(400, 'invalid_tag', '標籤不在清單中')
+  const tags = filters.map((f) => lookups.tagById.get(f.tag_id))
+  if (!tags.every((t) => t !== undefined)) throw new MockError(400, 'invalid_tag', '標籤不在清單中')
+  if (!tags.every((t) => appliesTo(t, side))) throw new MockError(400, 'tag_not_applicable', '篩選條件只能使用適用於對方的標籤')
   return filters
 }
 
@@ -72,6 +80,13 @@ export function parkCheckQuery(query: URLSearchParams): LatLngBody {
 }
 
 /** Same checks and codes as the Go backend's depart. */
+/** A driver's filters are on passenger tags and always required (REQ-013, DD-42). */
+function driverFilters(v: unknown, lookups: Lookups): TagFilter[] {
+  const filters = tagFilters(v, lookups, 'passenger')
+  if (filters.some((f) => f.intent !== 'required')) throw new MockError(400, 'intent_not_allowed', '駕駛的標籤篩選只能是強制（required）')
+  return filters
+}
+
 export function departureSettings(body: unknown, lookups: Lookups): DepartureSettings {
   if (!isObject(body)) throw bad('body')
   const { capacity } = body
@@ -83,7 +98,7 @@ export function departureSettings(body: unknown, lookups: Lookups): DepartureSet
     destination: parkPlace(body.destination, lookups),
     capacity,
     auto_accept: body.auto_accept === true,
-    tag_filters: body.tag_filters === undefined ? [] : tagFilters(body.tag_filters, lookups),
+    tag_filters: body.tag_filters === undefined ? [] : driverFilters(body.tag_filters, lookups),
     ...(body.preview_id === undefined ? {} : { preview_id: previewId(body.preview_id) }),
   }
 }
@@ -131,6 +146,7 @@ export function supplyQuery(query: URLSearchParams, lookups: Lookups, profile: P
       ...idList(query.get('preferred_tags'), 'preferred_tags').map((tag_id) => ({ tag_id, intent: 'preferred' })),
     ],
     lookups,
+    'driver',
   )
   const search = passengerSearch(
     {
@@ -150,7 +166,7 @@ export function requestSubmission(body: unknown, lookups: Lookups, profile: Pass
   const location = latLng(body.location, 'location')
   const pickupPoint = pickupPointId(body.pickup_point_id, lookups)
   const search = passengerSearch(
-    { destination: body.destination, stopIds: body.stop_ids, tagFilters: body.tag_filters === undefined ? [] : tagFilters(body.tag_filters, lookups) },
+    { destination: body.destination, stopIds: body.stop_ids, tagFilters: body.tag_filters === undefined ? [] : tagFilters(body.tag_filters, lookups, 'driver') },
     lookups,
     profile,
   )

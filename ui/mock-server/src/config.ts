@@ -26,13 +26,15 @@ export const PASSENGER_PROFILES: Record<string, { arrival: string; destination: 
   },
 }
 
-/** driver4 departed yesterday, so its departure screen is prefilled (REQ-016); driver5 never did. */
-export const PREVIOUS_TRIPS: Record<string, { pickup: string; destination: Place; capacity: number; autoAccept: boolean; preferredTags: string[] }> = {
+/**
+ * driver4 departed yesterday, so its departure screen is prefilled (REQ-016); driver5 never did.
+ * Like seed_demo_habitual_data(), the trip has no 只載 filter: its 不抽菸 suggestion went with DD-42.
+ */
+export const PREVIOUS_TRIPS: Record<string, { pickup: string; destination: Place; capacity: number; autoAccept: boolean }> = {
   driver4: {
     pickup: '松山車站',
     destination: { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 },
     capacity: 3,
     autoAccept: false,
-    preferredTags: ['不抽菸'],
   },
 }

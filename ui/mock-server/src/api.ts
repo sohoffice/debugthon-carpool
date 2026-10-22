@@ -20,7 +20,7 @@ import {
 } from './operations.ts'
 import { insidePark } from './park.ts'
 import { buildTripPath } from './tripPath.ts'
-import { departureSettings, idParam, locationBody, parkCheckQuery, requestSubmission, routePreviewRequest, supplyQuery } from './validate.ts'
+import { appliesTo, departureSettings, idParam, locationBody, parkCheckQuery, requestSubmission, routePreviewRequest, supplyQuery } from './validate.ts'
 import {
   driverPointsView,
   driverProfileView,
@@ -111,14 +111,17 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
     },
     { method: 'GET', pattern: '/api/pickup-points', access: 'any', run: () => ok(data.seed.pickupPoints) },
     { method: 'GET', pattern: '/api/bus-stops', access: 'any', run: () => ok(data.seed.busStops) },
-    { method: 'GET', pattern: '/api/tags', access: 'any', run: ({ user }) => ok(tagsView(world, lookups, user.id)) },
+    { method: 'GET', pattern: '/api/tags', access: 'any', run: ({ user, role }) => ok(tagsView(world, lookups, user.id, role)) },
     {
       method: 'PUT',
       pattern: '/api/me/tags/:',
       access: 'any',
-      run: ({ user, params }) => {
+      run: ({ user, role, params }) => {
         const tagId = idParam(params[0], '標籤')
-        if (!lookups.tagById.has(tagId)) throw new MockError(404, 'not_found', '標籤不在清單中')
+        const tag = lookups.tagById.get(tagId)
+        if (!tag) throw new MockError(404, 'not_found', '標籤不在清單中')
+        // REQ-008: only a tag that applies to the caller's role.
+        if (!appliesTo(tag, role)) throw new MockError(400, 'tag_not_applicable', '這個標籤不適用於你的角色')
         const key = `${user.id}:${tagId}`
         world = world.userTags.includes(key) ? world : { ...world, userTags: [...world.userTags, key] }
         return noContent

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { CurrentRequest, DriverPoints, DriverProfile, DriverRequests, RequestStatusView, RequestView, Supply, TripDefaults, TripView } from '../../shared/src/api/types.ts'
+import type { CurrentRequest, DriverPoints, DriverProfile, DriverRequests, RequestStatusView, RequestView, Supply, Tag, TripDefaults, TripView } from '../../shared/src/api/types.ts'
 import { createMockApi } from './api.ts'
 import { loadStaticData } from './data/load.ts'
 
@@ -57,15 +57,53 @@ describe('existing endpoints match the Go backend', () => {
   it('serves the seeded reference data with the same ids', () => {
     expect(json<unknown[]>('GET', '/api/pickup-points', PASSENGER)[0]).toEqual({ id: 1, name: '松山車站', lat: 25.049806, lng: 121.578206, radius_m: 80 })
     expect(json<unknown[]>('GET', '/api/bus-stops', PASSENGER)).toHaveLength(97)
-    expect(json<unknown[]>('GET', '/api/tags', PASSENGER)[0]).toEqual({ id: 1, name: '不抽菸', issuer: 'self', selected: false })
   })
 
-  it('selects and deselects tags', () => {
-    expect(call('PUT', '/api/me/tags/2', PASSENGER).status).toBe(204)
-    expect(json<{ id: number; selected: boolean }[]>('GET', '/api/tags', PASSENGER)[1].selected).toBe(true)
-    expect(call('DELETE', '/api/me/tags/2', PASSENGER).status).toBe(204)
+  it('serves the tag list of T43’s migration in the caller’s role’s wording (REQ-086, DD-42)', () => {
+    const words = (auth: string) => json<Tag[]>('GET', '/api/tags', auth).map((t) => [t.id, t.applies_to, t.self_label, t.filter_label])
+    // 可帶寵物 (5) and 女性友善 (6) were dropped; the other ids stay.
+    expect(words(DRIVER)).toEqual([
+      [1, 'both', '我不抽菸', '不抽菸的乘客'],
+      [2, 'driver', '車上能放大件行李', null],
+      [3, 'both', '開車喜歡安靜', '喜歡安靜的乘客'],
+      [4, 'both', '可以聊天', '可以聊天的乘客'],
+    ])
+    expect(words(PASSENGER)).toEqual([
+      [1, 'both', '我不抽菸', '不抽菸'],
+      [2, 'driver', null, '能放大件行李'],
+      [3, 'both', '喜歡安靜', '安靜坐車'],
+      [4, 'both', '可以聊天', '可以聊天'],
+    ])
+  })
+
+  it('selects and deselects tags, only those of the caller’s role (REQ-008)', () => {
+    expect(call('PUT', '/api/me/tags/3', PASSENGER).status).toBe(204)
+    expect(json<Tag[]>('GET', '/api/tags', PASSENGER)[2].selected).toBe(true)
+    expect(call('DELETE', '/api/me/tags/3', PASSENGER).status).toBe(204)
+    expect(call('PUT', '/api/me/tags/2', PASSENGER)).toMatchObject({ status: 400, body: { error: { code: 'tag_not_applicable' } } })
+    expect(call('PUT', '/api/me/tags/2', DRIVER).status).toBe(204)
+    expect(call('DELETE', '/api/me/tags/2', DRIVER).status).toBe(204)
     expect(call('PUT', '/api/me/tags/abc', PASSENGER).status).toBe(400)
-    expect(call('PUT', '/api/me/tags/99999999', PASSENGER).status).toBe(404)
+    expect(call('PUT', '/api/me/tags/6', PASSENGER).status).toBe(404)
+  })
+
+  it('takes filters only on the other side’s tags, a driver’s only required (REQ-013, REQ-085, DD-42)', () => {
+    const tags = (required: string) => SUPPLY.replace('required_tags=', `required_tags=${required}`)
+    expect(call('GET', tags('2'), PASSENGER).status).toBe(200)
+    expect(call('GET', tags('6'), PASSENGER)).toMatchObject({ status: 400, body: { error: { code: 'invalid_tag' } } })
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, tag_filters: [{ tag_id: 2, intent: 'required' }] })).toMatchObject({
+      status: 400,
+      body: { error: { code: 'tag_not_applicable' } },
+    })
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, tag_filters: [{ tag_id: 1, intent: 'preferred' }] })).toMatchObject({
+      status: 400,
+      body: { error: { code: 'intent_not_allowed' } },
+    })
+    expect(call('POST', '/api/driver/trips', DRIVER, { ...DEPARTURE, tag_filters: [{ tag_id: 1, intent: 'required' }] }).status).toBe(201)
+  })
+
+  it('driver4’s last departure carries no 只載 filter (DD-42)', () => {
+    expect(json<TripDefaults>('GET', '/api/driver/trips/defaults', DRIVER).tag_filters).toEqual([])
   })
 })
 

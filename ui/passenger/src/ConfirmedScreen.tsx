@@ -78,7 +78,7 @@ export function ConfirmedScreen({ request, celebrate, busy, onBoarded }: Confirm
             <p className="mt-3 flex flex-wrap items-center gap-2 text-base">
               駕駛與你同企業：{DEMO_COMPANY_NAME} <SimulatedBadge />
             </p>
-            {request.relaxed && <p className="mt-3 text-sm text-fg-soft">這台車不完全符合你的建議標籤</p>}
+            {request.relaxed && <p className="mt-3 text-sm text-fg-soft">這台車沒有全部符合你選「最好」的條件</p>}
           </div>
 
           <div className={`mt-6 border-t border-line pt-4 ${celebrate ? 'route-draw' : ''}`}>
