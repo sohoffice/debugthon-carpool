@@ -1,5 +1,6 @@
 import {
   ApiError,
+  CommuteInfo,
   PhoneShell,
   useMyTags,
   type BusStop,
@@ -49,6 +50,7 @@ export function App() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [reporting, setReporting] = useState(false)
+  const [commuteOpen, setCommuteOpen] = useState(false)
   const myTags = useMyTags(api)
   const { presetId, setPresetId, position } = useCurrentPosition(pickupPoints)
 
@@ -164,6 +166,7 @@ export function App() {
         busStops={busStops}
         myTags={myTags}
         onDone={(s) => (setSearch(s), setView({ kind: 'supply', notice: null }))}
+        onOpenCommute={() => setCommuteOpen(true)}
       />
     )
   } else {
@@ -197,6 +200,8 @@ export function App() {
   return (
     <PhoneShell roleLabel="乘客" tone="dark">
       {screen}
+      {/* Over the destination screen, which keeps what was typed for the back button (SC-X4). */}
+      {commuteOpen && <CommuteInfo api={api} ground="light" defaultPickupId={pickup?.id ?? null} onBack={() => setCommuteOpen(false)} />}
       {DEBUG && <PassengerDebugMode presetId={presetId} position={position} reporting={reporting} onPreset={setPresetId} />}
     </PhoneShell>
   )

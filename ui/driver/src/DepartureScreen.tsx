@@ -6,6 +6,7 @@ import {
   DEMO_COMPANY_NAME,
   ErrorNote,
   filterTags,
+  PickupEditor,
   PlaceSearch,
   RouteMap,
   RouteStrip,
@@ -28,7 +29,6 @@ import { AccountTag } from './AccountTag'
 import { CapacityStepper } from './CapacityStepper'
 import { api } from './config'
 import { draftFrom, hasDefaults, toSettings, type DepartureDraft } from './departureDraft'
-import { PickupEditor } from './PickupEditor'
 import { RoutePlaceholder } from './RoutePlaceholder'
 import { SettingLine, SettingRow } from './SettingRow'
 

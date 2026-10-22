@@ -1,4 +1,5 @@
 import type { Me, MockScenario, MockStatus } from '../../shared/src/api/types.ts'
+import { createCommute } from './commute.ts'
 import { SCENARIOS } from './config.ts'
 import { buildLookups } from './context.ts'
 import type { StaticData } from './data/load.ts'
@@ -83,6 +84,12 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
   // Saved route previews (T26, DD-21). Like the Go backend, a reset does not clear them.
   const previews = new Map<number, { driverId: number; pickupPointId: number; lat: number; lng: number; used: boolean }>()
   const now = () => clock() + world.clockOffsetMs
+  const commute = createCommute(now)
+  /** Today's completed rides at a pickup point, by the request's real Taipei date (commute_real_rides). */
+  const realRidesToday = (pickupPointId: number) => {
+    const day = (ms: number) => new Date(ms + 8 * 3600 * 1000).toISOString().slice(0, 10)
+    return world.requests.filter((r) => r.status === 'completed' && r.pickupPointId === pickupPointId && day(r.createdAtMs) === day(now())).length
+  }
 
   const reset = (scenario: MockScenario) => {
     world = initialWorld(lookups, scenario, clock())
@@ -304,6 +311,23 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
         const id = previews.size + 1
         previews.set(id, { driverId: user.id, pickupPointId: req.pickup_point_id, lat: req.destination.lat, lng: req.destination.lng, used: false })
         return ok({ preview_id: id, route: buildTripPath(lookups, lookups.pickupById.get(req.pickup_point_id)!, req.destination).route })
+      },
+    },
+
+    // ---- Commute info (T36, T37; DD-38, DD-41)
+    { method: 'GET', pattern: '/api/commute/weather', access: 'any', run: () => ok(commute.weather()) },
+    { method: 'GET', pattern: '/api/commute/traffic', access: 'any', run: () => ok(commute.traffic()) },
+    {
+      method: 'GET',
+      pattern: '/api/commute/pickup-rides',
+      access: 'any',
+      run: ({ query }) => {
+        const raw = query.get('pickup_point_id') ?? ''
+        if (!/^[+-]?\d+$/.test(raw)) throw new MockError(400, 'invalid_request', '需要 pickup_point_id')
+        const id = Number(raw)
+        const body = commute.pickupRides(id, query, realRidesToday(id))
+        if (!lookups.pickupById.has(id)) throw new MockError(404, 'not_found', '找不到上車點')
+        return ok(body)
       },
     },
 

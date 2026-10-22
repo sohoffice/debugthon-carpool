@@ -150,7 +150,8 @@ function fakeBackend(
     if (path === '/driver/profile') {
       if (driverInfoDown.value) return reply({ error: { code: 'internal', message: 'down' } }, 500)
       const balance = points.reduce((sum, p) => sum + p.delta, 0)
-      return reply({ display_name: '駕駛 阿丁', usual_pickup_point: null, usual_destination: null, capacity: null, vehicle, point_balance: balance })
+      // The usual pickup point is 台北世貿中心, so commute info shows it opens there (DD-38).
+      return reply({ display_name: '駕駛 阿丁', usual_pickup_point: PICKUP_POINTS[1], usual_destination: null, capacity: null, vehicle, point_balance: balance })
     }
     if (path === '/driver/points') return reply({ points: points.slice(0, 5) })
     // Like the backend's park boundary: north of the pickup points.
@@ -534,6 +535,8 @@ describe('driver App', () => {
       // No account tag, so no driver drawer (DD-35, REQ-066).
       expect(screen.queryByRole('button', { name: /駕駛資訊/ })).not.toBeInTheDocument()
       expect(screen.queryByRole('dialog', { name: '駕駛資訊' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '通勤資訊' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: '通勤資訊' })).not.toBeInTheDocument()
     }
     // A request, with a passenger already on board.
     await screen.findByRole('heading', { name: '有乘客要搭車' })
@@ -705,6 +708,39 @@ describe('driver App', () => {
       await openDrawer()
       fireEvent.click(screen.getByRole('button', { name: '關閉駕駛資訊' }))
       await waitFor(() => expect(isOpen()).toBe(false))
+    })
+
+    it('opens commute info from the drawer on the usual pickup point; back returns to the departure screen with the drawer closed (DD-38, SC-X4)', async () => {
+      const calls = fakeBackend([NO_TRIP])
+      render(<App />)
+      const drawer = await openDrawer()
+      await within(drawer).findByText('ABC-0004')
+      fireEvent.click(within(drawer).getByRole('button', { name: '通勤資訊' }))
+
+      expect(await screen.findByRole('heading', { name: '通勤資訊' })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: /上車點\s*台北世貿中心/ })).toBeInTheDocument()
+      await waitFor(() => expect(calls.some((c) => c.path.startsWith('/commute/pickup-rides?pickup_point_id=2&'))).toBe(true))
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '駕駛資訊' })).not.toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: '返回' }))
+      expect(screen.queryByRole('heading', { name: '通勤資訊' })).not.toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: '駕駛資訊' })).not.toBeInTheDocument()
+    })
+
+    it('a trip starting elsewhere closes commute info, and it has no entry while driving (REQ-066, DD-04)', async () => {
+      fakeBackend([NO_TRIP, NO_TRIP, DRIVING])
+      render(<App />)
+      const drawer = await openDrawer()
+      await within(drawer).findByText('ABC-0004')
+      fireEvent.click(within(drawer).getByRole('button', { name: '通勤資訊' }))
+      expect(await screen.findByRole('heading', { name: '通勤資訊' })).toBeInTheDocument()
+
+      await nextPoll()
+      await nextPoll()
+      expect(await screen.findByRole('heading', { name: /目前沒有/ })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: '通勤資訊' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '通勤資訊' })).not.toBeInTheDocument()
     })
 
     it('a failed load says so briefly and keeps the last data', async () => {

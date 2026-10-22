@@ -28,7 +28,16 @@ function formatTime(iso: string): string {
  * finished shows on top. A failed load keeps the last data. The App closes it whenever a trip runs
  * (DD-04, REQ-066). Closes on the scrim, the × or a swipe to the left.
  */
-export function DriverDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function DriverDrawer({
+  open,
+  onClose,
+  onOpenCommute,
+}: {
+  open: boolean
+  onClose: () => void
+  /** Opens commute info on the usual pickup point (DD-38); null before the first ride. */
+  onOpenCommute: (usualPickupId: number | null) => void
+}) {
   const [info, setInfo] = useState<DriverInfo | null>(null)
   const [error, setError] = useState(false)
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
@@ -98,8 +107,32 @@ export function DriverDrawer({ open, onClose }: { open: boolean; onClose: () => 
           </div>
         )}
         {info && <DriverInfoBody info={info} />}
+        {/* Pinned to the drawer's bottom (SC-D5, UD-24). */}
+        <button
+          type="button"
+          onClick={() => onOpenCommute(info?.profile.usual_pickup_point?.id ?? null)}
+          className="mt-auto flex min-h-[60px] shrink-0 items-center gap-3 rounded-sign-button border-2 border-line pr-3.5 pl-4 text-lg font-semibold"
+        >
+          <HeatMark />
+          通勤資訊
+          <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="ml-auto size-5 text-fg-soft">
+            <path d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
       </section>
     </div>
+  )
+}
+
+/** A small slice of the rides heat grid, the entry's icon (dark scale on asphalt). */
+function HeatMark() {
+  const steps = ['bg-ride-dark-2', 'bg-ride-dark-4', 'bg-ride-dark-6', 'bg-ride-dark-3', 'bg-ride-dark-5', 'bg-ride-dark-6', 'bg-ride-dark-4', 'bg-ride-dark-2']
+  return (
+    <span aria-hidden className="grid shrink-0 grid-cols-[repeat(4,6px)] gap-[2px]">
+      {steps.map((c, i) => (
+        <i key={i} className={`h-1.5 rounded-[1px] ${c}`} />
+      ))}
+    </span>
   )
 }
 
