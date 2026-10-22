@@ -110,6 +110,8 @@ interface Backend {
   /** Served in order for GET /passenger/requests/7; the last one repeats. An action moves on to its own. */
   statuses?: RequestStatusView[]
   actions?: Record<string, RequestStatusView>
+  /** The passenger's own tags; PUT and DELETE /me/tags/:id change them (REQ-008). */
+  myTags?: number[]
 }
 
 /** GET /api/tags for a passenger (T43's migration, DD-42): passenger wording, 可載行李 only to filter by. */
@@ -120,7 +122,8 @@ const PASSENGER_TAGS: Tag[] = [
   { id: 4, name: '可聊天', issuer: 'self', applies_to: 'both', self_label: '可以聊天', filter_label: '可以聊天', selected: false },
 ]
 
-function fakeBackend({ profile = PROFILE, simulated, outsidePark = false, current = [null], statuses = [request({})], actions = {} }: Backend) {
+function fakeBackend({ profile = PROFILE, simulated, outsidePark = false, current = [null], statuses = [request({})], actions = {}, myTags = [] }: Backend) {
+  let mine = myTags
   const profiles = Array.isArray(profile) ? profile : [profile]
   let profileIndex = 0
   const calls: { method: string; path: string; body: unknown }[] = []
@@ -137,7 +140,15 @@ function fakeBackend({ profile = PROFILE, simulated, outsidePark = false, curren
       const pathname = path.split('?')[0]
       if (pathname === '/pickup-points') return reply([SONGSHAN, WTC])
       if (pathname === '/bus-stops') return reply([STOP])
-      if (pathname === '/tags') return reply(PASSENGER_TAGS)
+      if (pathname === '/tags') return reply(PASSENGER_TAGS.map((t) => ({ ...t, selected: mine.includes(t.id) })))
+      // Like the backend: a passenger cannot pick a driver-only tag (REQ-008, DD-42).
+      const myTag = pathname.match(/^\/me\/tags\/(\d+)$/)
+      if (myTag) {
+        const id = Number(myTag[1])
+        if (!PASSENGER_TAGS.some((t) => t.id === id && t.self_label !== null)) return reply({ error: { code: 'tag_not_applicable', message: '這個標籤不適用' } }, 400)
+        mine = method === 'PUT' ? [...mine.filter((m) => m !== id), id] : mine.filter((m) => m !== id)
+        return new Response(null, { status: 204 })
+      }
       if (pathname === '/passenger/profile') return reply(profiles[Math.min(profileIndex++, profiles.length - 1)])
       if (pathname === '/passenger/requests/current') return reply({ request: current[Math.min(currentIndex++, current.length - 1)] })
       if (pathname === '/passenger/requests/7') return reply(acted ?? statuses[Math.min(statusIndex++, statuses.length - 1)])
@@ -533,6 +544,68 @@ describe('passenger App', () => {
         { tag_id: 3, intent: 'preferred' },
       ],
     })
+  })
+
+  it('the send sheet sums up 關於我 in the passenger’s words above 這趟車要 (REQ-086, DD-42)', async () => {
+    fakeBackend({ myTags: [1] })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    const sheet = screen.getByRole('dialog', { name: '送出搭車請求' })
+    const edit = within(sheet).getByRole('button', { name: '修改' })
+    await waitFor(() => expect(edit.parentElement?.textContent).toBe('關於我我不抽菸修改'))
+    expect(edit.parentElement!.compareDocumentPosition(within(sheet).getByRole('heading', { name: '這趟車要' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Folded until 修改 is pressed.
+    expect(within(sheet).queryByRole('group', { name: '關於我' })).not.toBeInTheDocument()
+  })
+
+  it('the send sheet says 不限 when the passenger has no tags (REQ-086)', async () => {
+    fakeBackend({})
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    const sheet = screen.getByRole('dialog', { name: '送出搭車請求' })
+    await waitFor(() => expect(within(sheet).getByRole('button', { name: '修改' }).parentElement?.textContent).toBe('關於我不限修改'))
+  })
+
+  it('修改 in the send sheet lists only passenger tags, without the driver-only one (REQ-008, DD-42)', async () => {
+    fakeBackend({ myTags: [1] })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    const sheet = screen.getByRole('dialog', { name: '送出搭車請求' })
+    fireEvent.click(within(sheet).getByRole('button', { name: '修改' }))
+    const about = within(sheet).getByRole('group', { name: '關於我' })
+    expect(within(about).getAllByRole('button').map((b) => b.textContent)).toEqual(['我不抽菸', '喜歡安靜', '可以聊天'])
+    expect(within(about).getByRole('button', { name: '我不抽菸' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(about).queryByText(/大件行李/)).not.toBeInTheDocument()
+  })
+
+  it('a tag picked in the send sheet is saved to the passenger before the request, and shows on the destination setup (REQ-008, REQ-040)', async () => {
+    const calls = fakeBackend({ myTags: [1] })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    let sheet = screen.getByRole('dialog', { name: '送出搭車請求' })
+    fireEvent.click(within(sheet).getByRole('button', { name: '修改' }))
+    fireEvent.click(within(within(sheet).getByRole('group', { name: '關於我' })).getByRole('button', { name: '喜歡安靜' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT' && c.path === '/me/tags/3')).toBe(true))
+    expect(within(sheet).getByRole('button', { name: '修改' }).parentElement?.textContent).toBe('關於我我不抽菸、喜歡安靜修改')
+
+    // Back out and open the destination setup: the same tags (one record per user, DD-42).
+    fireEvent.click(within(sheet).getByRole('button', { name: '先不要' }))
+    fireEvent.click(screen.getByRole('button', { name: '修改' }))
+    const about = await screen.findByRole('group', { name: '關於我' })
+    expect(within(about).getByRole('button', { name: '喜歡安靜' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(about).getByRole('button', { name: '我不抽菸' })).toHaveAttribute('aria-pressed', 'true')
+
+    // The request goes out after the save; the backend matches on the saved tags, so the body is unchanged (REQ-040).
+    fireEvent.click(screen.getByRole('button', { name: '查看接近的車' }))
+    fireEvent.click(await screen.findByRole('button', { name: '今天我要搭' }))
+    sheet = screen.getByRole('dialog', { name: '送出搭車請求' })
+    fireEvent.click(within(sheet).getByRole('button', { name: '送出請求' }))
+    await screen.findByRole('heading', { name: '正在等駕駛確認' })
+    const put = calls.findIndex((c) => c.method === 'PUT' && c.path === '/me/tags/3')
+    const sent = calls.findIndex((c) => c.method === 'POST' && c.path === '/passenger/requests')
+    expect(put).toBeGreaterThanOrEqual(0)
+    expect(sent).toBeGreaterThan(put)
+    expect(Object.keys(calls[sent].body as object)).not.toContain('tags')
   })
 
   it('drops a remembered filter a passenger can no longer use, so the board and the request still work (REQ-085, DD-42)', async () => {
