@@ -427,6 +427,8 @@ func TestPickupRidesReassignedRequestCountsOnce(t *testing.T) {
 	e.answer(t, "decline", r.ID, e.driverToken(t, first), http.StatusOK)
 	e.answer(t, "accept", r.ID, e.driverToken(t, second), http.StatusOK)
 	e.passengerAct(t, "complete", r.ID, e.token, http.StatusOK)
+	// The database stamps the real time; pin it to the pinned day, as completeRealRide does.
+	mustExec(t, e.tx, `UPDATE ride_requests SET created_at = $1 WHERE id = $2`, taipeiTime(t, "2026-10-22 08:20"), r.ID)
 	after := getPickupRides(t, e.tx, real, e.pickupID, "08:00", "08:30")
 	if got := todayCell(after, "08:15"); got != todayCell(before, "08:15")+1 {
 		t.Errorf("08:15 = %d, want %d", got, todayCell(before, "08:15")+1)
