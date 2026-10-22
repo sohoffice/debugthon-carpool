@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { api, DEBUG, POLL_INTERVAL_MS } from './config'
 import { DriverDebugMode } from './DriverDebugMode'
 import { DepartureScreen } from './DepartureScreen'
+import { DriverDrawer } from './DriverDrawer'
 import { LoadingScreen } from './LoadingScreen'
 import { TripEndedScreen } from './TripEndedScreen'
 import { TripIdleScreen } from './TripIdleScreen'
@@ -18,9 +19,14 @@ export function App() {
   const [runningId, setRunningId] = useState<number | null>(null)
   const [ended, setEnded] = useState<TripView | null>(null)
   const [busy, setBusy] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   useEffect(() => {
-    if (tripId !== null && tripId !== runningId) setRunningId(tripId)
+    if (tripId !== null && tripId !== runningId) {
+      setRunningId(tripId)
+      // A trip started (here or elsewhere): no drawer while driving, and none reopening after (DD-04).
+      setDrawerOpen(false)
+    }
     if (tripId === null && runningId !== null) {
       // The running trip is gone: it ended by itself at the destination (UD-16, DD-30), or a Demo
       // reset cancelled it (DD-29), which goes straight back to the departure screen.
@@ -77,7 +83,7 @@ export function App() {
       />
     )
   } else if (ended) {
-    screen = <TripEndedScreen trip={ended} onDone={() => setEnded(null)} />
+    screen = <TripEndedScreen trip={ended} onDone={() => setEnded(null)} onOpenDrawer={() => setDrawerOpen(true)} />
   } else {
     // The status bar sits over the map, which is light.
     tone = 'dark'
@@ -86,6 +92,7 @@ export function App() {
         // A trip that just started has no requests or passengers yet.
         onDeparted={(started) => polling.mutate({ trip_id: started.id, pending: [], passengers: [] })}
         onAlreadyActive={() => fetchRequests().then(polling.mutate, () => undefined)}
+        onOpenDrawer={() => setDrawerOpen(true)}
       />
     )
   }
@@ -93,6 +100,8 @@ export function App() {
   return (
     <PhoneShell roleLabel="駕駛" tone={tone}>
       {screen}
+      {/* Kept mounted so a failed reload keeps the last data; never open while a trip runs (DD-04, DD-35). */}
+      <DriverDrawer open={drawerOpen && tripId === null && polling.data !== undefined} onClose={() => setDrawerOpen(false)} />
       {DEBUG && <DriverDebugMode />}
     </PhoneShell>
   )

@@ -63,14 +63,15 @@ function reassign(world: World, lookups: Lookups, request: RideRequest, now: num
   return assignFrom(counted, lookups, request.id, request.candidateIndex + 1, now)
 }
 
-function finishRide(world: World, request: RideRequest, now: number): World {
+function finishRide(world: World, lookups: Lookups, request: RideRequest, now: number): World {
   const tripId = assignedTripId(request)!
   const trip = findTrip(world, tripId)!
   const freed = updateTrip(moveSeat(world, tripId, 'confirmed', null), tripId, (t) => ({ ...t, completedCount: t.completedCount + 1 }))
   const done = updateRequest(freed, request.id, (r) => ({ ...r, status: 'completed', completedAtMs: now }))
-  // Habitual data is updated from completed rides (DD-19).
+  // Habitual data is updated from completed rides (DD-19), and the driver is credited (REQ-072, DD-34).
   return {
     ...done,
+    points: [...done.points, { driverId: trip.driverId, delta: lookups.settings.points_per_ride, reason: 'ride', requestId: request.id, atMs: now }],
     driverProfiles: {
       ...done.driverProfiles,
       [trip.driverId]: { pickupPointId: trip.pickupPointId, destination: trip.destination, capacity: trip.capacity },
@@ -111,7 +112,7 @@ function endTrip(world: World, lookups: Lookups, tripId: number, now: number): W
   const ended = updateTrip(world, tripId, (t) => ({ ...t, status: 'completed', endedAtMs: now }))
   const onTrip = ended.requests.filter((r) => assignedTripId(r) === tripId)
   const settled = onTrip.reduce((w, r) => {
-    if (r.status === 'confirmed' || r.status === 'boarded') return finishRide(w, r, now)
+    if (r.status === 'confirmed' || r.status === 'boarded') return finishRide(w, lookups, r, now)
     if (r.status === 'waiting_driver') return reassign(w, lookups, r, now)
     return w
   }, ended)
@@ -193,18 +194,18 @@ export function boardRide(world: World, request: RideRequest, now: number): Worl
 }
 
 /** Either side can end a ride, boarded or not; the first one wins, the second gets its result (DD-23). */
-export function completeRide(world: World, request: RideRequest, now: number): World {
+export function completeRide(world: World, lookups: Lookups, request: RideRequest, now: number): World {
   if (request.status === 'completed') return world
   if (request.status !== 'confirmed' && request.status !== 'boarded') throw invalidState()
-  return finishRide(world, request, now)
+  return finishRide(world, lookups, request, now)
 }
 
 export function driverBoardRide(world: World, driverId: number, requestId: number, now: number): World {
   return boardRide(world, driverRequest(world, driverId, requestId), now)
 }
 
-export function driverCompleteRide(world: World, driverId: number, requestId: number, now: number): World {
-  return completeRide(world, driverRequest(world, driverId, requestId), now)
+export function driverCompleteRide(world: World, lookups: Lookups, driverId: number, requestId: number, now: number): World {
+  return completeRide(world, lookups, driverRequest(world, driverId, requestId), now)
 }
 
 // ---------------------------------------------------------------- passenger actions

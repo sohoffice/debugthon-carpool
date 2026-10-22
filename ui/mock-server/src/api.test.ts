@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { CurrentRequest, DriverRequests, RequestStatusView, RequestView, Supply, TripDefaults, TripView } from '../../shared/src/api/types.ts'
+import type { CurrentRequest, DriverPoints, DriverProfile, DriverRequests, RequestStatusView, RequestView, Supply, TripDefaults, TripView } from '../../shared/src/api/types.ts'
 import { createMockApi } from './api.ts'
 import { loadStaticData } from './data/load.ts'
 
@@ -293,5 +293,53 @@ describe('request flow matches the Go backend (T11-T13)', () => {
     expect(call('POST', '/api/demo/reset').status).toBe(204)
     expect(driverRequests().trip_id).toBeNull()
     expect(json<Supply>('GET', SUPPLY, PASSENGER).card.count).toBe(3)
+  })
+})
+
+describe('driver points match the Go backend (T35, DD-34, DD-35)', () => {
+  const points = (qs = '') => json<DriverPoints>('GET', `/api/driver/points${qs}`, DRIVER).points
+  const profile = () => json<DriverProfile>('GET', '/api/driver/profile', DRIVER)
+
+  it('seeds driver4 with 8 rows of 10 and returns the latest 5, newest first', () => {
+    expect(profile()).toMatchObject({ vehicle: { plate: 'ABC-0004', description: '藍色 Mazda 3' }, point_balance: 80 })
+    const latest = points()
+    expect(latest).toHaveLength(5)
+    expect(latest[0]).toEqual({ delta: 10, reason: 'seed', service_record_id: null, created_at: expect.any(String) })
+    expect(latest.map((p) => Date.parse(p.created_at))).toEqual([...latest.map((p) => Date.parse(p.created_at))].sort((a, b) => b - a))
+    expect(points('?limit=50')).toHaveLength(8)
+    expect(json<DriverProfile>('GET', '/api/driver/profile', 'Bearer driver:driver5').point_balance).toBe(10)
+  })
+
+  it('checks limit and the caller like Go', () => {
+    expect(points('?limit=1')).toHaveLength(1)
+    for (const bad of ['0', '51', 'abc', '2.5']) {
+      expect(call('GET', `/api/driver/points?limit=${bad}`, DRIVER)).toMatchObject({ status: 400, body: { error: { code: 'invalid_request' } } })
+    }
+    expect(call('GET', '/api/driver/points').status).toBe(401)
+    expect(call('GET', '/api/driver/points', PASSENGER).status).toBe(403)
+  })
+
+  it('credits points_per_ride once per finished ride, newest on top, and reset restores the seed (REQ-072)', () => {
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const { id } = submit()
+    call('POST', `/api/driver/requests/${id}/accept`, DRIVER)
+    // REQ-075: what the passenger sees of the car carries no points.
+    expect(JSON.stringify(statusOf(id))).not.toMatch(/point_balance|"points"/)
+    call('POST', `/api/driver/requests/${id}/complete`, DRIVER)
+    call('POST', `/api/passenger/requests/${id}/complete`, PASSENGER)
+    expect(profile().point_balance).toBe(90)
+    expect(points()[0]).toEqual({ delta: 10, reason: 'ride', service_record_id: id, created_at: new Date(clock).toISOString() })
+
+    call('POST', '/api/demo/reset')
+    expect(profile().point_balance).toBe(80)
+    expect(points()[0].reason).toBe('seed')
+  })
+
+  it('credits the rides a trip finishes at its destination (UD-16)', () => {
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const { id } = submit()
+    call('POST', `/api/driver/requests/${id}/accept`, DRIVER)
+    advance(3600)
+    expect(profile().point_balance).toBe(90)
   })
 })

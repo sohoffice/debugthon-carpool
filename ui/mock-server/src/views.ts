@@ -1,4 +1,5 @@
 import type {
+  DriverPoints,
   DriverProfile,
   DriverRequestItem,
   DriverRequests,
@@ -38,6 +39,20 @@ export function driverProfileView(world: World, lookups: Lookups, userId: number
     usual_pickup_point: p ? mustGet(lookups.pickupById, p.pickupPointId, 'pickup point') : null,
     usual_destination: p?.destination ?? null,
     capacity: p?.capacity ?? null,
+    vehicle: lookups.data.seed.vehicles[mustGet(lookups.userById, userId, 'user').username] ?? null,
+    point_balance: world.points.filter((r) => r.driverId === userId).reduce((sum, r) => sum + r.delta, 0),
+  }
+}
+
+/** Newest first, like ORDER BY created_at DESC, id DESC (REQ-074, DD-35). */
+export function driverPointsView(world: World, userId: number, limit: number): DriverPoints {
+  const mine = world.points.filter((r) => r.driverId === userId)
+  return {
+    points: mine
+      .map((r, i) => ({ r, i }))
+      .sort((a, b) => b.r.atMs - a.r.atMs || b.i - a.i)
+      .slice(0, limit)
+      .map(({ r }) => ({ delta: r.delta, reason: r.reason, service_record_id: r.requestId, created_at: iso(r.atMs) })),
   }
 }
 

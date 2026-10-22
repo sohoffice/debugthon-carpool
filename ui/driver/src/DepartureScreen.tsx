@@ -38,6 +38,8 @@ const isOutsidePark = (err: unknown) => err instanceof ApiError && err.code === 
 
 interface DepartureScreenProps {
   onDeparted: (trip: TripView) => void
+  /** Opens the driver drawer from the account tag (DD-35). */
+  onOpenDrawer: () => void
   /** Another departure is already running (409 already_active): show it. */
   onAlreadyActive: () => void
 }
@@ -51,7 +53,7 @@ async function loadDraft(): Promise<DepartureDraft | null> {
 }
 
 /** 6.1: confirm today's settings and go. One tap when nothing changed (REQ-017). */
-export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreenProps) {
+export function DepartureScreen({ onDeparted, onAlreadyActive, onOpenDrawer }: DepartureScreenProps) {
   const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([])
   const [draft, setDraft] = useState<DepartureDraft>(() => draftFrom(null, null))
   const [loaded, setLoaded] = useState(false)
@@ -134,7 +136,7 @@ export function DepartureScreen({ onDeparted, onAlreadyActive }: DepartureScreen
           pickupOptions={open.includes('pickup') ? pickupPoints : []}
           padding={{ top: 72, right: 48, bottom: 120, left: 48 }} />
       </div>
-      <AccountTag />
+      <AccountTag onOpen={onOpenDrawer} />
 
       <div className="pointer-events-none absolute inset-x-0 top-(--safe-top) bottom-0 overflow-y-auto overscroll-contain">
         <div className="h-[34%]" />

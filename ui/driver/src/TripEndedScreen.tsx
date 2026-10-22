@@ -1,4 +1,5 @@
 import { Button, type TripView } from '@carpool/shared'
+import { AccountTag } from './AccountTag'
 import { ModeLabel } from './ModeLabel'
 import { RoadSign } from './RoadSign'
 
@@ -14,10 +15,14 @@ function Seats({ capacity, rides }: { capacity: number; rides: number }) {
 }
 
 /** 6.4: shown once after the trip ended by itself at the destination (UD-16). No longer driving. */
-export function TripEndedScreen({ trip, onDone }: { trip: TripView; onDone: () => void }) {
+export function TripEndedScreen({ trip, onDone, onOpenDrawer }: { trip: TripView; onDone: () => void; onOpenDrawer: () => void }) {
   return (
     <main className="ground-asphalt flex h-full flex-col bg-canvas px-6 pt-[calc(var(--safe-top)+28px)] pb-(--safe-bottom)">
-      <ModeLabel>行程結束</ModeLabel>
+      {/* The same account tag as the departure screen: the drawer's other entry (DD-35). */}
+      <div className="flex items-center justify-between gap-3">
+        <ModeLabel>行程結束</ModeLabel>
+        <AccountTag onOpen={onOpenDrawer} className="shrink-0" />
+      </div>
       <RoadSign className="mt-7 px-7 pt-7 pb-7">
         <h1 className="text-xl font-semibold text-fg-soft">已到達目的地</h1>
         <p className="lettering-sign mt-2 text-[42px]/[1.15] font-semibold break-words">{trip.destination.name}</p>

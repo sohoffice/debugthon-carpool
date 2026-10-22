@@ -22,6 +22,7 @@ import { insidePark } from './park.ts'
 import { buildTripPath } from './tripPath.ts'
 import { departureSettings, idParam, locationBody, parkCheckQuery, requestSubmission, routePreviewRequest, supplyQuery } from './validate.ts'
 import {
+  driverPointsView,
   driverProfileView,
   driverRequestsView,
   passengerProfileView,
@@ -134,6 +135,18 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       },
     },
     { method: 'GET', pattern: '/api/driver/profile', access: 'driver', run: ({ user }) => ok(driverProfileView(world, lookups, user.id)) },
+    {
+      method: 'GET',
+      pattern: '/api/driver/points',
+      access: 'driver',
+      run: ({ user, query }) => {
+        // Like Go's strconv.Atoi on a non-empty limit; the drawer shows the default 5 (DD-35).
+        const raw = query.get('limit') || '5'
+        const limit = Number(raw)
+        if (!/^[+-]?\d+$/.test(raw) || limit < 1 || limit > 50) throw new MockError(400, 'invalid_request', 'limit 須為 1 到 50 的整數')
+        return ok(driverPointsView(world, user.id, limit))
+      },
+    },
     { method: 'GET', pattern: '/api/passenger/profile', access: 'passenger', run: ({ user }) => ok(passengerProfileView(world, lookups, user.id)) },
     {
       method: 'POST',
@@ -225,7 +238,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
           if (action === 'accept') world = accept(world, user.id, id, now())
           if (action === 'decline') world = decline(world, lookups, user.id, id, now())
           if (action === 'board') world = driverBoardRide(world, user.id, id, now())
-          if (action === 'complete') world = driverCompleteRide(world, user.id, id, now())
+          if (action === 'complete') world = driverCompleteRide(world, lookups, user.id, id, now())
           return ok(requestView(requireRequest(world, id)))
         },
       }),
@@ -271,7 +284,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
         access: 'passenger',
         run: ({ user, params }) => {
           const request = ownRequest(user.id, params[0])
-          world = action === 'board' ? boardRide(world, request, now()) : completeRide(world, request, now())
+          world = action === 'board' ? boardRide(world, request, now()) : completeRide(world, lookups, request, now())
           return ok(requestView(requireRequest(world, request.id)))
         },
       }),

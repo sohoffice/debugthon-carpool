@@ -1,4 +1,4 @@
-import type { DriverRequestItem, DriverRequests, TripDefaults, TripView } from '@carpool/shared'
+import type { DriverRequestItem, DriverRequests, PointEntry, TripDefaults, TripView } from '@carpool/shared'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -81,6 +81,15 @@ function request(change: Partial<DriverRequestItem>): DriverRequestItem {
   }
 }
 
+// driver4's seed: 8 rows of 10 points, the newest a day old (T35).
+const SEED_POINTS: PointEntry[] = Array.from({ length: 8 }, (_, i) => ({
+  delta: 10,
+  reason: 'seed',
+  service_record_id: null,
+  created_at: new Date(Date.parse('2026-10-22T00:15:00Z') - i * 24 * 3600 * 1000).toISOString(),
+}))
+const RIDE_POINTS: PointEntry = { delta: 10, reason: 'ride', service_record_id: 31, created_at: '2026-10-23T00:40:00Z' }
+
 /**
  * Answers like the Go backend. `polls` are served in order for GET /driver/requests, the last one
  * repeats; accept and board move the request like the backend does.
@@ -94,6 +103,7 @@ function fakeBackend(
     ended = trip({ status: 'completed', completed_rides: 2 }),
     refusedPreviews = [] as number[],
     autoAccept = false,
+    driverInfoDown = { value: false },
   } = {},
 ) {
   const calls: { method: string; path: string; body: unknown }[] = []
@@ -104,6 +114,7 @@ function fakeBackend(
   let polled: DriverRequests | undefined
   // The caller's tag choice is kept like the backend keeps it (PUT/DELETE /api/me/tags/:id).
   let tagSelected = false
+  let endedSeen = false
   const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
     const path = url.replace('/api', '')
     const method = init.method ?? 'GET'
@@ -112,14 +123,27 @@ function fakeBackend(
     if (path === '/driver/requests') return reply((polled = state ?? polls[Math.min(index++, polls.length - 1)]))
     if (path === '/driver/trips/defaults') return reply(defaults)
     // Trip 5 while it runs, or how it ended once the driver's poll no longer has it.
-    if (path === '/trips/5') return reply(polled?.trip_id === 5 ? trip({ auto_accept: autoAccept }) : ended)
+    if (path === '/trips/5') {
+      if (polled?.trip_id === 5) return reply(trip({ auto_accept: autoAccept }))
+      endedSeen = ended.status === 'completed' && ended.completed_rides > 0
+      return reply(ended)
+    }
     if (path === '/pickup-points') return reply(PICKUP_POINTS)
     if (path === '/tags') return reply([{ id: 1, name: '不抽菸', issuer: 'self', selected: tagSelected }])
     if (path === '/me/tags/1' && (method === 'PUT' || method === 'DELETE')) {
       tagSelected = method === 'PUT'
       return new Response(null, { status: 204 })
     }
-    if (path === '/driver/profile') return reply({ usual_pickup_point: null, usual_destination: null, capacity: null })
+    // The ledger gains this trip's ride once the trip has ended with it (REQ-072).
+    const points = endedSeen ? [RIDE_POINTS, ...SEED_POINTS] : SEED_POINTS
+    const vehicle = { plate: 'ABC-0004', description: '藍色 Mazda 3' }
+    if (path === '/driver/profile') {
+      if (driverInfoDown.value) return reply({ error: { code: 'internal', message: 'down' } }, 500)
+      const balance = points.reduce((sum, p) => sum + p.delta, 0)
+      return reply({ usual_pickup_point: null, usual_destination: null, capacity: null, vehicle, point_balance: balance })
+    }
+    if (path === '/driver/points') return reply({ points: points.slice(0, 5) })
+    if (path === '/me') return reply({ username: 'driver4', display_name: '駕駛 阿明', role: 'driver', roles: ['driver'], simulated: false })
     // Like the backend's park boundary: north of the pickup points.
     if (path.startsWith('/park/check')) return reply({ inside: Number(new URLSearchParams(path.split('?')[1]).get('lat')) > 25.05 })
     if (path === '/driver/route-preview') return reply({ preview_id: ++previews, route })
@@ -445,6 +469,9 @@ describe('driver App', () => {
       expect(screen.queryByText(/地圖未設定/)).not.toBeInTheDocument()
       expect(screen.queryByText(/設定|篩選乘客|可載人數|我的標籤|自動接受|結束行程/)).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: '除錯' })).not.toBeInTheDocument()
+      // No account tag, so no driver drawer (DD-35, REQ-066).
+      expect(screen.queryByRole('button', { name: /駕駛資訊/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: '駕駛資訊' })).not.toBeInTheDocument()
     }
     // A request, with a passenger already on board.
     await screen.findByRole('heading', { name: '有乘客要搭車' })
@@ -520,5 +547,64 @@ describe('driver App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '好' }))
     expect(await screen.findByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
+  })
+
+  describe('driver drawer (DD-35, REQ-074)', () => {
+    const openDrawer = async () => {
+      fireEvent.click(await screen.findByRole('button', { name: /開啟駕駛資訊/ }))
+      return screen.findByRole('dialog', { name: '駕駛資訊' })
+    }
+    const rows = (drawer: HTMLElement) =>
+      within(within(drawer).getByRole('list', { name: '最近的點數紀錄' }))
+        .getAllByRole('listitem')
+        .map((li) => li.textContent)
+
+    it('opens from the departure screen with the name, vehicle, balance and latest 5 rows from the API', async () => {
+      fakeBackend([NO_TRIP])
+      render(<App />)
+      const drawer = await openDrawer()
+      expect(await within(drawer).findByRole('heading', { name: '駕駛 阿明' })).toBeInTheDocument()
+      expect(within(drawer).getByText('ABC-0004')).toBeInTheDocument()
+      expect(within(drawer).getByText('藍色 Mazda 3')).toBeInTheDocument()
+      expect(within(drawer).getByText('累積點數').nextElementSibling).toHaveTextContent('80 點')
+      // Taipei time, newest first: 10/22 08:15, then a day older each.
+      expect(rows(drawer)).toEqual(['10/22 08:15初始點數+10', '10/21 08:15初始點數+10', '10/20 08:15初始點數+10', '10/19 08:15初始點數+10', '10/18 08:15初始點數+10'])
+
+      fireEvent.click(within(drawer).getByRole('button', { name: '關閉' }))
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '駕駛資訊' })).not.toBeInTheDocument())
+    })
+
+    it('opens from the trip-ended screen too, and after a ride the balance is up with the ride on top (REQ-072)', async () => {
+      fakeBackend([DRIVING, NO_TRIP], { ended: trip({ status: 'completed', completed_rides: 1 }) })
+      render(<App />)
+      await screen.findByRole('heading', { name: /目前沒有/ })
+      await nextPoll()
+      expect(await screen.findByRole('heading', { name: '已到達目的地' })).toBeInTheDocument()
+      const onEnded = await openDrawer()
+      await waitFor(() => expect(within(onEnded).getByText('累積點數').nextElementSibling).toHaveTextContent('90 點'))
+      fireEvent.click(within(onEnded).getByRole('button', { name: '關閉' }))
+
+      fireEvent.click(screen.getByRole('button', { name: '好' }))
+      expect(await screen.findByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
+      const onDeparture = await openDrawer()
+      await waitFor(() => expect(within(onDeparture).getByText('累積點數').nextElementSibling).toHaveTextContent('90 點'))
+      expect(rows(onDeparture)[0]).toBe('10/23 08:40共乘完成+10')
+      expect(rows(onDeparture)).toHaveLength(5)
+    })
+
+    it('a failed load says so briefly and keeps the last data', async () => {
+      const driverInfoDown = { value: false }
+      fakeBackend([NO_TRIP], { driverInfoDown })
+      render(<App />)
+      let drawer = await openDrawer()
+      await within(drawer).findByText('ABC-0004')
+      fireEvent.click(within(drawer).getByRole('button', { name: '關閉' }))
+
+      driverInfoDown.value = true
+      drawer = await openDrawer()
+      expect(await within(drawer).findByRole('alert')).toHaveTextContent('無法載入駕駛資訊')
+      expect(within(drawer).getByText('ABC-0004')).toBeInTheDocument()
+      expect(within(drawer).getByText('累積點數').nextElementSibling).toHaveTextContent('80 點')
+    })
   })
 })
