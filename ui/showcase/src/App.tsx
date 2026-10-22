@@ -72,8 +72,8 @@ export function App() {
   }
 
   return (
-    <main className="flex h-dvh items-center justify-center overflow-hidden bg-paper">
-      <div style={{ width: width * scale, height: height * scale }}>
+    <main className="flex h-dvh flex-col items-center justify-center overflow-hidden bg-paper" style={{ paddingBlock: MARGIN }}>
+      <div className="shrink-0" style={{ width: width * scale, height: height * scale }}>
         <div className="relative flex" style={{ width, height, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
           {/* Past both page edges; main clips it. Same width as a station sign's white bar. */}
           <div aria-hidden className="absolute bg-brand" style={{ height: LINE, top: LABEL + LABEL_GAP + FRAME_HEIGHT / 2 - LINE / 2, left: -LINE_OVERHANG, right: -LINE_OVERHANG }} />
@@ -100,6 +100,8 @@ export function App() {
           </div>
         </div>
       </div>
+      {/* Mirrors the label row so the phones, not phones-plus-labels, sit at the window's centre; gives way first when the window is short. */}
+      <div aria-hidden className="min-h-0 shrink" style={{ height: (LABEL + LABEL_GAP) * scale }} />
     </main>
   )
 }
