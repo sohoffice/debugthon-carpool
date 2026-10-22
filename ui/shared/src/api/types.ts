@@ -376,6 +376,98 @@ export interface RoutePreview {
   route: Route
 }
 
+// ---------------------------------------------------------------- Commute info (Phase 2, DD-38, DD-41)
+
+/** A CWA automatic station observation (O-A0001-001), one copy per 15-minute slot (DD-36). */
+export interface WeatherObservation {
+  station_id: string
+  station_name: string
+  obs_time: string
+  /** e.g. 晴, 多雲, 陰, 陰有雨. */
+  weather: string
+  air_temperature: number
+  /** Millimetres in the slot. */
+  precipitation: number
+}
+
+/**
+ * GET /api/commute/weather: today's latest observation at or before now, null before the first
+ * (REQ-077). `now` and `today` are the Phase 2 now (DD-41): the UI takes its default window from
+ * here, never from the device clock.
+ */
+export interface CommuteWeather {
+  now: string
+  /** YYYY-MM-DD, Taipei. */
+  today: string
+  weather: WeatherObservation | null
+  simulated: boolean
+}
+
+export interface TrafficSlot {
+  slot_start: string
+  /** All detectors' vehicles in the slot. */
+  volume: number
+  /** Volume-weighted; null when no vehicle passed. */
+  avg_speed_kmh: number | null
+  weather: WeatherObservation
+  simulated: boolean
+}
+
+export interface TrafficDay {
+  date: string
+  /** ISO: 1 Monday .. 5 Friday. */
+  weekday: number
+  /** Slots starting 07:00-09:45; empty for a workday without data. */
+  slots: TrafficSlot[]
+}
+
+/** GET /api/commute/traffic: the past 10 workdays before today, newest first (REQ-077, DD-41). */
+export interface CommuteTraffic {
+  now: string
+  today: string
+  days: TrafficDay[]
+  simulated: boolean
+}
+
+export interface RideSlot {
+  slot_start: string
+  ride_count: number
+  /** The traffic table's weather for the slot (REQ-083); null when not observed yet. */
+  weather: WeatherObservation | null
+  simulated: boolean
+}
+
+export interface RideDay {
+  date: string
+  weekday: number
+  slots: RideSlot[]
+}
+
+/** Rides in from-to (from included, to not) per day, over all days and over today's weekday's. */
+export interface RideSummary {
+  from: string
+  to: string
+  daily_avg: number
+  /** Today's ISO weekday. */
+  weekday: number
+  /** Null when none of the days is on today's weekday. */
+  same_weekday_avg: number | null
+}
+
+/**
+ * GET /api/commute/pickup-rides?pickup_point_id=&from=HH:MM&to=HH:MM (REQ-056, DD-37): `days` is
+ * the past 10 workdays, newest first; `today` runs 07:00 through the slot holding now. 400
+ * invalid_request for a bad id or window, 404 not_found for an unknown pickup point.
+ */
+export interface PickupRides {
+  now: string
+  pickup_point_id: number
+  days: RideDay[]
+  today: RideDay
+  summary: RideSummary
+  simulated: boolean
+}
+
 // ---------------------------------------------------------------- UI state (not an API shape)
 
 /** What the passenger is looking for; kept by the passenger UI and by the mock backend. */

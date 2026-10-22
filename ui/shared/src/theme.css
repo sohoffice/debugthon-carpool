@@ -29,6 +29,35 @@
   --color-simulated-light: #c8b9ff;
 
   /*
+   * Commute info heat scales (Phase 2, UD-25): one hue each, lightness monotone. Rides in the route
+   * teal, traffic in asphalt grey; the -dark sets are for the driver's asphalt, darkest = fewest.
+   */
+  --color-ride-1: #7fc1c8;
+  --color-ride-2: #4ea6af;
+  --color-ride-3: #238a95;
+  --color-ride-4: #006e79;
+  --color-ride-5: #005159;
+  --color-ride-6: #00363c;
+  --color-ride-dark-1: #1d5a60;
+  --color-ride-dark-2: #237a83;
+  --color-ride-dark-3: #2f9aa5;
+  --color-ride-dark-4: #4fb9c3;
+  --color-ride-dark-5: #7fd6dd;
+  --color-ride-dark-6: #b5ecef;
+  --color-road-1: #8f999d;
+  --color-road-2: #768186;
+  --color-road-3: #5d686d;
+  --color-road-4: #465055;
+  --color-road-5: #30383c;
+  --color-road-6: #1a2023;
+  --color-road-dark-1: #4d575b;
+  --color-road-dark-2: #677276;
+  --color-road-dark-3: #848f93;
+  --color-road-dark-4: #a2adb0;
+  --color-road-dark-5: #c1cacc;
+  --color-road-dark-6: #e2e8e9;
+
+  /*
    * Role colours that shared components draw with. Light values here; `ground-asphalt` below swaps
    * them for asphalt and the arrival board, so one component reads right on either ground.
    */

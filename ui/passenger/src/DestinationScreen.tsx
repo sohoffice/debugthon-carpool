@@ -28,6 +28,8 @@ interface DestinationScreenProps {
   busStops: BusStop[]
   myTags: { tags: Tag[] | undefined; error: string | undefined; toggle: (id: number) => void }
   onDone: (search: PassengerSearch) => void
+  /** Commute info on the pickup point chosen now (DD-38, SC-X4). */
+  onOpenCommute: () => void
 }
 
 /** Park stops near the destination, one chip per name (both sides of a road), nearest first, plus any already chosen. */
@@ -46,7 +48,7 @@ function stopChoices(busStops: BusStop[], destination: Place | null, chosen: num
 }
 
 /** 7.1: where in the park, where else the passenger may get off, own tags and filters (UD-06). */
-export function DestinationScreen({ initial, busStops, myTags, onDone }: DestinationScreenProps) {
+export function DestinationScreen({ initial, busStops, myTags, onDone, onOpenCommute }: DestinationScreenProps) {
   const [destination, setDestination] = useState<Place | null>(initial?.destination ?? null)
   const [stopIds, setStopIds] = useState<number[]>(initial?.accepted_stop_ids ?? [])
   const [filters, setFilters] = useState<TagFilter[]>(initial?.tag_filters ?? loadFilters())
@@ -102,6 +104,22 @@ export function DestinationScreen({ initial, busStops, myTags, onDone }: Destina
             <ErrorNote>{myTags.error}</ErrorNote>
           </div>
         )}
+
+        {/* Under the settings, over the main button, and quieter than it (SC-X4). */}
+        <button type="button" onClick={onOpenCommute} className="mt-6 flex w-full items-center gap-3 rounded-control bg-paper px-4 py-3.5 text-left">
+          <span aria-hidden className="grid shrink-0 grid-cols-[repeat(4,7px)] gap-[2px]">
+            {['bg-ride-2', 'bg-ride-4', 'bg-ride-6', 'bg-ride-3', 'bg-ride-5', 'bg-ride-6', 'bg-ride-4', 'bg-ride-2'].map((c, i) => (
+              <i key={i} className={`h-[7px] rounded-[1px] ${c}`} />
+            ))}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-semibold">通勤資訊</span>
+            <span className="block text-sm/snug text-fg-soft">過去 10 天這個上車點載客幾次、路上塞不塞</span>
+          </span>
+          <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="size-5 shrink-0 text-fg-soft">
+            <path d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
       </main>
 
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-canvas from-70% to-transparent px-6 pt-8 pb-[calc(var(--safe-bottom)+12px)]">

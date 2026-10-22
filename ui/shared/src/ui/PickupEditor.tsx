@@ -1,4 +1,4 @@
-import type { PickupPoint } from '@carpool/shared'
+import type { PickupPoint } from '../api/types'
 
 interface PickupEditorProps {
   pickupPoints: PickupPoint[]
