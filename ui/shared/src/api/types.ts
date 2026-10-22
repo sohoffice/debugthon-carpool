@@ -58,9 +58,11 @@ export interface Tag {
 
 /**
  * GET /api/driver/profile. The usual fields are null before the first completed ride (DD-19).
- * `vehicle` is null for a driver without one; `point_balance` is 0 before any points (REQ-074, DD-34).
+ * `display_name` is /api/me's; `vehicle` is null for a driver without one; `point_balance` is 0
+ * before any points (REQ-074, DD-34, DD-35).
  */
 export interface DriverProfile {
+  display_name: string
   usual_pickup_point: PickupPoint | null
   usual_destination: Place | null
   capacity: number | null

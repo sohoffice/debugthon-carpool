@@ -20,8 +20,9 @@ func usualPlace(name *string, lat, lng *float64) *place {
 	return &place{Name: *name, Lat: *lat, Lng: *lng}
 }
 
-// getDriverProfile returns the habitual data accumulated from completed rides (DD-19), the vehicle
-// (REQ-074) and the point balance (REQ-071, DD-34). The habitual fields are null for an account with
+// getDriverProfile returns the driver's name (the same display_name as /api/me), the habitual data
+// accumulated from completed rides (DD-19), the vehicle (REQ-074) and the point balance (REQ-071,
+// DD-34): everything the driver drawer shows except the point rows (DD-35). The habitual fields are null for an account with
 // no rides yet, even though the demo seed gives every demo driver a profile row for its points; a
 // driver with no row has a balance of 0. vehicle is null for a driver without one.
 func (s *Server) getDriverProfile(c *gin.Context) {
@@ -31,6 +32,7 @@ func (s *Server) getDriverProfile(c *gin.Context) {
 		destLat, destLng *float64
 		capacity         *int
 		balance          int
+		displayName      string
 		pickup           *pickupPoint
 		vehicle          *vehicleView
 	)
@@ -52,6 +54,10 @@ func (s *Server) getDriverProfile(c *gin.Context) {
 			return
 		}
 	}
+	if err := s.db.QueryRow(c, `SELECT display_name FROM users WHERE id = $1`, c.GetInt64(ctxUserID)).Scan(&displayName); err != nil {
+		s.internalError(c, err)
+		return
+	}
 	var v vehicleView
 	err = s.db.QueryRow(c, `SELECT plate, description FROM vehicles WHERE user_id = $1`, c.GetInt64(ctxUserID)).
 		Scan(&v.Plate, &v.Description)
@@ -63,6 +69,7 @@ func (s *Server) getDriverProfile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
+		"display_name":       displayName,
 		"usual_pickup_point": pickup,
 		"usual_destination":  usualPlace(destName, destLat, destLng),
 		"capacity":           capacity,

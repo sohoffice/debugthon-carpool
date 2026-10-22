@@ -26,7 +26,7 @@ Feature: habitual profiles and multi-role accounts
     * method get
     * status 200
     # No vehicle row and no points for this account: vehicle is null and the balance 0 (DD-34)
-    * match response == { usual_pickup_point: '#(pickup)', usual_destination: { name: 'Home', lat: 24.9, lng: 121.4 }, capacity: 3, vehicle: null, point_balance: 0 }
+    * match response == { display_name: '#(user)', usual_pickup_point: '#(pickup)', usual_destination: { name: 'Home', lat: 24.9, lng: 121.4 }, capacity: 3, vehicle: null, point_balance: 0 }
 
   Scenario: passenger profile shows accumulated habitual data
     * configure headers = { Authorization: 'Bearer passenger:passenger1' }

@@ -35,11 +35,13 @@ export function passengerProfileView(world: World, lookups: Lookups, userId: num
 
 export function driverProfileView(world: World, lookups: Lookups, userId: number): DriverProfile {
   const p = world.driverProfiles[userId]
+  const user = mustGet(lookups.userById, userId, 'user')
   return {
+    display_name: user.display_name,
     usual_pickup_point: p ? mustGet(lookups.pickupById, p.pickupPointId, 'pickup point') : null,
     usual_destination: p?.destination ?? null,
     capacity: p?.capacity ?? null,
-    vehicle: lookups.data.seed.vehicles[mustGet(lookups.userById, userId, 'user').username] ?? null,
+    vehicle: lookups.data.seed.vehicles[user.username] ?? null,
     point_balance: world.points.filter((r) => r.driverId === userId).reduce((sum, r) => sum + r.delta, 0),
   }
 }

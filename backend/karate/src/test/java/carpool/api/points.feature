@@ -8,21 +8,31 @@ Feature: driver profile and points (REQ-071..REQ-075, DD-34, DD-35)
     * url baseUrl
     * def Db = Java.type('carpool.api.Db')
 
-  Scenario: driver profile carries the vehicle and the point balance
+  Scenario: driver profile carries the name, the vehicle and the point balance
+    * path 'api', 'me'
+    * header Authorization = 'Bearer driver:driver4'
+    * method get
+    * def me = response
     * path 'api', 'driver', 'profile'
     * header Authorization = 'Bearer driver:driver4'
     * method get
     * status 200
+    # DD-35: the drawer's name, the same as /api/me
+    * match response.display_name == me.display_name
     * match response contains { vehicle: { plate: 'ABC-0004', description: '#string' }, point_balance: '#number? _ > 0' }
     * def ledger = Db.queryLong("SELECT COALESCE(sum(delta), 0) FROM driver_point_ledger WHERE driver_id = (SELECT id FROM users WHERE username = 'driver4')")
     * match response.point_balance == ledger
 
-  Scenario: a driver without rides has empty usual data but a balance
+  Scenario: a driver without rides has empty usual data but a name and a balance
+    * path 'api', 'me'
+    * header Authorization = 'Bearer driver:driver5'
+    * method get
+    * def me = response
     * path 'api', 'driver', 'profile'
     * header Authorization = 'Bearer driver:driver5'
     * method get
     * status 200
-    * match response contains { usual_pickup_point: null, usual_destination: null, capacity: null, point_balance: '#number? _ > 0' }
+    * match response contains { display_name: '#(me.display_name)', usual_pickup_point: null, usual_destination: null, capacity: null, point_balance: '#number? _ > 0' }
 
   Scenario: the latest points, 5 by default, newest first
     * path 'api', 'driver', 'points'
