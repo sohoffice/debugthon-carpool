@@ -221,6 +221,12 @@ describe('passenger App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '我已下車，結束共乘' }))
     expect(await screen.findByRole('heading', { name: '共乘完成' })).toBeInTheDocument()
+    // SC-P9: the ride's pickup, drop-off and car; no time in the car without a boarding time.
+    const ride = screen.getByRole('list', { name: '這趟共乘' })
+    expect(within(ride).getByText(SONGSHAN.name)).toBeInTheDocument()
+    expect(within(ride).getByText(STOP.name)).toBeInTheDocument()
+    expect(screen.getByText('ABC-0004')).toBeInTheDocument()
+    expect(screen.queryByText(/車上 \d+ 分鐘/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '回到首頁' }))
     expect(await screen.findByRole('button', { name: '今天我要搭' })).toBeInTheDocument()
   })
@@ -270,12 +276,24 @@ describe('passenger App', () => {
     expect(screen.queryByRole('list', { name: '替代方案' })).not.toBeInTheDocument()
   })
 
+  it('completed: shows the minutes in the car from boarded_at to completed_at, never a clock time (SC-P9)', async () => {
+    const done = request({ status: 'completed', boarded_at: '2026-10-24T08:31:00Z', completed_at: '2026-10-24T08:45:20Z' })
+    fakeBackend({ current: [BOARDED], statuses: [BOARDED], actions: { complete: done } })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '我已下車，結束共乘' }))
+    expect(await screen.findByText('車上 14 分鐘')).toBeInTheDocument()
+    expect(screen.queryByText(/08:45|16:45/)).not.toBeInTheDocument()
+  })
+
   it('too far: shows the backend’s message (REQ-034, SC-P8)', async () => {
     const message = '你離上車點「松山車站」約 420 公尺，超過送出請求距離 200 公尺'
     fakeBackend({ statuses: [request({ status: 'rejected', reason: 'too_far', message, trip_id: null })] })
     render(<App />)
     await sendRequest()
     expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '還不能送出' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '回去看接近的車' }))
+    expect(await screen.findByRole('button', { name: '今天我要搭' })).toBeInTheDocument()
   })
 
   it('a driver declining or timing out shows the request was reassigned (REQ-053)', async () => {

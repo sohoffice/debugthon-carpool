@@ -23,7 +23,7 @@ export function DebugSheet({ children }: { children: ReactNode }) {
         <section
           role="dialog"
           aria-label="除錯模式"
-          className="absolute inset-0 z-40 overflow-y-auto overscroll-contain bg-white px-6 pt-[calc(var(--safe-top)+16px)] pb-[calc(var(--safe-bottom)+24px)] text-ink"
+          className="ground-light absolute inset-0 z-40 overflow-y-auto overscroll-contain bg-white px-6 pt-[calc(var(--safe-top)+16px)] pb-[calc(var(--safe-bottom)+24px)] text-ink"
         >
           <div className="flex items-center gap-3">
             <h1 className="text-[28px]/tight font-bold">除錯模式</h1>

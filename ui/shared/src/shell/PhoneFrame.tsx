@@ -8,7 +8,7 @@ import { BEZEL, FRAME_HEIGHT, FRAME_WIDTH } from './device'
 export function PhoneFrame({ children }: { children: ReactNode }) {
   return (
     <div
-      className="relative rounded-[60px] bg-ink shadow-2xl shadow-ink/30 ring-1 ring-ink-soft/60"
+      className="relative rounded-[60px] bg-ink shadow-2xl shadow-ink/30 ring-[1.5px] ring-asphalt-soft/30"
       style={{ width: FRAME_WIDTH, height: FRAME_HEIGHT, padding: BEZEL }}
     >
       {/* Side keys */}

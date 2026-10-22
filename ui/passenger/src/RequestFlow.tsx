@@ -11,12 +11,13 @@ import {
 } from '@carpool/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BoardedScreen } from './BoardedScreen'
+import { CompletedScreen, rideMinutesOf } from './CompletedScreen'
 import { api, POLL_INTERVAL_MS } from './config'
 import { ConfirmedScreen } from './ConfirmedScreen'
 import { MatchNotification } from './MatchNotification'
 import { NoMatchScreen } from './NoMatchScreen'
-import { ResultScreen } from './ResultScreen'
 import { minutesOf } from './search'
+import { TooFarScreen } from './TooFarScreen'
 import { useLocationReporting } from './useLocationReporting'
 import { WaitingScreen } from './WaitingScreen'
 
@@ -117,11 +118,19 @@ export function RequestFlow({ initial, fresh, position, pickupPoints, busStops, 
   } else if (request.status === 'boarded') {
     screen = <BoardedScreen dropoffName={dropoffName} dropoffStopId={stopId} vehicle={vehicle} trip={trip} busy={busy} onDone={() => act('complete')} />
   } else if (request.status === 'no_match') {
-    screen = <NoMatchScreen onBack={back} />
+    screen = <NoMatchScreen pickupName={pickupName} onBack={back} />
   } else if (request.status === 'rejected') {
-    screen = <ResultScreen title="還不能送出" text={request.message ?? '離上車點太遠。'} action="回去看接近的車" onAction={back} />
+    screen = <TooFarScreen pickupName={pickupName} message={request.message ?? '離上車點太遠。'} onBack={back} />
   } else if (request.status === 'completed') {
-    screen = <ResultScreen title="共乘完成" text="這趟共乘已記錄。路上少了一台車。" action="回到首頁" onAction={back} />
+    screen = (
+      <CompletedScreen
+        pickupName={pickupName}
+        dropoffName={dropoffName}
+        vehicle={vehicle}
+        rideMinutes={rideMinutesOf(request.boarded_at, request.completed_at)}
+        onDone={back}
+      />
+    )
   } else {
     screen = null
   }
@@ -131,7 +140,7 @@ export function RequestFlow({ initial, fresh, position, pickupPoints, busStops, 
       {screen}
       {notice && <MatchNotification text={notice} onClose={closeNotice} />}
       {(error || polling.error) && (
-        <p role="alert" className="absolute inset-x-6 bottom-[calc(var(--safe-bottom)+92px)] z-10 border-l-4 border-danger bg-white/95 py-1 pl-3 text-base font-medium text-danger">
+        <p role="alert" className="absolute inset-x-6 bottom-[calc(var(--safe-bottom)+92px)] z-10 border-l-4 border-danger bg-canvas/95 py-1 pl-3 text-base font-medium text-alert">
           {error ?? '連線不穩，顯示的是上一次的狀態。'}
         </p>
       )}

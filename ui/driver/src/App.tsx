@@ -50,7 +50,6 @@ export function App() {
   let tone: StatusBarTone = 'light'
   let screen
   if (polling.data === undefined) {
-    tone = 'dark'
     // 404: the backend answers but does not have this API yet (not a connection problem).
     const missing = polling.error instanceof ApiError && polling.error.status === 404 ? polling.error.message : undefined
     screen = <LoadingScreen failed={offline} missing={missing} />
@@ -80,6 +79,7 @@ export function App() {
   } else if (ended) {
     screen = <TripEndedScreen trip={ended} onDone={() => setEnded(null)} />
   } else {
+    // The status bar sits over the map, which is light.
     tone = 'dark'
     screen = (
       <DepartureScreen

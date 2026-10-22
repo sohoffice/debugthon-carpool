@@ -19,11 +19,11 @@ export function SubmitSheet({ tags, filters, submitting, error, onSubmit, onClos
       <section
         role="dialog"
         aria-label="送出搭車請求"
-        className="relative max-h-[86%] overflow-y-auto rounded-t-sheet bg-white px-6 pt-7 pb-[calc(var(--safe-bottom)+12px)]"
+        className="relative max-h-[86%] overflow-y-auto rounded-t-sheet bg-canvas px-6 pt-7 pb-[calc(var(--safe-bottom)+12px)]"
       >
-        <h2 className="text-[28px]/tight font-bold">送出搭車請求</h2>
-        <p className="mt-1 text-lg text-ink-soft">平台會替你分配一台最快能送你到的車。</p>
-        <h3 className="mt-6 text-base font-semibold text-ink-soft">篩選駕駛</h3>
+        <h2 className="text-[30px]/tight font-semibold">送出搭車請求</h2>
+        <p className="mt-1 text-lg text-fg-soft">平台會替你分配一台最快能送你到的車。</p>
+        <h3 className="mt-6 text-base font-semibold text-fg-soft">篩選駕駛</h3>
         <div className="mt-1">
           <TagFilterEditor tags={tags} value={value} onChange={setValue} />
         </div>
