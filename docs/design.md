@@ -1421,7 +1421,7 @@ erDiagram
 
 #### DD-39 市府管理介面是獨立的桌機介面，只讀彙總與不具名資料
 
-決定新增第三個使用者介面（`ui/city`），與駕駛、乘客介面分開（DD-02）。新增角色 `city`：`users.is_city_admin`，`users` 的角色限制放寬為駕駛、乘客、市府管理者至少其一；帳號由 SQL 預先建立（DD-19）。市府管理者 token 只能呼叫 `/api/city/*`，不能呼叫駕駛、乘客與兩者共用的 API（例如 `/api/me`、`/api/pickup-points`、`/api/commute/*`）；儀表板需要的上車點名稱與座標由 `/api/city/*` 的回應提供。`/api/city/*` 只回傳彙總數字與不具名的車輛位置，不含駕駛、乘客的帳號、名稱與車牌（REQ-081）。熱力圖以每個偵測器為一點、以車流量為權重；Google Maps JavaScript API 的 HeatmapLayer 已被 Google 標為淘汰，熱力圖的繪製方式（例如在 Google 地圖上疊 deck.gl 的 HeatmapLayer）由實作者決定。
+決定新增第三個使用者介面（`ui/city`），與駕駛、乘客介面分開（DD-02）。新增角色 `city`：`users.is_city_admin`，`users` 的角色限制放寬為駕駛、乘客、市府管理者至少其一；帳號由 SQL 預先建立（DD-19）。市府管理者 token 只能呼叫 `/api/city/*`，不能呼叫駕駛、乘客與兩者共用的 API（例如 `/api/me`、`/api/pickup-points`、`/api/commute/*`）；儀表板需要的上車點名稱與座標，以及現在、今天的日期與是否設定了 Demo 模擬時間（DD-41），由 `/api/city/*` 的回應提供。`/api/city/*` 只回傳彙總數字與不具名的車輛位置，不含駕駛、乘客的帳號、名稱與車牌（REQ-081）。熱力圖以每個偵測器為一點、以車流量為權重；Google Maps JavaScript API 的 HeatmapLayer 已被 Google 標為淘汰，熱力圖的繪製方式（例如在 Google 地圖上疊 deck.gl 的 HeatmapLayer）由實作者決定。
 
 - 理由：市府管理者在桌機或大螢幕上使用，版面與手機的駕駛、乘客介面不同，依角色分開（DD-02）。只讀、以輪詢更新，不需要新的即時機制（DD-03）。另立角色，即時車輛位置不會被駕駛或乘客 token 取得。市府管理者 token 只能呼叫 `/api/city/*`，不必逐一檢查共用的 API（例如回報位置、選擇標籤）對市府管理者是否有意義。
 - 考慮過的替代方案：
