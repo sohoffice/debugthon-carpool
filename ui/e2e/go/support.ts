@@ -35,7 +35,7 @@ export async function stageTagIds(request: APIRequestContext): Promise<number[]>
 /**
  * Back to the Demo's start (DD-29). The reset keeps the tags people chose themselves, so driver4's
  * stage tags are dropped here too, and driver5's, which a test may have picked as the second car,
- * and passenger1's 不抽菸: nothing a test did is left for the next one. The reset also puts driver4's trip settings back,
+ * and passenger1's own tags: nothing a test did is left for the next one. The reset also puts driver4's trip settings back,
  * auto-accept off included (DD-19), and cancels any trip still open.
  */
 export async function resetDemo(request: APIRequestContext) {
@@ -43,7 +43,9 @@ export async function resetDemo(request: APIRequestContext) {
   for (const tagId of await stageTagIds(request)) {
     for (const headers of [DRIVER4, DRIVER5]) expect((await request.delete(`${API}/me/tags/${tagId}`, { headers })).ok()).toBe(true)
   }
-  expect((await request.delete(`${API}/me/tags/${await tagId(request, '不抽菸')}`, { headers: PASSENGER1 })).ok()).toBe(true)
+  for (const name of ['不抽菸', '安靜通勤']) {
+    expect((await request.delete(`${API}/me/tags/${await tagId(request, name)}`, { headers: PASSENGER1 })).ok()).toBe(true)
+  }
 }
 
 /** The simulator's part (DD-14): driver4 reports that it is coming up to 松山車站 from the south. */
