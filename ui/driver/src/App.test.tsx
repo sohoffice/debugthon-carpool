@@ -562,12 +562,13 @@ describe('driver App', () => {
       const calls = fakeBackend([NO_TRIP])
       render(<App />)
       const drawer = await openDrawer()
-      // The name is the profile's: the drawer never calls /api/me (DD-35).
-      expect(await within(drawer).findByRole('heading', { name: '駕駛 阿丁' })).toBeInTheDocument()
+      // The name is the profile's, the account in small type above it: never /api/me (DD-35, SC-D5).
+      expect(await within(drawer).findByRole('heading', { name: '阿丁' })).toBeInTheDocument()
+      expect(within(drawer).getByText('駕駛 driver4')).toBeInTheDocument()
       expect(calls.filter((c) => c.path === '/me')).toEqual([])
       expect(within(drawer).getByText('ABC-0004')).toBeInTheDocument()
       expect(within(drawer).getByText('藍色 Mazda 3')).toBeInTheDocument()
-      expect(within(drawer).getByText('累積點數').nextElementSibling).toHaveTextContent('80 點')
+      expect(within(drawer).getByText('累積點數').nextElementSibling).toHaveTextContent('80點')
       // Taipei time, newest first: 10/22 08:15, then a day older each.
       expect(rows(drawer)).toEqual(['10/22 08:15初始點數+10', '10/21 08:15初始點數+10', '10/20 08:15初始點數+10', '10/19 08:15初始點數+10', '10/18 08:15初始點數+10'])
 
@@ -582,15 +583,65 @@ describe('driver App', () => {
       await nextPoll()
       expect(await screen.findByRole('heading', { name: '已到達目的地' })).toBeInTheDocument()
       const onEnded = await openDrawer()
-      await waitFor(() => expect(within(onEnded).getByText('累積點數').nextElementSibling).toHaveTextContent('90 點'))
+      await waitFor(() => expect(within(onEnded).getByText('累積點數').nextElementSibling).toHaveTextContent('90點'))
       fireEvent.click(within(onEnded).getByRole('button', { name: '關閉' }))
 
       fireEvent.click(screen.getByRole('button', { name: '好' }))
       expect(await screen.findByRole('heading', { name: '今天載人嗎？' })).toBeInTheDocument()
       const onDeparture = await openDrawer()
-      await waitFor(() => expect(within(onDeparture).getByText('累積點數').nextElementSibling).toHaveTextContent('90 點'))
+      await waitFor(() => expect(within(onDeparture).getByText('累積點數').nextElementSibling).toHaveTextContent('90點'))
       expect(rows(onDeparture)[0]).toBe('10/23 08:40共乘完成+10')
       expect(rows(onDeparture)).toHaveLength(5)
+    })
+
+    it('the account tag reads "駕駛 名稱" from the profile on the departure and trip-ended screens (SC-D5)', async () => {
+      fakeBackend([NO_TRIP, DRIVING, NO_TRIP], { ended: trip({ status: 'completed', completed_rides: 1 }) })
+      render(<App />)
+      expect(await screen.findByRole('button', { name: '駕駛 阿丁，開啟駕駛資訊' })).toHaveTextContent('駕駛 阿丁')
+      // Departed elsewhere, then the trip ended by itself: the ended screen has the same tag.
+      await nextPoll()
+      await screen.findByRole('heading', { name: /目前沒有/ })
+      await nextPoll()
+      expect(await screen.findByRole('heading', { name: '已到達目的地' })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: '駕駛 阿丁，開啟駕駛資訊' })).toHaveTextContent('駕駛 阿丁')
+    })
+
+    it('without the profile the account tag shows the account, and the drawer still opens', async () => {
+      fakeBackend([NO_TRIP], { driverInfoDown: { value: true } })
+      render(<App />)
+      const tag = await screen.findByRole('button', { name: '駕駛 driver4，開啟駕駛資訊' })
+      expect(tag).toHaveTextContent('駕駛 driver4')
+      fireEvent.click(tag)
+      const drawer = await screen.findByRole('dialog', { name: '駕駛資訊' })
+      expect(await within(drawer).findByRole('alert')).toHaveTextContent('無法載入駕駛資訊')
+      expect(within(drawer).getByText('駕駛 driver4')).toBeInTheDocument()
+    })
+
+    it('closes on the scrim, the × and a swipe left, but not on a swipe right or a scroll (SC-D5)', async () => {
+      fakeBackend([NO_TRIP])
+      render(<App />)
+      const isOpen = () => screen.queryByRole('dialog', { name: '駕駛資訊' }) !== null
+      const swipe = (el: HTMLElement, dx: number, dy: number) => {
+        fireEvent.pointerDown(el, { clientX: 200, clientY: 300 })
+        fireEvent.pointerUp(el, { clientX: 200 + dx, clientY: 300 + dy })
+      }
+
+      let drawer = await openDrawer()
+      await within(drawer).findByText('ABC-0004')
+      swipe(drawer, 120, 0)
+      swipe(drawer, -30, 0)
+      swipe(drawer, -70, 160)
+      expect(isOpen()).toBe(true)
+      swipe(drawer, -80, 10)
+      await waitFor(() => expect(isOpen()).toBe(false))
+
+      drawer = await openDrawer()
+      fireEvent.click(within(drawer).getByRole('button', { name: '關閉' }))
+      await waitFor(() => expect(isOpen()).toBe(false))
+
+      await openDrawer()
+      fireEvent.click(screen.getByRole('button', { name: '關閉駕駛資訊' }))
+      await waitFor(() => expect(isOpen()).toBe(false))
     })
 
     it('a failed load says so briefly and keeps the last data', async () => {
@@ -605,7 +656,7 @@ describe('driver App', () => {
       drawer = await openDrawer()
       expect(await within(drawer).findByRole('alert')).toHaveTextContent('無法載入駕駛資訊')
       expect(within(drawer).getByText('ABC-0004')).toBeInTheDocument()
-      expect(within(drawer).getByText('累積點數').nextElementSibling).toHaveTextContent('80 點')
+      expect(within(drawer).getByText('累積點數').nextElementSibling).toHaveTextContent('80點')
     })
   })
 })

@@ -1,6 +1,7 @@
 import {
   Button,
   DEMO_COMPANY_NAME,
+  Plate,
   RouteMap,
   RouteStrip,
   routeStripItems,
@@ -13,7 +14,6 @@ import {
 } from '@carpool/shared'
 import { CancelButton } from './CancelButton'
 import { POLL_INTERVAL_MS } from './config'
-import { Plate } from './Plate'
 import { minutesOf } from './search'
 
 interface ConfirmedScreenProps {

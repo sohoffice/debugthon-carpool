@@ -1,6 +1,5 @@
-import { Button, RouteStrip, type RouteStripItem, type TripView, type Vehicle } from '@carpool/shared'
+import { Button, Plate, RouteStrip, type RouteStripItem, type TripView, type Vehicle } from '@carpool/shared'
 import { CancelButton } from './CancelButton'
-import { Plate } from './Plate'
 
 interface BoardedScreenProps {
   dropoffName: string | null
