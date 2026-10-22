@@ -85,7 +85,8 @@ func TestSeedPassengerProfile(t *testing.T) {
 }
 
 // REQ-016, DD-19: driver4's defaults are the seeded ended trip; driver5 has none. The seed
-// leaves driver4 without a profile row and without an active or simulated trip.
+// leaves driver4 without habitual data (its profile row only carries points, DD-34) and without
+// an active or simulated trip.
 func TestSeedDriverDefaults(t *testing.T) {
 	tx := testTx(t)
 	freshDemoSeed(t, tx)
@@ -116,7 +117,9 @@ func TestSeedDriverDefaults(t *testing.T) {
 	if err := tx.QueryRow(ctx, `
 		SELECT (SELECT count(*) FROM trips WHERE driver_id = u.id AND status = 'active'),
 		       (SELECT count(*) FROM trips WHERE driver_id = u.id AND simulated),
-		       (SELECT count(*) FROM driver_profiles WHERE user_id = u.id),
+		       (SELECT count(*) FROM driver_profiles WHERE user_id = u.id
+		           AND num_nonnulls(usual_pickup_point_id, usual_destination_name, usual_destination_lat,
+		                            usual_destination_lng, capacity) > 0),
 		       (SELECT count(*) FROM service_records WHERE driver_id = u.id)
 		  FROM users u WHERE u.username = 'driver4'`).Scan(&active, &simulated, &profiles, &records); err != nil {
 		t.Fatal(err)

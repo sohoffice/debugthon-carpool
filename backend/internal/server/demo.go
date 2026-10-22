@@ -31,13 +31,32 @@ func resetDemoData(ctx context.Context, db DB) error {
 		          WHERE u.simulated AND q.trip_id IS NOT NULL
 		          GROUP BY q.trip_id) r
 		  WHERE t.id = r.trip_id`,
+		// Ride points go before the service records they reference (DD-34): the demo drivers' and
+		// those earned by carrying a demo passenger, whose service record is deleted next.
+		`DELETE FROM driver_point_ledger l
+		  WHERE l.reason = 'ride'
+		    AND (l.driver_id IN (SELECT id FROM users WHERE simulated)
+		         OR l.service_record_id IN (SELECT s.id FROM service_records s JOIN users u ON u.id = s.passenger_id
+		                                    WHERE u.simulated))`,
+		// A non-demo driver who carried a demo passenger keeps a balance equal to the ledger (REQ-071).
+		`UPDATE driver_profiles p
+		    SET point_balance = (SELECT COALESCE(sum(delta), 0) FROM driver_point_ledger l WHERE l.driver_id = p.user_id)
+		   FROM users u
+		  WHERE u.id = p.user_id AND NOT u.simulated
+		    AND p.point_balance <> (SELECT COALESCE(sum(delta), 0) FROM driver_point_ledger l WHERE l.driver_id = p.user_id)`,
 		// Service records reference the requests; tag filters and candidates cascade with them.
 		`DELETE FROM service_records s USING users u WHERE u.id = s.passenger_id AND u.simulated`,
 		`DELETE FROM ride_requests q USING users u WHERE u.id = q.passenger_id AND u.simulated`,
-		// Habitual data goes back to the seed (DD-19); accepted stops cascade with the profile.
-		`DELETE FROM driver_profiles p USING users u WHERE u.id = p.user_id AND u.simulated`,
+		// Habitual data goes back to the seed (DD-19); accepted stops cascade with the passenger
+		// profile. The demo drivers keep their rows (DD-34): only the habitual fields are cleared, and
+		// seed_demo_driver_points puts the balance back to the seed rows' sum.
+		`UPDATE driver_profiles p
+		    SET usual_pickup_point_id = NULL, usual_destination_name = NULL, usual_destination_lat = NULL,
+		        usual_destination_lng = NULL, capacity = NULL
+		   FROM users u WHERE u.id = p.user_id AND u.simulated`,
 		`DELETE FROM passenger_profiles p USING users u WHERE u.id = p.user_id AND u.simulated`,
 		`SELECT seed_demo_habitual_data()`,
+		`SELECT seed_demo_driver_points()`,
 		// End every unfinished demo trip. cancelled, not completed: the trip did not arrive (DD-30),
 		// so the driver UI does not show the trip-ended screen for it.
 		`UPDATE trips t SET status = 'cancelled', ended_at = now()

@@ -70,6 +70,7 @@ func TestGetSeededKeys(t *testing.T) {
 		"tag_bonus_cap":          4,
 		"driver_confirm_timeout": 60,
 		"arrival_radius":         50, // DD-30
+		"points_per_ride":        10, // DD-34
 	} {
 		t.Run(key, func(t *testing.T) {
 			got, err := r.Get(context.Background(), key)

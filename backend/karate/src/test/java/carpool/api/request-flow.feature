@@ -62,6 +62,9 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match status.responseStatus == 200
     * match status.response contains deep { status: 'confirmed', reassigned_count: 0, pickup_point: { id: '#(pickup.id)' }, vehicle: '#object', eta_s: '#number', trip: { id: '#(tripId)', route: '#object' } }
     * match status.response.eta_s == '#? _ > 0'
+    # REQ-075: the passenger never sees the driver's points
+    * match status.response.point_balance == '#notpresent'
+    * match status.response.vehicle == { plate: '#string', description: '#string' }
     # REQ-069: the unfinished request is the current one
     * def current = doGet(pt, 'api/passenger/requests/current')
     * match current.response.request.id == req.id
@@ -215,6 +218,12 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match passengerProfile.usual_destination == inPark
     * match passengerProfile.usual_arrival_time == '#regex \\d{2}:\\d{2}'
     * match passengerProfile.accepted_stops == '#[]'
+    # REQ-072, DD-34: the driver earns points_per_ride once, pointing at this ride's service record
+    * match driverProfile.point_balance == 10
+    * def points = doGet(d, 'api/driver/points').response.points
+    * match points == '#[1]'
+    * def recordId = Db.queryLong('SELECT id FROM service_records WHERE request_id = ?', req.id)
+    * match points[0] contains { delta: 10, reason: 'ride', service_record_id: '#(recordId)' }
 
     Examples:
       | how                          | boarded | by        |
