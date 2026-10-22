@@ -130,6 +130,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
   - Demo 駕駛尚未結束的行程改為 `cancelled`（不是 `completed`：行程沒有抵達目的地，駕駛介面不會顯示「行程結束」）。
   - `driver1`～`driver3` 最近一趟模擬行程以新的行程重新開始：設定相同，並建立關聯到新行程的參與主檔，模擬器可以直接回報位置。保存的路線只在是真實路線時複製；模擬的直線不複製，新行程第一次讀取時用目前的來源重建，所以斷網時開始的 Demo 在有金鑰時重設，地圖會回到真實路線（DD-09、DD-21）。
   - 不刪除位置紀錄（DD-06），舊的行程與參與主檔都保留。
+  - Phase 2 的模擬車流與天氣（T36，DD-40）：呼叫 `generate_commute_simulation`，以重設當下的現在（DD-41）重新產生，見〈後端 API〉的車流與天氣說明。
   - 不動的資料：非 Demo 帳號的請求一律不動（即使在 Demo 駕駛的車上）；使用者自選的標籤（`user_tags`）不還原。
   - 限制：非 Demo 乘客如果正搭 Demo 駕駛的車，重設後他的請求仍是已確認，卻指向一趟已取消的行程；乘客介面不讓有未結束請求的人再送出（REQ-069），他會卡住。Demo 只用 Demo 帳號，Karate 也用自己建立的駕駛，所以實際上不會發生。
 - 外部資料來源斷線：有 `MAP_API_KEY` 時，路線與時間來自 Google Routes；斷網或沒有金鑰時，後端改用模擬備援（DD-09），照常運作，估算值都標示為模擬（`simulated: true`，介面顯示「估算」，REQ-063）。模擬的直線不經過 passenger1 可接受的公車站，所以這時 `driver2` 不參與取捨（見〈種子資料〉的取捨 Demo 腳本）。地圖與目的地搜尋（Google Maps、Places）在瀏覽器端，斷網時無法載入。
@@ -175,6 +176,8 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 | GET | `/api/passenger/requests/:id` | 乘客 | 請求狀態（輪詢用，REQ-052、REQ-053）：送出請求的欄位加上 `boarded_at`、`completed_at`、`reassigned_count`（婉拒、逾時或行程結束而改配的次數）。已確認時另含 `pickup_point`、`vehicle{plate,description}`、`eta_s`（尚無駕駛位置，或車輛已經過上車點，為 `null`）、`eta_simulated`（ETA 是否來自模擬路線，REQ-063；沒有 `eta_s` 時為 `null`）與 `trip`（含路線與沿途公車站）；另有 `vehicle_position{lat,lng,heading_deg,reported_at}`（DD-31：駕駛最新的回報；`heading_deg` 由最近兩筆位置不同的回報計算，正北為 0 度、順時針，只有一個位置時為 `null`；車輛尚無回報時整個物件為 `null`）與 `passed_pickup`（車輛是否已經過上車點，DD-06）。等待、已上車與之後這些欄位皆為 `null`。`no_match` 帶 `reason`、`message`。不是自己的請求回 `404 not_found` |
 | POST | `/api/passenger/requests/:id/board` | 乘客 | 乘客標記自己已上車，行為同駕駛的 `board` |
 | POST | `/api/passenger/requests/:id/complete` | 乘客 | 乘客結束自己的共乘（主要方式），行為同駕駛的 `complete` |
+| GET | `/api/commute/traffic` | 任一 | 通勤資訊的車流（T36，Phase 2，REQ-077、DD-36、DD-41）：回 `200` 與 `{now, today, days, simulated}`。`days` 為今天之前的 10 個上班日（週一到週五，不扣國定假日），由新到舊，每天 `{date, weekday, slots}`，`weekday` 為 ISO 星期（1 星期一～5 星期五）；`slots` 為上班時段 07:00–09:45 開始的 15 分鐘時段（每天 12 格），每格 `{slot_start, volume, avg_speed_kmh, weather, simulated}`：`volume` 為所有偵測器的總車流量，`avg_speed_kmh` 以車流量加權平均，`weather` 為該時段的天氣（同時段的每個偵測器相同，欄位見〈車流與天氣〉）。`now`、`today` 為 Demo 模擬時間下的現在與今天。不接受查詢參數 |
+| GET | `/api/commute/weather` | 任一 | 今天的天氣（T36，Phase 2，REQ-077、DD-41）：回 `200` 與 `{now, today, weather, simulated}`，`weather` 為今天觀測時間不晚於現在的最新一筆（`station_id`、`station_name`、`obs_time`、`weather`、`air_temperature`、`precipitation`），今天還沒有任何觀測（例如沒有設定 `demo_clock` 的週末）時為 `null`。前端以這裡的 `now` 決定通勤資訊的預設時段，不用裝置時鐘。不接受查詢參數 |
 
 - 除 `/api/ping` 與 `/api/demo/reset` 外都需要 `Authorization: Bearer <角色>:<帳號>`：格式錯誤或帳號不存在回 `401`，帳號沒有該角色或角色不能使用該 API 回 `403`。
 - 路線、行車時間與步行時間的來源（DD-09）：設定了 `MAP_API_KEY`，後端用 Google Routes（記憶體快取 → 逾時與斷路器 → Google，失敗時改用模擬）；沒有設定則全部用模擬的直線備援（`route.simulated` 為 `true`，距離為直線 × 1.3、時速 20 公里、步行每分鐘 80 公尺）。啟動時 log 會寫明使用哪一種，不會印出金鑰。媒合排序有約 2 秒的總時間預算，用完後剩下的估算改用模擬並標記為模擬。園區範圍由後端啟動時載入 `backend/config/park/boundary.geojson`，可用環境變數 `PARK_BOUNDARY` 指定其他路徑。
@@ -182,6 +185,14 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 - 行程自動結束（T21，REQ-070、DD-30）：駕駛的回報在行程已經過上車點之後，距目的地不超過 `system_settings.arrival_radius`（預設 50 m，每次回報都重新讀取）時，在同一個交易內：行程改為 `completed` 並記下 `ended_at`；車上已確認或已上車的共乘一併完成（建立服務紀錄、更新常用資料，同 `complete`）；仍在等待該駕駛回應的請求釋放座位，改配給排序中的下一台車，沒有車可配為 `no_match`，該候選的結果記為 `trip_ended`。經過上車點之前進入目的地範圍不會結束。行程結束後，`GET /api/driver/requests` 的 `trip_id` 為 `null`，之後的回報照常保存（DD-06），`trip_ended` 維持 `true`。
 - 座位計算（暫留、正式佔用、釋放，`internal/server/seats.go`）是供請求流程使用的內部介面，沒有 HTTP API。
 - 錯誤一律回 `{"error":{"code":"...","message":"..."}}`。
+- 車流與天氣（T36，Phase 2，DD-36、DD-40、DD-41）：資料表 `traffic_detectors`（偵測器）與 `traffic_observations`（每個偵測器每 15 分鐘一筆，天氣存在同一列），由遷移 `backend/migrations/20261022120000_commute_traffic_weather.sql` 建立。
+  - 偵測器：12 支內湖主要道路（堤頂大道、內湖路一段、環東大道、民權東路六段、瑞光路、成功路四段）上的偵測器，`vd_id` 與座標取自臺北市 VD 靜態資料（與 TDX `VD/City/Taipei` 同一份，2026-10-22 版）。
+  - 模擬資料：資料庫函式 `generate_commute_simulation(now)` 刪除所有 `simulated` 的觀測後，以 `now` 的日期為今天，重新產生過去 10 個上班日與今天在現在之前的完整時段，只含上班時段 07:00–10:00，全部 `simulated = true`。先產生天氣（10 天中 2～3 天下雨，從前幾個時段一直下到 10:00），再依天氣產生車流（08:15 前後最多、星期五最多、下雨時車流量增加且車速下降）。天氣欄位依中央氣象署自動氣象站 O-A0001-001，測站為內湖（`C0A9F0`），雨量為該時段的毫米數。亂數以今天的日期為種子，同一個今天產生的資料相同。
+  - 何時產生：遷移執行時產生一次，之後只在 Demo 重設（`POST /api/demo/reset`、`just demo-reset`）時重新產生，查詢 API 不會重新產生。所以換了一天，要先重設一次，資料才會換成新的過去 10 個上班日。已知限制：沒有設定 `demo_clock` 時，今天的時段停在上次重設時的現在，不會隨實際時間增加；Demo 固定 08:15，不受影響。
+  - Demo 模擬時間 `demo_clock`（REQ-084、DD-41）：系統設定，以當天 0 點起的分鐘數保存，預設 495（08:15）。有這一列時，Phase 2 的現在是今天的這個時間，今天遇到星期六、日時改為下一個星期一；例如 10/24（星期六）重設時，今天是 10/26，過去 10 個上班日為 10/12～10/23，10/24 與 10/25 重設產生的資料相同。後端一律經 `commuteNow`（資料庫函式 `commute_now`）取得現在，不直接讀系統時鐘；媒合、行程、請求與逾時仍用實際時鐘。值必須是 0～1439 的整數，否則 API 回 500。
+    - 改時間：`UPDATE system_settings SET value = 540 WHERE key = 'demo_clock';`（09:00），再 `just demo-reset` 重新產生。
+    - 移除（改用實際的日期與時間）：`DELETE FROM system_settings WHERE key = 'demo_clock';`，再 `just demo-reset`。
+    - 加回：`INSERT INTO system_settings (key, value, unit, description) VALUES ('demo_clock', 495, 'min', 'Demo 模擬時間');`
 - 系統設定（`system_settings`）只供後端元件透過 `internal/settings` 讀取，每次都查資料庫，改 SQL 後不需重啟即可生效；沒有對外 API（DD-20）。
 - 後端測試（`cd backend && go test ./...`）連線本機資料庫（需先 `just infra up`、`just backend db-apply`），每個測試在交易中執行並回滾；可用 `TEST_DATABASE_URL` 覆寫連線字串。
 - 自動測試一律不呼叫真實的 Google Routes：轉接器只對 `httptest` 假伺服器或假來源測試，不讀 `MAP_API_KEY`。開發時要用真實 API 手動確認轉接器，執行預設不跑的 `googlelive` 測試（每種估算各呼叫一次）：`MAP_API_KEY=<金鑰> go test -tags googlelive -run TestGoogleLive -v ./internal/server/`（在 `backend/` 下）。

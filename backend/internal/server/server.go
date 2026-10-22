@@ -30,6 +30,8 @@ type Server struct {
 	walks  WalkProvider
 	// rankBudget overrides rankingBudget; tests shrink it.
 	rankBudget time.Duration
+	// now is the real clock; Phase 2 turns it into the commute "now" with commuteNow (DD-41).
+	now func() time.Time
 }
 
 // Deps are the collaborators that are not the database.
@@ -40,11 +42,16 @@ type Deps struct {
 	Walks  WalkProvider   // estimates the walk from a drop-off to the destination; nil means the simulated straight line
 	// DemoReset registers POST /api/demo/reset (DD-29). Only the demo environment turns it on.
 	DemoReset bool
+	// Clock is the real clock; nil means time.Now. Tests pin it to check the commute "now" (DD-41).
+	Clock func() time.Time
 }
 
 // NewRouter builds the HTTP router with all API routes registered.
 func NewRouter(db DB, deps Deps) *gin.Engine {
-	s := &Server{db: db, park: deps.Park, routes: deps.Routes}
+	s := &Server{db: db, park: deps.Park, routes: deps.Routes, now: deps.Clock}
+	if s.now == nil {
+		s.now = time.Now
+	}
 	if s.routes == nil {
 		s.routes = straightRoute{}
 	}
@@ -85,6 +92,8 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	authed.POST("/location", s.reportLocation)
 	authed.GET("/me/location-reports", s.listMyLocationReports)
 	authed.GET("/trips/:id", s.getTrip)
+	authed.GET("/commute/traffic", s.getCommuteTraffic) // Phase 2, REQ-077
+	authed.GET("/commute/weather", s.getCommuteWeather)
 
 	driver := authed.Group("/driver", requireRole(roleDriver))
 	driver.GET("/profile", s.getDriverProfile)

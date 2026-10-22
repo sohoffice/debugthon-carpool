@@ -34,6 +34,14 @@ public class Db {
         }
     }
 
+    /** Runs a statement for its side effect and ignores what it returns, e.g. {@code SELECT some_function()}. */
+    public static void query(String sql, Object... params) throws SQLException {
+        try (Connection c = DriverManager.getConnection(URL, USER, PASSWORD);
+             PreparedStatement ps = prepare(c, sql, params)) {
+            ps.execute();
+        }
+    }
+
     private static PreparedStatement prepare(Connection c, String sql, Object[] params) throws SQLException {
         PreparedStatement ps = c.prepareStatement(sql);
         for (int i = 0; i < params.length; i++) {

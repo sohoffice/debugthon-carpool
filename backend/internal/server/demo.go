@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,14 +13,14 @@ import (
 // trips are ended and the seeded simulated trips start again as new trips. Other accounts keep
 // their data, except that seats held for deleted demo requests are given back.
 func (s *Server) resetDemo(c *gin.Context) {
-	if err := s.inTx(c, func(db DB) error { return resetDemoData(c, db) }); err != nil {
+	if err := s.inTx(c, func(db DB) error { return resetDemoData(c, db, s.now()) }); err != nil {
 		s.internalError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
-func resetDemoData(ctx context.Context, db DB) error {
+func resetDemoData(ctx context.Context, db DB, realNow time.Time) error {
 	steps := []string{
 		// Seats held or taken by the demo passengers' requests go back to their trips (DD-12).
 		`UPDATE trips t
@@ -68,7 +69,11 @@ func resetDemoData(ctx context.Context, db DB) error {
 			return err
 		}
 	}
-	return restartSimulatedTrips(ctx, db)
+	if err := restartSimulatedTrips(ctx, db); err != nil {
+		return err
+	}
+	// Phase 2 simulated traffic and weather, again for today (DD-29, DD-40, DD-41).
+	return regenerateCommuteSimulation(ctx, db, realNow)
 }
 
 // restartSimulatedTrips starts each demo driver's latest simulated trip again as a new active trip
