@@ -81,17 +81,6 @@ func validTagFilters(filters []tagFilterBody) bool {
 	return true
 }
 
-// tagsExist reports whether every filter names a tag from the predefined list (DD-05).
-func (s *Server) tagsExist(ctx context.Context, db DB, filters []tagFilterBody) (bool, error) {
-	ids := make([]int64, len(filters))
-	for i, f := range filters {
-		ids[i] = f.TagID
-	}
-	var n int
-	err := db.QueryRow(ctx, `SELECT count(*) FROM tags WHERE id = ANY($1)`, ids).Scan(&n)
-	return n == len(filters), err
-}
-
 func (s *Server) inTx(ctx context.Context, fn func(DB) error) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -129,11 +118,14 @@ func (s *Server) depart(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if ok, err := s.tagsExist(c, s.db, body.TagFilters); err != nil {
-		s.internalError(c, err)
-		return
-	} else if !ok {
-		apiError(c, http.StatusBadRequest, "invalid_tag", "標籤不在清單中")
+	// REQ-013, DD-42: a driver only filters by passenger tags, and always as a requirement.
+	for _, f := range body.TagFilters {
+		if f.Intent != "required" {
+			apiError(c, http.StatusBadRequest, "intent_not_allowed", "駕駛的標籤篩選只能是強制（required）")
+			return
+		}
+	}
+	if !s.checkFilterTags(c, body.TagFilters, rolePassenger) {
 		return
 	}
 

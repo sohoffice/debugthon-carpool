@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { selectStageTag, STAGE_ACCOUNTS, STAGE_TAG, type Call } from './stageTag.ts'
+import { selectStageTags, STAGE_ACCOUNTS, STAGE_TAGS, type Call } from './stageTag.ts'
 
 /** A fake API that records every call and serves one tag list. */
 function fakeApi(tags: { id: number; name: string }[]) {
@@ -12,35 +12,40 @@ function fakeApi(tags: { id: number; name: string }[]) {
   return { call, calls }
 }
 
-describe('selectStageTag (T34, REQ-040: both stage drivers must carry the required tag)', () => {
+describe('selectStageTags (T34, T43, REQ-040: both stage drivers must carry the required tags)', () => {
   const tags = [
     { id: 1, name: '不抽菸' },
-    { id: 6, name: STAGE_TAG },
+    { id: 2, name: '可載行李' },
+    { id: 3, name: '安靜通勤' },
   ]
 
-  it('names driver4 and driver5 as the stage accounts', () => {
+  it('names 不抽菸 and 可載行李 as the stage tags, and driver4 and driver5 as the stage accounts', () => {
+    expect(STAGE_TAGS).toEqual(['不抽菸', '可載行李'])
     expect(STAGE_ACCOUNTS).toEqual(['driver4', 'driver5'])
   })
 
-  it('selects the stage tag for the given account', async () => {
+  it('selects both stage tags, and only them, for the given account', async () => {
     const { call, calls } = fakeApi(tags)
-    await selectStageTag(call, 'driver4')
-    expect(calls).toContainEqual({ account: 'driver4', method: 'PUT', path: '/me/tags/6' })
+    await selectStageTags(call, 'driver4')
+    expect(calls.filter((c) => c.method === 'PUT')).toEqual([
+      { account: 'driver4', method: 'PUT', path: '/me/tags/1' },
+      { account: 'driver4', method: 'PUT', path: '/me/tags/2' },
+    ])
   })
 
-  it('selects it only for that account', async () => {
+  it('selects them only for that account', async () => {
     const { call, calls } = fakeApi(tags)
-    await selectStageTag(call, 'driver5')
-    expect(calls.filter((c) => c.method === 'PUT').map((c) => c.account)).toEqual(['driver5'])
+    await selectStageTags(call, 'driver5')
+    expect(new Set(calls.filter((c) => c.method === 'PUT').map((c) => c.account))).toEqual(new Set(['driver5']))
   })
 
-  it('fails loudly when the tag does not exist', async () => {
+  it('fails loudly when a stage tag does not exist', async () => {
     const { call } = fakeApi([{ id: 1, name: '不抽菸' }])
-    await expect(selectStageTag(call, 'driver4')).rejects.toThrow(STAGE_TAG)
+    await expect(selectStageTags(call, 'driver4')).rejects.toThrow('可載行李')
   })
 
-  it('fails loudly when selecting the tag is refused', async () => {
-    const call: Call = async (_a, method) => ({ status: method === 'PUT' ? 500 : 200, body: [{ id: 6, name: STAGE_TAG }] }) as never
-    await expect(selectStageTag(call, 'driver4')).rejects.toThrow('driver4')
+  it('fails loudly when selecting a tag is refused', async () => {
+    const call: Call = async (_a, method) => ({ status: method === 'PUT' ? 400 : 200, body: tags }) as never
+    await expect(selectStageTags(call, 'driver4')).rejects.toThrow('driver4')
   })
 })

@@ -202,14 +202,14 @@ func TestDefaultsFollowTheLastTrip(t *testing.T) {
 	if err := tx.QueryRow(context.Background(), `SELECT min(id) FROM tags`).Scan(&tagID); err != nil {
 		t.Fatal(err)
 	}
-	body := departJSON(pickupID, inPark, `"tag_filters":[{"tag_id":`+itoa(tagID)+`,"intent":"preferred"}]`)
+	body := departJSON(pickupID, inPark, `"tag_filters":[{"tag_id":`+itoa(tagID)+`,"intent":"required"}]`)
 	v := decode[tripResp](t, call(t, tx, http.MethodPost, "/api/driver/trips", token, body))
 	mustExec(t, tx, `UPDATE trips SET status = 'completed' WHERE id = $1`, v.ID)
 
 	d := decode[defaultsResp](t, call(t, tx, http.MethodGet, "/api/driver/trips/defaults", token, ""))
 	if d.PickupPointID == nil || *d.PickupPointID != pickupID || d.Destination == nil || d.Destination.Name != "瑞光路 內科大樓 A" ||
 		d.Capacity == nil || *d.Capacity != 3 || !d.AutoAccept ||
-		len(d.TagFilters) != 1 || d.TagFilters[0].TagID != tagID || d.TagFilters[0].Intent != "preferred" {
+		len(d.TagFilters) != 1 || d.TagFilters[0].TagID != tagID || d.TagFilters[0].Intent != "required" {
 		t.Fatalf("defaults = %+v, want the last trip's settings", d)
 	}
 }

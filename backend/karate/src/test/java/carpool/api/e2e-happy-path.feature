@@ -14,7 +14,7 @@ Feature: end-to-end happy path (depart, supply, request, accept, board, complete
     * def suffix = java.util.UUID.randomUUID().toString().substring(0, 8)
     * def passenger = 'karate-e2e-passenger-' + suffix
     * def driver = 'karate-trip-e2e-' + suffix
-    * def tagId = Db.queryLong('INSERT INTO tags (name) VALUES (?) RETURNING id', 'karate-e2e-' + suffix)
+    * def tagId = Db.queryLong("INSERT INTO tags (name, applies_to, driver_self_label, passenger_filter_label) VALUES (?, 'driver', 'karate', 'karate') RETURNING id", 'karate-e2e-' + suffix)
     * Db.exec('INSERT INTO users (username, display_name, is_passenger) VALUES (?, ?, true)', passenger, passenger)
     # the driver exists before the departure so that the same driver previews the route and departs
     * Db.exec('INSERT INTO users (username, display_name, is_driver) VALUES (?, ?, true)', driver, driver)

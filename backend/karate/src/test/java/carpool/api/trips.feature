@@ -19,6 +19,7 @@ Feature: trips (POST /api/driver/trips, GET /api/driver/trips/current|defaults, 
     * path 'api', 'tags'
     * method get
     * def tagId = response[0].id
+    * def luggageId = karate.filter(response, function(g) { return g.name == '可載行李' })[0].id
     * def inPark = { name: '瑞光路 內科大樓 A', lat: 25.0768, lng: 121.5738 }
     * def depart = function(body) { return karate.call('classpath:carpool/api/post-trip.feature', { body: body, user: user }) }
 
@@ -54,12 +55,12 @@ Feature: trips (POST /api/driver/trips, GET /api/driver/trips/current|defaults, 
     * method get
     * status 200
     * match response == { pickup_point_id: null, destination: null, capacity: null, auto_accept: false, tag_filters: [] }
-    * def r = depart({ pickup_point_id: pickup.id, destination: inPark, capacity: 2, auto_accept: true, tag_filters: [{ tag_id: tagId, intent: 'preferred' }] })
+    * def r = depart({ pickup_point_id: pickup.id, destination: inPark, capacity: 2, auto_accept: true, tag_filters: [{ tag_id: tagId, intent: 'required' }] })
     * Db.exec("UPDATE trips SET status = 'completed', ended_at = now() WHERE id = ?", r.response.id)
     * path 'api', 'driver', 'trips', 'defaults'
     * method get
     * status 200
-    * match response == { pickup_point_id: '#(pickup.id)', destination: '#(inPark)', capacity: 2, auto_accept: true, tag_filters: [{ tag_id: '#(tagId)', intent: 'preferred' }] }
+    * match response == { pickup_point_id: '#(pickup.id)', destination: '#(inPark)', capacity: 2, auto_accept: true, tag_filters: [{ tag_id: '#(tagId)', intent: 'required' }] }
 
   Scenario: a departure with a bad pickup point, destination, capacity or tag is refused and starts nothing
     * def bad = function(body, code) { var r = depart(body); karate.match(r.responseStatus, 400); karate.match(r.response.error.code, code) }
@@ -68,6 +69,10 @@ Feature: trips (POST /api/driver/trips, GET /api/driver/trips/current|defaults, 
     * eval bad({ pickup_point_id: pickup.id, destination: inPark, capacity: 0 }, 'invalid_request')
     * eval bad({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, tag_filters: [{ tag_id: 999999, intent: 'required' }] }, 'invalid_tag')
     * eval bad({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, tag_filters: [{ tag_id: tagId, intent: 'must' }] }, 'invalid_request')
+    # REQ-013: a driver's filter is always required
+    * eval bad({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, tag_filters: [{ tag_id: tagId, intent: 'preferred' }] }, 'intent_not_allowed')
+    # REQ-085: a driver filters only by tags that apply to passengers
+    * eval bad({ pickup_point_id: pickup.id, destination: inPark, capacity: 3, tag_filters: [{ tag_id: luggageId, intent: 'required' }] }, 'tag_not_applicable')
     * path 'api', 'driver', 'trips', 'current'
     * method get
     * status 404

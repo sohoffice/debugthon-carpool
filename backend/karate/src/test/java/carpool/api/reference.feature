@@ -20,10 +20,16 @@ Feature: reference data and tags
       | driver:driver1       | tags          |
       | passenger:passenger1 | tags          |
 
-  Scenario: reference lists need a token
-    * path 'api', 'pickup-points'
+  Scenario Outline: reference lists need a token - <resource>
+    * path 'api', '<resource>'
     * method get
     * status 401
+    * match response.error.code == 'unauthorized'
+
+    Examples:
+      | resource      |
+      | pickup-points |
+      | tags          |
 
   Scenario: tags can only be chosen from the list
     # a header set with `header` applies to one request only

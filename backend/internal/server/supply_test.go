@@ -89,13 +89,12 @@ func (e *supplyEnv) supply(t *testing.T, extra map[string]string) supplyResp {
 
 // tripSpec describes one car; the zero value is a car that passes every condition.
 type tripSpec struct {
-	dest      latLng // zero means the passenger's destination
-	capacity  int    // zero means 3
-	northM    float64
-	noReport  bool
-	tagIDs    []int64
-	required  []int64 // the driver's required filters
-	preferred []int64
+	dest     latLng // zero means the passenger's destination
+	capacity int    // zero means 3
+	northM   float64
+	noReport bool
+	tagIDs   []int64
+	required []int64 // the driver's filters, always required (REQ-013)
 }
 
 // addTrip starts a trip for a fresh driver at the env's pickup point and, unless noReport, puts
@@ -126,9 +125,6 @@ func (e *supplyEnv) addTrip(t *testing.T, s tripSpec) int64 {
 	for _, tag := range s.required {
 		mustExec(t, e.tx, `INSERT INTO trip_tag_filters (trip_id, tag_id, intent) VALUES ($1, $2, 'required')`, id, tag)
 	}
-	for _, tag := range s.preferred {
-		mustExec(t, e.tx, `INSERT INTO trip_tag_filters (trip_id, tag_id, intent) VALUES ($1, $2, 'preferred')`, id, tag)
-	}
 	declare(t, e.tx, token)
 	if !s.noReport {
 		report(t, e.tx, token, offsetM(e.pickup, s.northM))
@@ -144,9 +140,10 @@ func carIDs(r supplyResp) []int64 {
 	return out
 }
 
+// tagIDs returns n seeded tags that apply to both sides, so either side may carry or filter by them (DD-42).
 func tagIDs(t *testing.T, tx pgx.Tx, n int) []int64 {
 	t.Helper()
-	rows, err := tx.Query(context.Background(), `SELECT id FROM tags ORDER BY id LIMIT $1`, n)
+	rows, err := tx.Query(context.Background(), `SELECT id FROM tags WHERE applies_to = 'both' ORDER BY id LIMIT $1`, n)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +258,6 @@ func TestSupplyHidesCarsFailingMandatoryTags(t *testing.T) {
 	carries := e.addTrip(t, tripSpec{tagIDs: []int64{a}})
 	plain := e.addTrip(t, tripSpec{})
 	wantsB := e.addTrip(t, tripSpec{tagIDs: []int64{a}, required: []int64{b}}) // the passenger lacks b
-	prefersB := e.addTrip(t, tripSpec{preferred: []int64{b}})                  // preferred never screens
 
 	// The passenger requires a: only the car carrying it stays.
 	got := e.supply(t, map[string]string{"required_tags": strconv.FormatInt(a, 10)})
@@ -280,8 +276,8 @@ func TestSupplyHidesCarsFailingMandatoryTags(t *testing.T) {
 	for _, id := range carIDs(got) {
 		have[id] = true
 	}
-	if have[wantsB] || !have[carries] || !have[plain] || !have[prefersB] {
-		t.Fatalf("cars = %v, want carries, plain and prefersB but not wantsB (%d)", carIDs(got), wantsB)
+	if have[wantsB] || !have[carries] || !have[plain] {
+		t.Fatalf("cars = %v, want carries and plain but not wantsB (%d)", carIDs(got), wantsB)
 	}
 
 	// Once the passenger carries b, the driver's requirement is met.
@@ -297,8 +293,8 @@ func TestSupplyHidesCarsFailingMandatoryTags(t *testing.T) {
 
 	// A preferred tag on the passenger's side never hides a car.
 	got = e.supply(t, map[string]string{"preferred_tags": strconv.FormatInt(a, 10)})
-	if len(got.Cars) != 4 {
-		t.Fatalf("cars = %v, want all 4 with only a preferred filter", carIDs(got))
+	if len(got.Cars) != 3 {
+		t.Fatalf("cars = %v, want all 3 with only a preferred filter", carIDs(got))
 	}
 }
 

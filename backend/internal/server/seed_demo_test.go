@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -13,21 +12,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// migrationUp returns the Up section of a migration, so a test can run the seed SQL itself.
-func migrationUp(t *testing.T, name string) string {
-	t.Helper()
-	b, err := os.ReadFile("../../migrations/" + name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	up, _, _ := strings.Cut(string(b), "-- +goose Down")
-	return strings.Replace(up, "-- +goose Up", "", 1)
-}
-
-// freshDemoSeed puts passenger1 and driver4 back to the state right after the seed migration:
-// a manual demo on the dev database changes both (DD-19), so the test clears what the demo
-// produced and runs the migration's own SQL again. It skips when the demo left rows that
-// reference driver4's trips; `just backend db-reset` then restores a clean database.
+// freshDemoSeed puts passenger1 and driver4 back to the seeded state: a manual demo on the dev
+// database changes both (DD-19), so the test clears what the demo produced and calls the seed
+// function the Demo reset uses (DD-29). The seed migration itself can no longer run again: it
+// writes driver4's suggested filter, which T43's migration removed (REQ-013). It skips when the
+// demo left rows that reference driver4's trips; `just backend db-reset` then restores a clean
+// database.
 func freshDemoSeed(t *testing.T, tx pgx.Tx) {
 	t.Helper()
 	ctx := context.Background()
@@ -44,7 +34,7 @@ func freshDemoSeed(t *testing.T, tx pgx.Tx) {
 		t.Fatal(err)
 	}
 	mustExec(t, tx, `DELETE FROM passenger_profiles WHERE user_id = (SELECT id FROM users WHERE username = 'passenger1')`)
-	mustExec(t, tx, migrationUp(t, "20261020120000_seed_demo_habitual_data.sql"))
+	mustExec(t, tx, `SELECT seed_demo_habitual_data()`)
 }
 
 // REQ-025, DD-19: passenger1's profile carries the seeded destination and accepted stops;
@@ -93,11 +83,8 @@ func TestSeedDriverDefaults(t *testing.T) {
 	ctx := context.Background()
 
 	d := decode[defaultsResp](t, call(t, tx, http.MethodGet, "/api/driver/trips/defaults", "driver:driver4", ""))
-	var pickupID, tagID int64
+	var pickupID int64
 	if err := tx.QueryRow(ctx, `SELECT id FROM pickup_points WHERE name = '松山車站'`).Scan(&pickupID); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.QueryRow(ctx, `SELECT id FROM tags WHERE name = '不抽菸'`).Scan(&tagID); err != nil {
 		t.Fatal(err)
 	}
 	if d.PickupPointID == nil || *d.PickupPointID != pickupID {
@@ -109,8 +96,9 @@ func TestSeedDriverDefaults(t *testing.T) {
 	if d.Capacity == nil || *d.Capacity != 3 || d.AutoAccept {
 		t.Errorf("capacity = %v auto_accept = %v, want 3 and false", d.Capacity, d.AutoAccept)
 	}
-	if len(d.TagFilters) != 1 || d.TagFilters[0].TagID != tagID || d.TagFilters[0].Intent != "preferred" {
-		t.Errorf("tag filters = %+v, want 不抽菸 preferred", d.TagFilters)
+	// REQ-013: a driver has no suggested filters, and the seed sets no required one.
+	if len(d.TagFilters) != 0 {
+		t.Errorf("tag filters = %+v, want none", d.TagFilters)
 	}
 
 	var active, simulated, profiles, records int
@@ -134,8 +122,9 @@ func TestSeedDriverDefaults(t *testing.T) {
 	}
 }
 
-// DD-19, T03: the migration can run again without duplicating or changing anything.
-func TestSeedDemoMigrationIsRepeatable(t *testing.T) {
+// DD-19, DD-29: the seed function can run again (each Demo reset calls it) without duplicating
+// passenger1's data; each call adds one ended trip for driver4, without tag filters (REQ-013).
+func TestSeedDemoFunctionIsRepeatable(t *testing.T) {
 	tx := testTx(t)
 	freshDemoSeed(t, tx)
 	count := func() (n [4]int) {
@@ -149,9 +138,11 @@ func TestSeedDemoMigrationIsRepeatable(t *testing.T) {
 		return n
 	}
 	before := count()
-	mustExec(t, tx, migrationUp(t, "20261020120000_seed_demo_habitual_data.sql"))
-	if after := count(); after != before {
-		t.Errorf("rows after a second run = %v, want %v", after, before)
+	mustExec(t, tx, `SELECT seed_demo_habitual_data()`)
+	want := before
+	want[2]++
+	if after := count(); after != want {
+		t.Errorf("rows after a second call = %v, want %v", after, want)
 	}
 }
 

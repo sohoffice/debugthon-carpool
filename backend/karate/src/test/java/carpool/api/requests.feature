@@ -72,9 +72,10 @@ Feature: ride requests (POST /api/passenger/requests)
     * match response == { request: null }
 
   Scenario: no car for the passenger answers there is no car
-    # no car carries this tag
+    # no car in this feature carries 可聊天 (the cars carry tags[0..2])
+    * def chat = karate.filter(tags, function(g) { return g.name == '可聊天' })[0].id
     * path 'api', 'passenger', 'requests'
-    * request submission([{ tag_id: '#(tags[4].id)', intent: 'required' }], 0)
+    * request submission([{ tag_id: '#(chat)', intent: 'required' }], 0)
     * method post
     * status 201
     * match response contains { status: 'no_match', reason: 'no_match', message: '目前沒有可搭的車', trip_id: null, response_deadline_at: null }
@@ -154,3 +155,18 @@ Feature: ride requests (POST /api/passenger/requests)
     * method post
     * status 400
     * match response.error.code == 'invalid_pickup_point'
+
+  # REQ-085: the passenger filters only by tags that apply to drivers.
+  Scenario: a request filtering by a tag that does not apply to drivers is refused
+    # tags have no API, so the passenger-only tag is made by SQL and removed afterwards
+    * def own = Db.queryLong("INSERT INTO tags (name, applies_to, passenger_self_label, driver_filter_label) VALUES (?, 'passenger', 'karate', 'karate') RETURNING id", 'karate-request-passenger-tag-' + suffix)
+    * configure afterScenario = function() { Db.exec('DELETE FROM tags WHERE id = ?', own); karate.call('classpath:carpool/api/cleanup-tracking.feature', { user: passenger }) }
+    * path 'api', 'passenger', 'requests'
+    * request submission([{ tag_id: '#(own)', intent: 'preferred' }], 0)
+    * method post
+    * status 400
+    * match response.error.code == 'tag_not_applicable'
+    * path 'api', 'passenger', 'requests', 'current'
+    * method get
+    * status 200
+    * match response == { request: null }

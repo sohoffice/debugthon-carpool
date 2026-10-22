@@ -199,14 +199,8 @@ func (s *Server) parseSupplyFilters(c *gin.Context) ([]tagFilter, bool) {
 		apiError(c, http.StatusBadRequest, "invalid_request", "同一個標籤不可同時列為必要與建議")
 		return nil, false
 	}
-	if len(body) > 0 {
-		if ok, err := s.tagsExist(c, s.db, body); err != nil {
-			s.internalError(c, err)
-			return nil, false
-		} else if !ok {
-			apiError(c, http.StatusBadRequest, "invalid_tag", "標籤不在清單中")
-			return nil, false
-		}
+	if !s.checkFilterTags(c, body, roleDriver) { // REQ-085
+		return nil, false
 	}
 	out := make([]tagFilter, len(body))
 	for i, f := range body {

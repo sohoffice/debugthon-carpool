@@ -41,16 +41,29 @@ func takeDemoSnapshot(t *testing.T, tx pgx.Tx) demoSnapshot {
 	}
 }
 
-// DD-19, DD-29: the function the reset calls writes the same values as the seed migration.
-func TestDemoSeedFunctionMatchesMigration(t *testing.T) {
+// DD-29, REQ-013: after a Demo reset, driver4's defaults are the seeded trip without any tag
+// filter (the seed's suggested 不抽菸 is gone), and passenger1's seeded profile is back.
+func TestDemoResetSeedsNoDriverSuggestion(t *testing.T) {
 	tx := testTx(t)
 	freshDemoSeed(t, tx)
 	seeded := takeDemoSnapshot(t, tx)
-
 	mustExec(t, tx, `DELETE FROM passenger_profiles WHERE user_id = (SELECT id FROM users WHERE username = 'passenger1')`)
-	mustExec(t, tx, `SELECT seed_demo_habitual_data()`)
-	if got := takeDemoSnapshot(t, tx); !reflect.DeepEqual(got, seeded) {
-		t.Errorf("after the function = %+v, want the migration's %+v", got, seeded)
+
+	wantStatus(t, resetCall(t, tx, true), http.StatusNoContent, "")
+
+	got := takeDemoSnapshot(t, tx)
+	d := got.Defaults
+	pickupID := queryInt(t, tx, `SELECT id FROM pickup_points WHERE name = '松山車站'`)
+	if d.PickupPointID == nil || *d.PickupPointID != pickupID ||
+		d.Destination == nil || *d.Destination != (place{"瑞光路 513 巷", 25.0765, 121.5742}) ||
+		d.Capacity == nil || *d.Capacity != 3 || d.AutoAccept {
+		t.Errorf("driver4 defaults = %+v, want the seeded trip", d)
+	}
+	if d.TagFilters == nil || len(d.TagFilters) != 0 {
+		t.Errorf("driver4 tag filters = %+v, want an empty list", d.TagFilters)
+	}
+	if got.Profile != seeded.Profile {
+		t.Errorf("passenger1 profile = %s, want the seed's %s", got.Profile, seeded.Profile)
 	}
 }
 
