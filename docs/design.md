@@ -479,7 +479,7 @@ erDiagram
   - DD-19 重新計算常用資料時，只更新常用資料的欄位，不動 `point_balance`。
   - 每位駕駛都有一列 `driver_profiles`：目前這一列在駕駛第一次完成共乘時才建立，改為 Demo 種子替每位模擬駕駛建立（常用資料欄位為空），其他駕駛在第一次記點時建立；沒有共乘前常用資料欄位仍為空，`GET /api/driver/profile` 的常用資料照舊回傳空值。
   - Demo 種子替每位模擬駕駛建立數筆 `seed` 紀錄，累積點數不為零（REQ-073）；`driver4` 的紀錄較多，用來展示駕駛資訊。
-  - Demo 重設（DD-29）不再刪除模擬駕駛的 `driver_profiles` 列：改為清空常用資料欄位後再寫回種子；在刪除服務紀錄之前刪除 Demo 帳號的 `ride` 紀錄；並把 `point_balance` 重設為 `seed` 紀錄的加總。
+  - Demo 重設（DD-29）不再刪除模擬駕駛的 `driver_profiles` 列：改為清空常用資料欄位後再寫回種子；在刪除服務紀錄之前，刪除 Demo 駕駛的 `ride` 紀錄，以及非 Demo 駕駛載 Demo 乘客所得的 `ride` 紀錄（這些紀錄指向即將刪除的服務紀錄）；Demo 駕駛的 `point_balance` 重設為 `seed` 紀錄的加總，非 Demo 駕駛的 `point_balance` 重算為其點數紀錄的加總（REQ-071）。
 - 需求連結：
   - REQ-055
   - REQ-071
