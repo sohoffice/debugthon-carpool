@@ -32,6 +32,8 @@ type Server struct {
 	rankBudget time.Duration
 	// now is the real clock; Phase 2 turns it into the commute "now" with commuteNow (DD-41).
 	now func() time.Time
+	// round is the city dashboard's live simulation round (DD-40 step 5); the Demo reset restarts it.
+	round *liveRound
 }
 
 // Deps are the collaborators that are not the database.
@@ -48,7 +50,7 @@ type Deps struct {
 
 // NewRouter builds the HTTP router with all API routes registered.
 func NewRouter(db DB, deps Deps) *gin.Engine {
-	s := &Server{db: db, park: deps.Park, routes: deps.Routes, now: deps.Clock}
+	s := &Server{db: db, park: deps.Park, routes: deps.Routes, now: deps.Clock, round: &liveRound{}}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -79,24 +81,25 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 		api.POST("/demo/reset", s.resetDemo)
 	}
 
-	// Any authenticated role.
 	authed := api.Group("", s.authenticate)
-	authed.GET("/me", s.getMe)
-	authed.GET("/pickup-points", s.listPickupPoints)
-	authed.GET("/bus-stops", s.listBusStops)
-	authed.GET("/park/check", s.checkPark)
-	authed.GET("/tags", s.listTags)
-	authed.PUT("/me/tags/:id", s.selectTag)
-	authed.DELETE("/me/tags/:id", s.deselectTag)
-	authed.POST("/activities", s.createActivity)
-	authed.POST("/location", s.reportLocation)
-	authed.GET("/me/location-reports", s.listMyLocationReports)
-	authed.GET("/trips/:id", s.getTrip)
-	authed.GET("/commute/traffic", s.getCommuteTraffic) // Phase 2, REQ-077
-	authed.GET("/commute/weather", s.getCommuteWeather)
-	authed.GET("/commute/pickup-rides", s.getPickupRides) // Phase 2, REQ-056
+	// Drivers and passengers. A city token calls only /api/city/* (DD-39).
+	user := authed.Group("", requireRole(roleDriver, rolePassenger))
+	user.GET("/me", s.getMe)
+	user.GET("/pickup-points", s.listPickupPoints)
+	user.GET("/bus-stops", s.listBusStops)
+	user.GET("/park/check", s.checkPark)
+	user.GET("/tags", s.listTags)
+	user.PUT("/me/tags/:id", s.selectTag)
+	user.DELETE("/me/tags/:id", s.deselectTag)
+	user.POST("/activities", s.createActivity)
+	user.POST("/location", s.reportLocation)
+	user.GET("/me/location-reports", s.listMyLocationReports)
+	user.GET("/trips/:id", s.getTrip)
+	user.GET("/commute/traffic", s.getCommuteTraffic) // Phase 2, REQ-077
+	user.GET("/commute/weather", s.getCommuteWeather)
+	user.GET("/commute/pickup-rides", s.getPickupRides) // Phase 2, REQ-056
 
-	driver := authed.Group("/driver", requireRole(roleDriver))
+	driver := user.Group("/driver", requireRole(roleDriver))
 	driver.GET("/profile", s.getDriverProfile)
 	driver.GET("/points", s.getDriverPoints)
 	driver.POST("/trips", s.depart)
@@ -108,7 +111,7 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	driver.POST("/requests/:id/decline", s.respondRequest(false))
 	driver.POST("/requests/:id/board", s.boardRequest)
 	driver.POST("/requests/:id/complete", s.completeRequest)
-	passenger := authed.Group("/passenger", requireRole(rolePassenger))
+	passenger := user.Group("/passenger", requireRole(rolePassenger))
 	passenger.GET("/profile", s.getPassengerProfile)
 	passenger.GET("/supply", s.getSupply)
 	passenger.POST("/requests", s.submitRequest)
@@ -116,6 +119,13 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 	passenger.GET("/requests/:id", s.getPassengerRequest)
 	passenger.POST("/requests/:id/board", s.boardRequest)
 	passenger.POST("/requests/:id/complete", s.completeRequest)
+
+	// City dashboard, Phase 2 (DD-39): aggregates and anonymous positions only (REQ-081).
+	city := authed.Group("/city", requireRole(roleCity))
+	city.GET("/live", s.getCityLive)
+	city.GET("/traffic", s.getCityTraffic)
+	city.GET("/today", s.getCityToday)
+	city.GET("/history", s.getCityHistory)
 
 	return r
 }

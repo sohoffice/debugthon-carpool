@@ -17,6 +17,8 @@ func (s *Server) resetDemo(c *gin.Context) {
 		s.internalError(c, err)
 		return
 	}
+	// The city dashboard's next live query starts a new simulation round (DD-40 step 5).
+	s.round.restart()
 	c.Status(http.StatusNoContent)
 }
 
