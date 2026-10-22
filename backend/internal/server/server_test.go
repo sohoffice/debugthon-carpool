@@ -114,7 +114,10 @@ func TestProfiles(t *testing.T) {
 	seed(`SELECT id, name FROM pickup_points ORDER BY id LIMIT 1`, &pickupID, &pickupName)
 	seed(`SELECT id, name FROM bus_stops ORDER BY id LIMIT 1`, &stopID, &stopName)
 	mustExec(t, tx, `INSERT INTO driver_profiles (user_id, usual_pickup_point_id, usual_destination_name, usual_destination_lat, usual_destination_lng, capacity)
-		SELECT id, $1, 'Home', 24.9, 121.4, 3 FROM users WHERE username = 'driver1'`, pickupID)
+		SELECT id, $1, 'Home', 24.9, 121.4, 3 FROM users WHERE username = 'driver1'
+		ON CONFLICT (user_id) DO UPDATE SET usual_pickup_point_id = EXCLUDED.usual_pickup_point_id,
+		       usual_destination_name = EXCLUDED.usual_destination_name, usual_destination_lat = EXCLUDED.usual_destination_lat,
+		       usual_destination_lng = EXCLUDED.usual_destination_lng, capacity = EXCLUDED.capacity`, pickupID)
 	// passenger1 starts with the Demo profile (DD-19); replace it with this test's data.
 	mustExec(t, tx, `DELETE FROM passenger_profiles WHERE user_id = (SELECT id FROM users WHERE username = 'passenger1')`)
 	mustExec(t, tx, `INSERT INTO passenger_profiles (user_id, usual_arrival_time, usual_destination_name, usual_destination_lat, usual_destination_lng)

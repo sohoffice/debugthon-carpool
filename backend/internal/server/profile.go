@@ -20,20 +20,25 @@ func usualPlace(name *string, lat, lng *float64) *place {
 	return &place{Name: *name, Lat: *lat, Lng: *lng}
 }
 
-// getDriverProfile returns the habitual data accumulated from completed rides (DD-19).
-// Every field is null for an account with no rides yet.
+// getDriverProfile returns the habitual data accumulated from completed rides (DD-19), the vehicle
+// (REQ-074) and the point balance (REQ-071, DD-34). The habitual fields are null for an account with
+// no rides yet, even though the demo seed gives every demo driver a profile row for its points; a
+// driver with no row has a balance of 0. vehicle is null for a driver without one.
 func (s *Server) getDriverProfile(c *gin.Context) {
 	var (
 		pickupID         *int64
 		destName         *string
 		destLat, destLng *float64
 		capacity         *int
+		balance          int
 		pickup           *pickupPoint
+		vehicle          *vehicleView
 	)
 	err := s.db.QueryRow(c, `
-		SELECT usual_pickup_point_id, usual_destination_name, usual_destination_lat, usual_destination_lng, capacity
+		SELECT usual_pickup_point_id, usual_destination_name, usual_destination_lat, usual_destination_lng, capacity,
+		       point_balance
 		  FROM driver_profiles WHERE user_id = $1`, c.GetInt64(ctxUserID)).
-		Scan(&pickupID, &destName, &destLat, &destLng, &capacity)
+		Scan(&pickupID, &destName, &destLat, &destLng, &capacity, &balance)
 	if err != nil && !isNoRows(err) {
 		s.internalError(c, err)
 		return
@@ -47,10 +52,22 @@ func (s *Server) getDriverProfile(c *gin.Context) {
 			return
 		}
 	}
+	var v vehicleView
+	err = s.db.QueryRow(c, `SELECT plate, description FROM vehicles WHERE user_id = $1`, c.GetInt64(ctxUserID)).
+		Scan(&v.Plate, &v.Description)
+	switch {
+	case err == nil:
+		vehicle = &v
+	case !isNoRows(err):
+		s.internalError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"usual_pickup_point": pickup,
 		"usual_destination":  usualPlace(destName, destLat, destLng),
 		"capacity":           capacity,
+		"vehicle":            vehicle,
+		"point_balance":      balance,
 	})
 }
 

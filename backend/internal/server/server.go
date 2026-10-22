@@ -88,6 +88,7 @@ func NewRouter(db DB, deps Deps) *gin.Engine {
 
 	driver := authed.Group("/driver", requireRole(roleDriver))
 	driver.GET("/profile", s.getDriverProfile)
+	driver.GET("/points", s.getDriverPoints)
 	driver.POST("/trips", s.depart)
 	driver.POST("/route-preview", s.previewRoute)
 	driver.GET("/trips/current", s.currentTrip)

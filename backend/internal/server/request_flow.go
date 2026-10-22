@@ -379,7 +379,8 @@ func (s *Server) finishRequest(c *gin.Context, op func(ts *Server, q lockedReque
 	c.JSON(http.StatusOK, view)
 }
 
-// complete ends a ride: the seat is given back and the service record is written (REQ-055).
+// complete ends a ride: the seat is given back, the service record is written (REQ-055) and the
+// driver earns the ride's points (REQ-072).
 // s.db must be the transaction that holds the request lock.
 func (s *Server) complete(ctx context.Context, q lockedRequest) error {
 	if err := transition(ctx, s.db, q.ID, q.Status, reqCompleted, `completed_at = now()`); err != nil {
@@ -391,21 +392,23 @@ func (s *Server) complete(ctx context.Context, q lockedRequest) error {
 		}
 		return err
 	}
-	_, err := s.db.Exec(ctx, `
+	var recordID, driverID int64
+	err := s.db.QueryRow(ctx, `
 		INSERT INTO service_records (request_id, trip_id, driver_id, passenger_id, pickup_point_id, dropoff_bus_stop_id,
 		                             dropoff_name, dropoff_lat, dropoff_lng, picked_up_at, completed_at)
 		SELECT q.id, q.trip_id, t.driver_id, q.passenger_id, q.pickup_point_id, q.dropoff_bus_stop_id,
 		       COALESCE(b.name, t.destination_name), COALESCE(b.lat, t.destination_lat), COALESCE(b.lng, t.destination_lng),
 		       q.boarded_at, q.completed_at
 		  FROM ride_requests q JOIN trips t ON t.id = q.trip_id LEFT JOIN bus_stops b ON b.id = q.dropoff_bus_stop_id
-		 WHERE q.id = $1`, q.ID)
+		 WHERE q.id = $1
+		RETURNING id, driver_id`, q.ID).Scan(&recordID, &driverID)
 	if err != nil {
 		return err
 	}
 	// REQ-006, REQ-007, DD-19: the finished ride feeds the usual data, in the same transaction.
-	var driverID int64
-	if err := s.db.QueryRow(ctx, `SELECT driver_id FROM trips WHERE id = $1`, *q.TripID).Scan(&driverID); err != nil {
+	if err := recomputeUsualData(ctx, s.db, driverID, q.PassengerID); err != nil {
 		return err
 	}
-	return recomputeUsualData(ctx, s.db, driverID, q.PassengerID)
+	// REQ-072, DD-34: the driver is credited for this ride in the same transaction too.
+	return creditRide(ctx, s.db, driverID, recordID)
 }

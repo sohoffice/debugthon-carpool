@@ -99,7 +99,12 @@ func playDemo(t *testing.T, tx pgx.Tx) demoFixture {
 		SELECT q.id, q.trip_id, t.driver_id, q.passenger_id, q.pickup_point_id, q.destination_name, q.destination_lat, q.destination_lng
 		  FROM ride_requests q JOIN trips t ON t.id = q.trip_id WHERE q.trip_id = $1`, f.oldTrips["driver1"])
 	mustExec(t, tx, `UPDATE passenger_profiles SET usual_destination_name = '別處' WHERE user_id = (SELECT id FROM users WHERE username = 'passenger1')`)
-	mustExec(t, tx, `INSERT INTO driver_profiles (user_id, capacity) SELECT id, 2 FROM users WHERE username = 'driver1'`)
+	mustExec(t, tx, `UPDATE driver_profiles SET capacity = 2 WHERE user_id = (SELECT id FROM users WHERE username = 'driver1')`)
+	// driver1 earns the ride's points (DD-34).
+	mustExec(t, tx, `
+		INSERT INTO driver_point_ledger (driver_id, delta, reason, service_record_id)
+		SELECT s.driver_id, 10, 'ride', s.id FROM service_records s WHERE s.trip_id = $1`, f.oldTrips["driver1"])
+	mustExec(t, tx, `UPDATE driver_profiles SET point_balance = point_balance + 10 WHERE user_id = (SELECT id FROM users WHERE username = 'driver1')`)
 	mustExec(t, tx, `
 		INSERT INTO ride_requests (passenger_id, pickup_point_id, destination_name, destination_lat, destination_lng, status, trip_id)
 		SELECT u.id, $1, '別處', 25.08, 121.57, 'confirmed', $2 FROM users u WHERE u.username = 'passenger2'`,
@@ -133,7 +138,17 @@ func TestDemoReset(t *testing.T) {
 	tx := testTx(t)
 	freshDemoSeed(t, tx)
 	seeded := takeDemoSnapshot(t, tx)
+	seededPoints := map[string][2]int64{} // username -> balance, ledger rows
+	for _, d := range []string{"driver1", "driver2", "driver3", "driver4", "driver5"} {
+		seededPoints[d] = [2]int64{
+			queryInt(t, tx, `SELECT p.point_balance FROM driver_profiles p JOIN users u ON u.id = p.user_id WHERE u.username = $1`, d),
+			queryInt(t, tx, `SELECT count(*) FROM driver_point_ledger l JOIN users u ON u.id = l.driver_id WHERE u.username = $1`, d),
+		}
+	}
 	f := playDemo(t, tx)
+	if n := queryInt(t, tx, `SELECT point_balance FROM driver_profiles WHERE user_id = (SELECT id FROM users WHERE username = 'driver1')`); n != seededPoints["driver1"][0]+10 {
+		t.Fatalf("driver1 balance during the demo = %d, want the seed plus 10", n)
+	}
 
 	wantStatus(t, resetCall(t, tx, true), http.StatusNoContent, "")
 
@@ -156,11 +171,37 @@ func TestDemoReset(t *testing.T) {
 		if got := takeDemoSnapshot(t, tx); !reflect.DeepEqual(got, seeded) {
 			t.Errorf("after reset = %+v, want the seed %+v", got, seeded)
 		}
-		if n := queryInt(t, tx, `SELECT count(*) FROM driver_profiles p JOIN users u ON u.id = p.user_id WHERE u.simulated`); n != 0 {
-			t.Errorf("demo driver profiles = %d, want 0", n)
+		// Each demo driver keeps its profile row (DD-34) with the habitual fields empty again.
+		if n := queryInt(t, tx, `
+			SELECT count(*) FROM driver_profiles p JOIN users u ON u.id = p.user_id
+			 WHERE u.simulated AND u.is_driver AND p.usual_pickup_point_id IS NULL AND p.usual_destination_name IS NULL
+			   AND p.usual_destination_lat IS NULL AND p.usual_destination_lng IS NULL AND p.capacity IS NULL`); n != 5 {
+			t.Errorf("demo drivers with an empty profile row = %d, want 5", n)
 		}
 		if n := queryInt(t, tx, `SELECT count(*) FROM passenger_profiles p JOIN users u ON u.id = p.user_id WHERE u.username = 'passenger2'`); n != 0 {
 			t.Errorf("passenger2 profiles = %d, want 0", n)
+		}
+	})
+
+	// DD-34: the ride points are gone and every demo driver's balance is its seed rows' sum again.
+	t.Run("points are the seed again", func(t *testing.T) {
+		if n := queryInt(t, tx, `
+			SELECT count(*) FROM driver_point_ledger l JOIN users u ON u.id = l.driver_id
+			 WHERE u.simulated AND l.reason = 'ride'`); n != 0 {
+			t.Errorf("demo ride rows = %d, want 0", n)
+		}
+		for name, want := range seededPoints {
+			got := queryInt(t, tx, `
+				SELECT p.point_balance FROM driver_profiles p JOIN users u ON u.id = p.user_id WHERE u.username = $1`, name)
+			rows := queryInt(t, tx, `
+				SELECT count(*) FROM driver_point_ledger l JOIN users u ON u.id = l.driver_id WHERE u.username = $1`, name)
+			if got != want[0] || rows != want[1] {
+				t.Errorf("%s: balance %d rows %d, want the seed's %d and %d", name, got, rows, want[0], want[1])
+			}
+		}
+		d := decode[driverProfileResp](t, call(t, tx, http.MethodGet, "/api/driver/profile", "driver:driver1", ""))
+		if d.UsualPickupPoint != nil || d.UsualDestination != nil || d.Capacity != nil {
+			t.Errorf("driver1 habitual data after reset = %+v, want null (no seed)", d)
 		}
 	})
 

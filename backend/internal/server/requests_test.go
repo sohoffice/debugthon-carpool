@@ -750,6 +750,17 @@ func (f *raceFixture) cleanup() {
 		if _, err := tx.Exec(ctx, `UPDATE trips SET status = 'completed', ended_at = now() WHERE id = $1`, f.trip); err != nil {
 			return err
 		}
+		// The driver's ride points go with the service records they reference (DD-34).
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM driver_point_ledger WHERE service_record_id IN
+			       (SELECT id FROM service_records WHERE passenger_id = ANY($1))`, passengers); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE driver_profiles p SET point_balance = (SELECT COALESCE(sum(delta), 0) FROM driver_point_ledger WHERE driver_id = p.user_id)
+			 WHERE p.user_id = (SELECT driver_id FROM trips WHERE id = $1)`, f.trip); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM service_records WHERE passenger_id = ANY($1)`, passengers); err != nil {
 			return err
 		}

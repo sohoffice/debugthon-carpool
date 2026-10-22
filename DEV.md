@@ -125,7 +125,8 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 - 重設之後，重新執行 `just demo-offstage`（或重新整理自己開的除錯模式駕駛頁面），模擬器就從起點重新開始；展示頁按「重設」會自己重新載入兩支手機。
 - 重設的內容（DD-29）只動 Demo 帳號（`users.simulated`），在同一個交易內完成：
   - 刪除 Demo 乘客的請求與這些請求的服務紀錄；這些請求暫留或佔用的座位還給原本的行程。
-  - 常用資料還原為種子（DD-19）：刪除 Demo 帳號的常用資料，再呼叫資料庫函式 `seed_demo_habitual_data()`（遷移 `20261021120000_demo_seed_function.sql`，值和種子遷移相同，由 `TestDemoSeedFunctionMatchesMigration` 驗證）。這個函式每次都替 `driver4` 新增一趟和種子相同、已結束的行程，所以重設後駕駛介面帶入的是種子的設定，而不是 Demo 中最後一趟的設定。
+  - 駕駛點數還原為種子（DD-34）：在刪除服務紀錄之前，刪除 Demo 駕駛的 `ride` 點數紀錄，以及因載 Demo 乘客而產生的 `ride` 點數紀錄（非 Demo 駕駛的累積點數隨之重算為點數紀錄的加總）；再呼叫 `seed_demo_driver_points()`（遷移 `20261022100000_driver_points.sql`），把 Demo 駕駛的累積點數設為 `seed` 紀錄的加總。`seed` 紀錄不刪除。
+  - 常用資料還原為種子（DD-19）：刪除 Demo 乘客的常用資料；Demo 駕駛的常用資料列不刪除（累積點數在這一列，DD-34），只清空常用資料欄位。再呼叫資料庫函式 `seed_demo_habitual_data()`（遷移 `20261021120000_demo_seed_function.sql`，值和種子遷移相同，由 `TestDemoSeedFunctionMatchesMigration` 驗證）。這個函式每次都替 `driver4` 新增一趟和種子相同、已結束的行程，所以重設後駕駛介面帶入的是種子的設定，而不是 Demo 中最後一趟的設定。
   - Demo 駕駛尚未結束的行程改為 `cancelled`（不是 `completed`：行程沒有抵達目的地，駕駛介面不會顯示「行程結束」）。
   - `driver1`～`driver3` 最近一趟模擬行程以新的行程重新開始：設定相同，並建立關聯到新行程的參與主檔，模擬器可以直接回報位置。保存的路線只在是真實路線時複製；模擬的直線不複製，新行程第一次讀取時用目前的來源重建，所以斷網時開始的 Demo 在有金鑰時重設，地圖會回到真實路線（DD-09、DD-21）。
   - 不刪除位置紀錄（DD-06），舊的行程與參與主檔都保留。
@@ -152,7 +153,8 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 | GET | `/api/tags` | 任一 | 標籤清單，`selected` 表示呼叫者是否已選擇 |
 | PUT | `/api/me/tags/:id` | 任一 | 選擇清單中的標籤（重複選擇無影響；不在清單中回 404） |
 | DELETE | `/api/me/tags/:id` | 任一 | 取消選擇標籤 |
-| GET | `/api/driver/profile` | 駕駛 | 常用上車點、常用目的地、可載人數（尚無共乘紀錄時為 `null`） |
+| GET | `/api/driver/profile` | 駕駛 | 常用上車點、常用目的地、可載人數（尚無共乘紀錄時為 `null`），以及車輛 `vehicle{plate,description}`（沒有車輛為 `null`）與累積點數 `point_balance`（T35，REQ-074、DD-34、DD-35；從未記點為 `0`） |
+| GET | `/api/driver/points` | 駕駛 | 最近的點數紀錄（T35，REQ-074、DD-35）：回 `200` 與 `{"points":[{delta,reason,service_record_id,created_at}]}`，由新到舊；`reason` 為 `ride`（共乘完成，`service_record_id` 指向該次服務紀錄）或 `seed`（Demo 初始點數，`service_record_id` 為 `null`）。選填 `limit`（1～50，預設 5），超出範圍或不是整數回 `400 invalid_request`；乘客回 `403`。乘客可取得的 API 都不含駕駛點數（REQ-075） |
 | GET | `/api/passenger/profile` | 乘客 | 平常抵達時間、常用目的地、可接受的下車公車站 |
 | POST | `/api/activities` | 任一 | 表示今天要參與，建立位置回報的主檔（DD-25），回 `201`。駕駛的主檔關聯到進行中的行程（沒有則回 `409 no_active_trip`）；乘客的主檔在請求被確認時才關聯到行程（T12／T13），建立當下不關聯。再次呼叫會建立新的主檔 |
 | POST | `/api/location` | 任一 | 回報位置 `{"lat","lng"}`，回 `201`，歸入呼叫者最新的主檔（從未建立過回 `409 no_activity`）。駕駛的回報若主檔有行程，會回傳 `passed_pickup` 與 `trip_ended`：經過上車點之後，回報進入目的地「抵達距離」（`arrival_radius`）之內，行程即自動結束（T21，REQ-070、DD-30），`trip_ended` 為 `true`，詳見下方〈行程自動結束〉。座標缺漏或超出範圍回 `400 invalid_location` |
@@ -168,7 +170,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 | POST | `/api/driver/requests/:id/accept` | 駕駛 | 確認請求：暫留的座位轉為正式佔用，乘客最新的參與主檔關聯到該行程（DD-25）。回 `200` 與請求；請求不是這位駕駛行程的回 `404 not_found`，已不在等待回應（已回應、已逾時改配）回 `409 not_waiting` |
 | POST | `/api/driver/requests/:id/decline` | 駕駛 | 婉拒請求：釋放座位並改配給排序中下一台還有座位的車（一樣等待該車駕駛確認，DD-33），沒有車可配為 `no_match`。錯誤同 `accept` |
 | POST | `/api/driver/requests/:id/board` | 駕駛 | 標記乘客已上車（DD-27）。回 `200` 與請求；乘客已先標記則直接回已上車的請求（`boarded_at` 為先到者的時間），座位計數不變。請求不是已確認或已上車回 `409 invalid_state`，不是這位駕駛行程的回 `404 not_found` |
-| POST | `/api/driver/requests/:id/complete` | 駕駛 | 替乘客結束共乘（REQ-067、DD-23），已確認或已上車皆可：釋放座位、建立服務紀錄，並在同一個交易中依該駕駛與乘客累積的服務紀錄重新計算常用資料（DD-19：各欄位取最常出現的值，次數相同取最近一趟；乘客平常抵達時間取完成時間（台北時間）的中位數，可接受的下車公車站為實際用過的公車站，沒有用過任何公車站時保留原本的值、不清空）。已完成則直接回已完成的請求。錯誤同 `board` |
+| POST | `/api/driver/requests/:id/complete` | 駕駛 | 替乘客結束共乘（REQ-067、DD-23），已確認或已上車皆可：釋放座位、建立服務紀錄，並在同一個交易中依該駕駛與乘客累積的服務紀錄重新計算常用資料（DD-19：各欄位取最常出現的值，次數相同取最近一趟；乘客平常抵達時間取完成時間（台北時間）的中位數，可接受的下車公車站為實際用過的公車站，沒有用過任何公車站時保留原本的值、不清空）；同一個交易中也為駕駛記點（T35，REQ-072、DD-34）：新增一筆指向該服務紀錄的 `ride` 點數紀錄，累積點數加上系統設定 `points_per_ride`（預設 10）。同一次共乘只記一次點。已完成則直接回已完成的請求。錯誤同 `board` |
 | GET | `/api/passenger/requests/current` | 乘客 | 乘客尚未結束（等待駕駛、已確認、已上車）的請求狀態，沒有則回 `{"request": null}`；乘客介面開啟時帶出（REQ-069） |
 | GET | `/api/passenger/requests/:id` | 乘客 | 請求狀態（輪詢用，REQ-052、REQ-053）：送出請求的欄位加上 `boarded_at`、`completed_at`、`reassigned_count`（婉拒、逾時或行程結束而改配的次數）。已確認時另含 `pickup_point`、`vehicle{plate,description}`、`eta_s`（尚無駕駛位置，或車輛已經過上車點，為 `null`）、`eta_simulated`（ETA 是否來自模擬路線，REQ-063；沒有 `eta_s` 時為 `null`）與 `trip`（含路線與沿途公車站）；另有 `vehicle_position{lat,lng,heading_deg,reported_at}`（DD-31：駕駛最新的回報；`heading_deg` 由最近兩筆位置不同的回報計算，正北為 0 度、順時針，只有一個位置時為 `null`；車輛尚無回報時整個物件為 `null`）與 `passed_pickup`（車輛是否已經過上車點，DD-06）。等待、已上車與之後這些欄位皆為 `null`。`no_match` 帶 `reason`、`message`。不是自己的請求回 `404 not_found` |
 | POST | `/api/passenger/requests/:id/board` | 乘客 | 乘客標記自己已上車，行為同駕駛的 `board` |
@@ -235,6 +237,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
   - `driver3` 等待超過 10 分鐘：直接排除，不論標籤。
   模擬行程沒有種子位置，等待時間要由駕駛介面的模擬器（`?debug=1`）回報位置來調整。
 - 重建：遷移已套用的資料庫要改種子時，用 `just backend db-reset`。Down 只在剛種子的資料庫可用，跑過 Demo 後（位置紀錄、請求都會參照這些資料）請改用 `db-reset`。
+- 駕駛點數（T35，DD-34）由遷移 `backend/migrations/20261022100000_driver_points.sql` 建立：`driver_profiles.point_balance` 與點數紀錄 `driver_point_ledger`，以及系統設定 `points_per_ride`（每次共乘點數，預設 10，每次完成共乘時重新讀取）。種子替每位 Demo 駕駛建立一列 `driver_profiles`（常用資料欄位為空，`GET /api/driver/profile` 的常用資料仍回傳 `null`）與每筆 10 點的 `seed` 紀錄：`driver1` 3 筆、`driver2` 2 筆、`driver3` 4 筆、`driver4` 8 筆（展示駕駛資訊用，DD-35）、`driver5` 1 筆，累積點數等於紀錄的加總（REQ-073）。
 - 系統設定預設值在建立結構的遷移中（`system_settings`）。
 - 離開緩衝 `pass_margin`（預設 25 m）由遷移 `backend/migrations/20261019150000_pass_margin_setting.sql` 加入：車輛進入上車點範圍（`radius_m`）後，要離上車點超過「`radius_m` ＋ `pass_margin`」才算已經過，避免定位誤差在範圍邊緣造成誤判（DD-06）。每次回報都會重新讀取，改 SQL 後立即生效；設為 0 即為單一門檻。
 - 抵達距離 `arrival_radius`（預設 50 m）由遷移 `backend/migrations/20261021130000_arrival_ends_trip.sql` 加入（DD-30）：經過上車點之後，車輛回報的位置離駕駛目的地在這個距離內，行程即結束。每次回報都會重新讀取，改 SQL 後立即生效。
