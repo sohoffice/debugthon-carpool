@@ -1,5 +1,6 @@
 import {
   Button,
+  DEMO_COMPANY_NAME,
   RouteMap,
   RouteStrip,
   routeStripItems,
@@ -73,6 +74,10 @@ export function ConfirmedScreen({ request, celebrate, busy, onBoarded }: Confirm
               <Plate plate={vehicle.plate} />
               <span className="min-w-0 text-lg">{vehicle.description}</span>
             </div>
+            {/* Every Demo account works for the simulated company (REQ-062, DD-43). */}
+            <p className="mt-3 flex flex-wrap items-center gap-2 text-base">
+              駕駛與你同企業：{DEMO_COMPANY_NAME} <SimulatedBadge />
+            </p>
             {request.relaxed && <p className="mt-3 text-sm text-fg-soft">這台車不完全符合你的建議標籤</p>}
           </div>
 

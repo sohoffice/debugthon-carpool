@@ -1,6 +1,7 @@
 import {
   Button,
   ChipSelect,
+  CompanyChip,
   distanceM,
   ErrorNote,
   PlaceSearch,
@@ -79,6 +80,10 @@ export function DestinationScreen({ initial, busStops, myTags, onDone }: Destina
         </div>
 
         <h2 className="mt-8 text-base font-semibold text-fg-soft">篩選駕駛</h2>
+        {/* Simulated and never sent in the filters (DD-43). */}
+        <div className="mt-3">
+          <CompanyChip label="同企業" />
+        </div>
         <div className="mt-1">
           <TagFilterEditor tags={tags} value={filters} onChange={setFilters} />
         </div>
