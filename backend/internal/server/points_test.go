@@ -11,11 +11,16 @@ import (
 )
 
 type driverProfileResp struct {
+	DisplayName      string       `json:"display_name"`
 	UsualPickupPoint *pickupPoint `json:"usual_pickup_point"`
 	UsualDestination *place       `json:"usual_destination"`
 	Capacity         *int         `json:"capacity"`
 	Vehicle          *vehicleView `json:"vehicle"`
 	PointBalance     *int         `json:"point_balance"`
+}
+
+type meResp struct {
+	DisplayName string `json:"display_name"`
 }
 
 type pointsResp struct {
@@ -269,7 +274,7 @@ func TestSeedDriverPointsIsRepeatable(t *testing.T) {
 }
 
 // REQ-074, DD-35, DD-34: driver5 has never completed a ride: the habitual data is null, but the
-// vehicle and the seeded balance are there.
+// name, the vehicle and the seeded balance are there.
 func TestDriverProfileWithoutRides(t *testing.T) {
 	tx := testTx(t)
 	freshDemoSeed(t, tx)
@@ -286,6 +291,22 @@ func TestDriverProfileWithoutRides(t *testing.T) {
 	}
 	if p.Vehicle == nil || p.Vehicle.Plate != "ABC-0005" || p.Vehicle.Description == "" {
 		t.Errorf("vehicle = %+v, want ABC-0005 with a description", p.Vehicle)
+	}
+	if me := decode[meResp](t, call(t, tx, http.MethodGet, "/api/me", "driver:driver5", "")); p.DisplayName == "" || p.DisplayName != me.DisplayName {
+		t.Errorf("display_name = %q, want /api/me's %q", p.DisplayName, me.DisplayName)
+	}
+}
+
+// DD-35: the drawer takes the name from the profile; it is /api/me's display_name for a driver
+// with rides too.
+func TestDriverProfileNameMatchesMe(t *testing.T) {
+	tx := testTx(t)
+	for _, token := range []string{"driver:driver1", "driver:driver4"} {
+		p := decode[driverProfileResp](t, call(t, tx, http.MethodGet, "/api/driver/profile", token, ""))
+		me := decode[meResp](t, call(t, tx, http.MethodGet, "/api/me", token, ""))
+		if p.DisplayName == "" || p.DisplayName != me.DisplayName {
+			t.Errorf("%s: display_name = %q, want /api/me's %q", token, p.DisplayName, me.DisplayName)
+		}
 	}
 }
 

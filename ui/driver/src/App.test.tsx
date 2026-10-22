@@ -140,10 +140,9 @@ function fakeBackend(
     if (path === '/driver/profile') {
       if (driverInfoDown.value) return reply({ error: { code: 'internal', message: 'down' } }, 500)
       const balance = points.reduce((sum, p) => sum + p.delta, 0)
-      return reply({ usual_pickup_point: null, usual_destination: null, capacity: null, vehicle, point_balance: balance })
+      return reply({ display_name: '駕駛 阿丁', usual_pickup_point: null, usual_destination: null, capacity: null, vehicle, point_balance: balance })
     }
     if (path === '/driver/points') return reply({ points: points.slice(0, 5) })
-    if (path === '/me') return reply({ username: 'driver4', display_name: '駕駛 阿明', role: 'driver', roles: ['driver'], simulated: false })
     // Like the backend's park boundary: north of the pickup points.
     if (path.startsWith('/park/check')) return reply({ inside: Number(new URLSearchParams(path.split('?')[1]).get('lat')) > 25.05 })
     if (path === '/driver/route-preview') return reply({ preview_id: ++previews, route })
@@ -560,10 +559,12 @@ describe('driver App', () => {
         .map((li) => li.textContent)
 
     it('opens from the departure screen with the name, vehicle, balance and latest 5 rows from the API', async () => {
-      fakeBackend([NO_TRIP])
+      const calls = fakeBackend([NO_TRIP])
       render(<App />)
       const drawer = await openDrawer()
-      expect(await within(drawer).findByRole('heading', { name: '駕駛 阿明' })).toBeInTheDocument()
+      // The name is the profile's: the drawer never calls /api/me (DD-35).
+      expect(await within(drawer).findByRole('heading', { name: '駕駛 阿丁' })).toBeInTheDocument()
+      expect(calls.filter((c) => c.path === '/me')).toEqual([])
       expect(within(drawer).getByText('ABC-0004')).toBeInTheDocument()
       expect(within(drawer).getByText('藍色 Mazda 3')).toBeInTheDocument()
       expect(within(drawer).getByText('累積點數').nextElementSibling).toHaveTextContent('80 點')

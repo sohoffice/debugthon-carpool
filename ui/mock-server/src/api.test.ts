@@ -310,6 +310,15 @@ describe('driver points match the Go backend (T35, DD-34, DD-35)', () => {
     expect(json<DriverProfile>('GET', '/api/driver/profile', 'Bearer driver:driver5').point_balance).toBe(10)
   })
 
+  it('carries /api/me’s display_name, also for a driver with no rides (DD-35)', () => {
+    for (const driver of [DRIVER, 'Bearer driver:driver5']) {
+      const p = json<DriverProfile>('GET', '/api/driver/profile', driver)
+      expect(p.display_name).toBe(json<{ display_name: string }>('GET', '/api/me', driver).display_name)
+      expect(p.display_name).toBeTruthy()
+    }
+    expect(json<DriverProfile>('GET', '/api/driver/profile', 'Bearer driver:driver5')).toMatchObject({ usual_pickup_point: null, usual_destination: null, capacity: null })
+  })
+
   it('checks limit and the caller like Go', () => {
     expect(points('?limit=1')).toHaveLength(1)
     for (const bad of ['0', '51', 'abc', '2.5']) {

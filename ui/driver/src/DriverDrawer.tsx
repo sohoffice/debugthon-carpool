@@ -1,9 +1,8 @@
-import { ErrorNote, type DriverPoints, type DriverProfile, type Me, type PointEntry } from '@carpool/shared'
+import { ErrorNote, type DriverPoints, type DriverProfile, type PointEntry } from '@carpool/shared'
 import { useEffect, useState } from 'react'
 import { api } from './config'
 
 interface DriverInfo {
-  me: Me
   profile: DriverProfile
   points: PointEntry[]
 }
@@ -30,10 +29,11 @@ export function DriverDrawer({ open, onClose }: { open: boolean; onClose: () => 
   useEffect(() => {
     if (!open) return
     let current = true
-    Promise.all([api.get<Me>('/me'), api.get<DriverProfile>('/driver/profile'), api.get<DriverPoints>('/driver/points')]).then(
-      ([me, profile, { points }]) => {
+    // Everything but the point rows comes from the profile, the name included (DD-35).
+    Promise.all([api.get<DriverProfile>('/driver/profile'), api.get<DriverPoints>('/driver/points')]).then(
+      ([profile, { points }]) => {
         if (!current) return
-        setInfo({ me, profile, points })
+        setInfo({ profile, points })
         setError(false)
       },
       () => current && setError(true),
@@ -59,7 +59,7 @@ export function DriverDrawer({ open, onClose }: { open: boolean; onClose: () => 
         className={`ground-light absolute inset-y-0 left-0 flex w-[86%] max-w-[360px] flex-col overflow-y-auto overscroll-contain bg-white px-6 pt-[calc(var(--safe-top)+20px)] pb-[calc(var(--safe-bottom)+24px)] text-ink shadow-xl motion-safe:transition-transform ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="flex items-center gap-3">
-          <h2 className="text-[26px]/tight font-bold break-words">{info?.me.display_name ?? '駕駛資訊'}</h2>
+          <h2 className="text-[26px]/tight font-bold break-words">{info?.profile.display_name ?? '駕駛資訊'}</h2>
           <button type="button" onClick={onClose} className="ml-auto h-11 shrink-0 rounded-control px-4 text-lg font-semibold ring-1 ring-inset ring-rule">
             關閉
           </button>

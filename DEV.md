@@ -153,7 +153,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 | GET | `/api/tags` | 任一 | 標籤清單，`selected` 表示呼叫者是否已選擇 |
 | PUT | `/api/me/tags/:id` | 任一 | 選擇清單中的標籤（重複選擇無影響；不在清單中回 404） |
 | DELETE | `/api/me/tags/:id` | 任一 | 取消選擇標籤 |
-| GET | `/api/driver/profile` | 駕駛 | 常用上車點、常用目的地、可載人數（尚無共乘紀錄時為 `null`），以及車輛 `vehicle{plate,description}`（沒有車輛為 `null`）與累積點數 `point_balance`（T35，REQ-074、DD-34、DD-35；從未記點為 `0`） |
+| GET | `/api/driver/profile` | 駕駛 | 名稱 `display_name`（與 `GET /api/me` 相同，T45，DD-35）、常用上車點、常用目的地、可載人數（尚無共乘紀錄時為 `null`），以及車輛 `vehicle{plate,description}`（沒有車輛為 `null`）與累積點數 `point_balance`（T35，REQ-074、DD-34、DD-35；從未記點為 `0`） |
 | GET | `/api/driver/points` | 駕駛 | 最近的點數紀錄（T35，REQ-074、DD-35）：回 `200` 與 `{"points":[{delta,reason,service_record_id,created_at}]}`，由新到舊；`reason` 為 `ride`（共乘完成，`service_record_id` 指向該次服務紀錄）或 `seed`（Demo 初始點數，`service_record_id` 為 `null`）。選填 `limit`（1～50，預設 5），超出範圍或不是整數回 `400 invalid_request`；乘客回 `403`。乘客可取得的 API 都不含駕駛點數（REQ-075） |
 | GET | `/api/passenger/profile` | 乘客 | 平常抵達時間、常用目的地、可接受的下車公車站 |
 | POST | `/api/activities` | 任一 | 表示今天要參與，建立位置回報的主檔（DD-25），回 `201`。駕駛的主檔關聯到進行中的行程（沒有則回 `409 no_active_trip`）；乘客的主檔在請求被確認時才關聯到行程（T12／T13），建立當下不關聯。再次呼叫會建立新的主檔 |
