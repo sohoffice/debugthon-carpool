@@ -1,6 +1,8 @@
-import { ErrorNote, type DriverPoints, type DriverProfile, type PointEntry } from '@carpool/shared'
-import { useEffect, useState } from 'react'
-import { api } from './config'
+import { ErrorNote, Plate, type DriverPoints, type DriverProfile, type PointEntry } from '@carpool/shared'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { account, api } from './config'
+import { personName } from './driverName'
+import { RoadSign } from './RoadSign'
 
 interface DriverInfo {
   profile: DriverProfile
@@ -8,6 +10,9 @@ interface DriverInfo {
 }
 
 const REASONS: Record<PointEntry['reason'], string> = { ride: '共乘完成', seed: '初始點數' }
+
+/** A swipe this far to the left, more sideways than up or down, closes the drawer (SC-D5). */
+const SWIPE_CLOSE_PX = 60
 
 const taipei = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
@@ -18,13 +23,15 @@ function formatTime(iso: string): string {
 }
 
 /**
- * The driver's own info, sliding in from the side (DD-35, REQ-074): name, vehicle, point balance and
- * the latest 5 point rows. Reloaded on every open, so a ride just finished shows on top. A failed
- * load keeps the last data. The App closes it whenever a trip runs (DD-04, REQ-066).
+ * The driver's own info, an asphalt drawer sliding in from the left (DD-35, REQ-074, UD-24, SC-D5):
+ * name, vehicle, point balance and the latest 5 point rows. Reloaded on every open, so a ride just
+ * finished shows on top. A failed load keeps the last data. The App closes it whenever a trip runs
+ * (DD-04, REQ-066). Closes on the scrim, the × or a swipe to the left.
  */
 export function DriverDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [info, setInfo] = useState<DriverInfo | null>(null)
   const [error, setError] = useState(false)
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -43,6 +50,16 @@ export function DriverDrawer({ open, onClose }: { open: boolean; onClose: () => 
     }
   }, [open])
 
+  function onSwipeEnd(e: PointerEvent) {
+    const start = swipeStart.current
+    swipeStart.current = null
+    if (!start) return
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    // Only leftwards and mostly sideways: a swipe right or a scroll up and down keeps it open.
+    if (dx <= -SWIPE_CLOSE_PX && Math.abs(dx) > Math.abs(dy)) onClose()
+  }
+
   return (
     // Closed, it stays mounted (for the slide and the last data) but is out of reach and out of the a11y tree.
     <div className={`absolute inset-0 z-30 ${open ? '' : 'pointer-events-none'}`} inert={!open} aria-hidden={!open}>
@@ -51,19 +68,30 @@ export function DriverDrawer({ open, onClose }: { open: boolean; onClose: () => 
         aria-label="關閉駕駛資訊"
         tabIndex={-1}
         onClick={onClose}
-        className={`absolute inset-0 bg-asphalt/50 motion-safe:transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-asphalt-sunk/60 motion-safe:transition-opacity motion-safe:duration-200 ${open ? 'opacity-100' : 'opacity-0'}`}
       />
+      {/* 326px, so 64px of the screen behind stays in sight at 390px wide (SC-D5). 200ms, none with reduced motion (8.4). */}
       <section
         role="dialog"
         aria-label="駕駛資訊"
-        className={`ground-light absolute inset-y-0 left-0 flex w-[86%] max-w-[360px] flex-col overflow-y-auto overscroll-contain bg-white px-6 pt-[calc(var(--safe-top)+20px)] pb-[calc(var(--safe-bottom)+24px)] text-ink shadow-xl motion-safe:transition-transform ${open ? 'translate-x-0' : '-translate-x-full'}`}
+        onPointerDown={(e) => (swipeStart.current = { x: e.clientX, y: e.clientY })}
+        onPointerUp={onSwipeEnd}
+        onPointerCancel={() => (swipeStart.current = null)}
+        className={`ground-asphalt absolute inset-y-0 left-0 flex w-[326px] max-w-[calc(100%-64px)] touch-pan-y flex-col overflow-y-auto overscroll-contain border-r border-line bg-canvas px-[22px] pt-[calc(var(--safe-top)+16px)] pb-[calc(var(--safe-bottom)+24px)] motion-safe:transition-transform motion-safe:duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <div className="flex items-center gap-3">
-          <h2 className="text-[26px]/tight font-bold break-words">{info?.profile.display_name ?? '駕駛資訊'}</h2>
-          <button type="button" onClick={onClose} className="ml-auto h-11 shrink-0 rounded-control px-4 text-lg font-semibold ring-1 ring-inset ring-rule">
-            關閉
-          </button>
-        </div>
+        <button
+          type="button"
+          aria-label="關閉"
+          onClick={onClose}
+          className="absolute top-[calc(var(--safe-top)+10px)] right-3.5 grid size-11 place-items-center rounded-sign-button text-fg-soft"
+        >
+          <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" className="size-[22px]">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+        {/* The account in small type over the name (SC-D5). */}
+        <p className="pr-12 text-[15px] text-fg-soft">駕駛 {account}</p>
+        {info && <h2 className="mt-0.5 pr-12 text-[30px]/tight font-semibold break-words">{personName(info.profile.display_name)}</h2>}
         {error && (
           <div className="mt-4">
             <ErrorNote>無法載入駕駛資訊，請稍後再試</ErrorNote>
@@ -78,28 +106,29 @@ export function DriverDrawer({ open, onClose }: { open: boolean; onClose: () => 
 function DriverInfoBody({ info: { profile, points } }: { info: DriverInfo }) {
   return (
     <>
-      <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-lg">
-        <dt className="text-ink-soft">車牌</dt>
-        <dd className="font-semibold">{profile.vehicle?.plate ?? '未登記'}</dd>
-        <dt className="text-ink-soft">車輛</dt>
-        <dd className="font-semibold">{profile.vehicle?.description ?? '未登記'}</dd>
-      </dl>
-
-      <div className="mt-6 rounded-control bg-paper px-5 py-4">
-        <p className="text-base text-ink-soft">累積點數</p>
-        <p className="text-[40px]/tight font-bold">
-          {profile.point_balance} <span className="text-xl font-semibold">點</span>
-        </p>
+      {/* The same plate the passenger's confirmed screen shows (UD-24). */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        {profile.vehicle ? <Plate plate={profile.vehicle.plate} /> : <span className="text-lg font-semibold">車牌未登記</span>}
+        <span className="text-base text-fg-soft">{profile.vehicle?.description ?? '車輛未登記'}</span>
       </div>
 
-      <h3 className="mt-6 text-lg font-semibold">最近的點數紀錄</h3>
+      {/* A road sign, and the drawer's only large type (UD-21, UD-24). */}
+      <RoadSign className="mt-6 px-[18px] pt-[18px] pb-4">
+        <p className="text-[15px] text-fg-soft">累積點數</p>
+        <p className="mt-0.5 flex items-baseline gap-1.5">
+          <span className="lettering-sign text-[64px]/[0.9] font-extrabold tabular-nums">{profile.point_balance}</span>
+          <span className="text-lg text-fg-soft">點</span>
+        </p>
+      </RoadSign>
+
+      <h3 className="mt-6 mb-1 text-[15px] text-fg-soft">最近的點數</h3>
       {points.length === 0 ? (
-        <p className="mt-2 text-base text-ink-soft">還沒有點數紀錄</p>
+        <p className="text-base">還沒有點數紀錄</p>
       ) : (
-        <ol aria-label="最近的點數紀錄" className="mt-2 divide-y divide-rule">
+        <ol aria-label="最近的點數紀錄" className="divide-y divide-line border-b border-line">
           {points.map((p, i) => (
-            <li key={`${p.created_at}-${i}`} className="flex items-baseline gap-3 py-3 text-base">
-              <span className="w-[6.5em] shrink-0 text-ink-soft tabular-nums">{formatTime(p.created_at)}</span>
+            <li key={`${p.created_at}-${i}`} className="flex min-h-[46px] items-center gap-2.5 text-base">
+              <span className="w-[82px] shrink-0 text-[15px] text-fg-soft tabular-nums">{formatTime(p.created_at)}</span>
               <span className="flex-1">{REASONS[p.reason]}</span>
               <span className="font-semibold tabular-nums">
                 {p.delta > 0 ? '+' : ''}

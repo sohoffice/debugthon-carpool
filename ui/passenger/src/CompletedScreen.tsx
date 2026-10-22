@@ -1,5 +1,4 @@
-import { Button, type Vehicle } from '@carpool/shared'
-import { Plate } from './Plate'
+import { Button, Plate, type Vehicle } from '@carpool/shared'
 
 interface CompletedScreenProps {
   pickupName: string
