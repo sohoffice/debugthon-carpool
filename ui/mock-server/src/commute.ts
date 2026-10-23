@@ -24,7 +24,8 @@ const SLOTS = (WINDOW_END - WINDOW_START) / SLOT_MIN
 const PEAK_SLOT = 5 // 08:15
 const DAY_MS = 24 * 3600 * 1000
 const TAIPEI_MS = 8 * 3600 * 1000
-const DETECTORS = 12
+/** The 16 gateways into Neihu (DD-36). */
+const GATEWAYS = 16
 const AVG_SEATS = 2
 
 interface Moment {
@@ -116,19 +117,19 @@ export function createCommute(realNow: () => number) {
         slots: cells(date).map(({ slot, weather, raining }) => {
           const shape = peak(slot, 0.55, 8)
           const noise = 0.92 + random(m.today, `volume/${date}/${slot}`) * 0.16
-          const volume = Math.round(DETECTORS * 260 * shape * dow * (raining ? 1.1 : 1) * noise)
+          const volume = Math.round(GATEWAYS * 200 * shape * dow * (raining ? 1.1 : 1) * noise)
           const speed = 60 * (1 - (0.45 * (shape - 0.55)) / 0.45) * (dow > 1.1 ? 0.92 : 1) * (raining ? 0.75 : 1)
-          return { slot_start: at(date, WINDOW_START + slot * SLOT_MIN), volume, avg_speed_kmh: Math.round(speed * 10) / 10, weather, simulated: true }
+          return { slot_start: at(date, WINDOW_START + slot * SLOT_MIN), volume, avg_speed_kmh: Math.round(speed * 10) / 10, weather, simulated: true, weather_simulated: true }
         }),
       }
     })
-    return { now: m.now, today: m.today, days: out, simulated: true }
+    return { now: m.now, today: m.today, days: out, simulated: true, weather_simulated: true }
   }
 
   function weather(): CommuteWeather {
     const { m, cells } = world()
     const latest = cells(m.today).at(-1)?.weather ?? null
-    return { now: m.now, today: m.today, weather: latest, simulated: latest !== null }
+    return { now: m.now, today: m.today, weather: latest, simulated: latest !== null, weather_simulated: latest !== null }
   }
 
   /** One pickup point's simulated drivers, passengers and rides per observed slot of a day (DD-37, DD-40 step 3). */

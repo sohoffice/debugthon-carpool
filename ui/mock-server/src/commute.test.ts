@@ -26,7 +26,7 @@ beforeEach(() => {
 describe('commute endpoints match the Go backend (T36, T37)', () => {
   it('weather: now is today at 08:15, Saturday moved to Monday, the latest observation before now', () => {
     const w = json<CommuteWeather>('/api/commute/weather')
-    expect(w).toMatchObject({ now: '2026-10-26T08:15:00+08:00', today: '2026-10-26', simulated: true })
+    expect(w).toMatchObject({ now: '2026-10-26T08:15:00+08:00', today: '2026-10-26', simulated: true, weather_simulated: true })
     expect(w.weather).toMatchObject({ station_id: 'C0A9F0', station_name: '內湖', obs_time: '2026-10-26T08:10:00+08:00' })
     expect(Object.keys(w.weather!).sort()).toEqual(['air_temperature', 'obs_time', 'precipitation', 'station_id', 'station_name', 'weather'])
   })
@@ -36,7 +36,8 @@ describe('commute endpoints match the Go backend (T36, T37)', () => {
     expect(t.days.map((d) => d.date)).toEqual(['2026-10-23', '2026-10-22', '2026-10-21', '2026-10-20', '2026-10-19', '2026-10-16', '2026-10-15', '2026-10-14', '2026-10-13', '2026-10-12'])
     expect(t.days.map((d) => d.weekday)).toEqual([5, 4, 3, 2, 1, 5, 4, 3, 2, 1])
     expect(t.days[0].slots.map((s) => s.slot_start.slice(11, 16))).toEqual(['07:00', '07:15', '07:30', '07:45', '08:00', '08:15', '08:30', '08:45', '09:00', '09:15', '09:30', '09:45'])
-    expect(Object.keys(t.days[0].slots[0]).sort()).toEqual(['avg_speed_kmh', 'simulated', 'slot_start', 'volume', 'weather'])
+    expect(Object.keys(t.days[0].slots[0]).sort()).toEqual(['avg_speed_kmh', 'simulated', 'slot_start', 'volume', 'weather', 'weather_simulated'])
+    expect(t).toMatchObject({ simulated: true, weather_simulated: true })
     // Two or three days rain (DD-40 step 1).
     const rainy = t.days.filter((d) => d.slots.some((s) => s.weather.precipitation > 0)).length
     expect(rainy).toBeGreaterThanOrEqual(2)

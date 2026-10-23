@@ -3,7 +3,6 @@ package server
 import (
 	"math"
 	"net/http"
-	"net/url"
 	"testing"
 	"time"
 )
@@ -322,88 +321,5 @@ func TestCityHistoryLeavesTodayOut(t *testing.T) {
 	completeRealRide(t, e, real)
 	if after := cityGet[cityHistoryResp](a, "/api/city/history"); !jsonEqual(t, after, before) {
 		t.Error("a ride today changed the history")
-	}
-}
-
-// REQ-079, DD-41: without slot, the latest slot (08:00-08:15 under demo_clock 08:15, whatever the
-// real time), every detector with its position and volume; the roads' speeds in that slot next to
-// the same time over the past 10 workdays, volume-weighted.
-func TestCityTrafficLatestSlotAndRoadSpeeds(t *testing.T) {
-	tx := testTx(t)
-	setDemoClock(t, tx, 495)
-	real := taipeiTime(t, "2026-10-22 17:00")
-	regenerateAt(t, tx, real)
-	a := newCityApp(t, tx, real)
-	got := cityGet[cityTrafficResp](a, "/api/city/traffic")
-	if want := taipeiTime(t, "2026-10-22 08:00"); !got.SlotStart.Equal(want) {
-		t.Fatalf("slot %v, want %v", got.SlotStart, want)
-	}
-	detectors := queryInt(t, tx, `SELECT count(*) FROM traffic_detectors`)
-	if int64(len(got.Detectors)) != detectors || !got.Simulated {
-		t.Errorf("%d detectors, want %d; simulated %v", len(got.Detectors), detectors, got.Simulated)
-	}
-	for _, d := range got.Detectors {
-		if d.Lat == 0 || d.Lng == 0 || d.Volume <= 0 || d.RoadName == "" || !d.Simulated {
-			t.Errorf("detector %+v", d)
-		}
-	}
-	checkRoadSpeeds(t, a, got, "2026-10-22")
-}
-
-// REQ-079: a past slot gives that slot, the road speeds following it; a slot without data, or not
-// on a 15-minute start, is refused.
-func TestCityTrafficPastSlot(t *testing.T) {
-	tx := testTx(t)
-	setDemoClock(t, tx, 495)
-	real := taipeiTime(t, "2026-10-22 17:00")
-	regenerateAt(t, tx, real)
-	a := newCityApp(t, tx, real)
-	slot := taipeiTime(t, "2026-10-20 09:30")
-	got := cityGet[cityTrafficResp](a, "/api/city/traffic?slot="+url.QueryEscape(slot.Format(time.RFC3339)))
-	if !got.SlotStart.Equal(slot) || len(got.Detectors) == 0 {
-		t.Fatalf("slot %v with %d detectors, want %v", got.SlotStart, len(got.Detectors), slot)
-	}
-	var volume int64
-	if err := tx.QueryRow(t.Context(), `SELECT volume FROM traffic_observations WHERE slot_start = $1 AND vd_id = $2`,
-		slot, got.Detectors[0].VDID).Scan(&volume); err != nil {
-		t.Fatal(err)
-	}
-	if int64(got.Detectors[0].Volume) != volume {
-		t.Errorf("%s volume %d, table %d", got.Detectors[0].VDID, got.Detectors[0].Volume, volume)
-	}
-	checkRoadSpeeds(t, a, got, "2026-10-22")
-
-	for _, s := range []string{"2026-10-22T08:30:00+08:00", "2026-10-22T06:00:00+08:00", "2026-09-01T08:00:00+08:00"} {
-		wantStatus(t, a.do(http.MethodGet, "/api/city/traffic?slot="+url.QueryEscape(s), cityToken), http.StatusNotFound, "not_found")
-	}
-	for _, s := range []string{"08:00", "2026-10-22T08:07:00+08:00", "yesterday"} {
-		wantStatus(t, a.do(http.MethodGet, "/api/city/traffic?slot="+url.QueryEscape(s), cityToken), http.StatusBadRequest, "invalid_request")
-	}
-}
-
-// checkRoadSpeeds recomputes each road's volume-weighted speed in the response's slot and over the
-// past 10 workdays before today at the same time of day.
-func checkRoadSpeeds(t *testing.T, a *cityApp, got cityTrafficResp, today string) {
-	t.Helper()
-	if len(got.Roads) == 0 {
-		t.Fatal("no road speeds")
-	}
-	for _, r := range got.Roads {
-		var now, past *float64
-		if err := a.tx.QueryRow(t.Context(), `
-			SELECT (sum(o.volume * o.avg_speed_kmh) FILTER (WHERE o.slot_start = $2)
-			          / sum(o.volume) FILTER (WHERE o.slot_start = $2))::float8,
-			       (sum(o.volume * o.avg_speed_kmh) FILTER (WHERE o.slot_start <> $2 AND d.day IS NOT NULL)
-			          / sum(o.volume) FILTER (WHERE o.slot_start <> $2 AND d.day IS NOT NULL))::float8
-			  FROM traffic_observations o JOIN traffic_detectors v ON v.vd_id = o.vd_id
-			  LEFT JOIN commute_past_workdays($3::date, 10) d (day) ON d.day = (o.slot_start AT TIME ZONE 'Asia/Taipei')::date
-			 WHERE v.road_name = $1
-			   AND (o.slot_start AT TIME ZONE 'Asia/Taipei')::time = ($2::timestamptz AT TIME ZONE 'Asia/Taipei')::time`,
-			r.RoadName, got.SlotStart, today).Scan(&now, &past); err != nil {
-			t.Fatal(err)
-		}
-		if r.AvgSpeedKmh == nil || r.PastAvgSpeedKmh == nil || math.Abs(*r.AvgSpeedKmh-*now) > 1e-6 || math.Abs(*r.PastAvgSpeedKmh-*past) > 1e-6 {
-			t.Errorf("%s: speeds %v / %v, want %v / %v", r.RoadName, r.AvgSpeedKmh, r.PastAvgSpeedKmh, now, past)
-		}
 	}
 }

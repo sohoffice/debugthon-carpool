@@ -21,7 +21,7 @@ interface MapPanelProps {
 
 /** Top left, the largest area: the live cars or the traffic heatmap on one map (UD-26). */
 export function MapPanel({ tab, onTab, live, liveError, traffic, trafficError, history, latestTime, slot, onSlot }: MapPanelProps) {
-  const maxVolume = Math.max(1, ...(traffic?.detectors.map((d) => d.volume) ?? []))
+  const maxVolume = Math.max(1, ...(traffic?.detectors.map((d) => d.volume ?? 0) ?? []))
   const tabClass = (on: boolean) => `h-9 px-4 text-base font-bold ${on ? 'bg-ink text-white' : 'bg-white text-ink'}`
   return (
     <section aria-label="地圖" className="relative flex min-h-0 min-w-0 flex-col">
@@ -31,7 +31,7 @@ export function MapPanel({ tab, onTab, live, liveError, traffic, trafficError, h
             live?.vehicles.map((v, i) => <CarDot key={i} position={v} />)}
           {tab === 'live' && live?.pickup_points.map((p) => <PlaceMarker key={p.id} position={p} kind="pickup-option" title={p.name} />)}
           {tab === 'traffic' &&
-            traffic?.detectors.map((d) => <HeatSpot key={d.vd_id} position={d} weight={d.volume / maxVolume} title={`${d.road_name} ${d.volume}`} />)}
+            traffic?.detectors.map((d) => <HeatSpot key={d.vd_id} position={d} weight={(d.volume ?? 0) / maxVolume} title={`${d.gateway} ${d.volume ?? '—'}`} />)}
         </MapView>
 
         <div className="absolute top-4 left-4 flex items-center gap-3">

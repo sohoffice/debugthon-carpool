@@ -426,34 +426,73 @@ export interface CityLive extends CityClock {
   simulated: boolean
 }
 
-export interface CityDetector {
+/**
+ * One of the 16 gateways into Neihu in a slot, with the detector standing for it (DD-36). The slot's
+ * values are null when the gateway has no data in that slot.
+ */
+export interface CityGateway {
   vd_id: string
+  source: 'city' | 'freeway'
+  /** The name on screen, e.g. 堤頂大道（大直端）. */
+  gateway: string
   road_name: string
   road_direction: string
+  /** Direction into Neihu, e.g. NE: drawn from lat/lng when there is no shape (DD-39). */
+  bearing: string
+  /** Place and number on screen, 1-16 in UD-28's grid order; the API sends gateways in this order. */
+  sort_order: number
+  /** Where the gateway is, e.g. 區界外 10 公尺，東向; small text under the name. */
+  location_note: string
   lat: number
   lng: number
-  volume: number
+  /** TDX section shape, points in the direction of travel; null for 10 of the 16. */
+  shape: { lat: number; lng: number }[] | null
+  /** A detector on a nearby road stands for the gateway (成美橋, 成功橋). */
+  proxy: boolean
+  /** Where a proxy detector really is; null otherwise. */
+  proxy_note: string | null
+  /** All-day p85, the base of the congestion levels (DD-44). */
+  reference_speed_kmh: number
+  volume: number | null
   avg_speed_kmh: number | null
+  occupancy_pct: number | null
+  /** Lane-minutes received out of those expected, 0-100; 100 when simulated. */
+  coverage_pct: number | null
+  /** The same time over the past 10 workdays before today, the slot's own day left out; null without data. */
+  past_avg_speed_kmh: number | null
+  /** The slowest and fastest of the same days at the same time; null without data. */
+  past_min_speed_kmh: number | null
+  past_max_speed_kmh: number | null
+  /** Traffic simulated, not TDX (REQ-063); false without data. */
   simulated: boolean
 }
 
-export interface CityRoad {
-  road_name: string
-  /** In the slot, weighted by volume; null when no vehicle passed. */
-  avg_speed_kmh: number | null
-  /** The same time of day over the past 10 workdays, not counting the slot's own day; null without data. */
-  past_avg_speed_kmh: number | null
+/** One slot of /api/city/traffic. Traffic and weather are marked simulated apart (DD-36). */
+export interface CityTrafficSlot {
+  slot_start: string
+  detectors: CityGateway[]
+  /** Null when the slot has no weather. */
+  weather: WeatherObservation | null
+  simulated: boolean
+  weather_simulated: boolean
 }
 
 /**
  * GET /api/city/traffic[?slot=<RFC 3339 slot start>] (REQ-079). Without slot: the latest complete
  * 15-minute slot before now (08:00 in the Demo). A slot without data is 404; off a boundary, 400.
  */
-export interface CityTraffic extends CityClock {
-  slot_start: string
-  detectors: CityDetector[]
-  roads: CityRoad[]
+export interface CityTraffic extends CityClock, CityTrafficSlot {}
+
+/**
+ * GET /api/city/traffic?date=YYYY-MM-DD (REQ-079, DD-39): the day's 12 slots 07:00-09:45, today's
+ * only through the latest slot. Only today and the past 10 workdays; otherwise 404. Not with slot.
+ */
+export interface CityTrafficDay extends CityClock {
+  date: string
+  slots: CityTrafficSlot[]
+  /** Any slot simulated. */
   simulated: boolean
+  weather_simulated: boolean
 }
 
 /** GET /api/city/today (REQ-080). */
@@ -515,17 +554,22 @@ export interface CommuteWeather {
   /** YYYY-MM-DD, Taipei. */
   today: string
   weather: WeatherObservation | null
+  /** Same as weather_simulated: this API has only the weather (kept until T57). */
   simulated: boolean
+  weather_simulated: boolean
 }
 
 export interface TrafficSlot {
   slot_start: string
-  /** All detectors' vehicles in the slot. */
+  /** The 16 gateways' vehicles in the slot. */
   volume: number
   /** Volume-weighted; null when no vehicle passed. */
   avg_speed_kmh: number | null
   weather: WeatherObservation
+  /** Traffic simulated; false on days with TDX measurements (DD-36). */
   simulated: boolean
+  /** The weather is simulated, on measured days too (DD-36). */
+  weather_simulated: boolean
 }
 
 export interface TrafficDay {
@@ -541,7 +585,10 @@ export interface CommuteTraffic {
   now: string
   today: string
   days: TrafficDay[]
+  /** Any slot's traffic simulated (REQ-063). */
   simulated: boolean
+  /** Any slot's weather simulated. */
+  weather_simulated: boolean
 }
 
 export interface RideSlot {

@@ -1,18 +1,20 @@
 import type {
   CityClock,
-  CityDetector,
+  CityGateway,
   CityHistory,
   CityHistoryDay,
   CityLive,
   CityLiveCounts,
-  CityRoad,
   CityToday,
   CityTraffic,
+  CityTrafficDay,
+  CityTrafficSlot,
   CityVehicle,
   PickupPoint,
 } from '../../shared/src/api/types.ts'
 import { commuteMoment, pastWorkdays, type createCommute } from './commute.ts'
 import type { Lookups } from './context.ts'
+import type { CsvGateway } from './data/load.ts'
 import { MockError } from './errors.ts'
 import { makePath, pointAlong, type LatLng, type Path } from './geo.ts'
 import { alongAt, type World } from './world.ts'
@@ -26,21 +28,6 @@ const DEMO_CLOCK_MIN = 8 * 60 + 15
 const SLOT_MIN = 15
 const FIRST_SLOT_MIN = 7 * 60
 const LAST_SLOT_MIN = 9 * 60 + 45
-
-/** Neihu detectors on the main roads (DD-36); positions are approximate. */
-const DETECTORS: { vd_id: string; road_name: string; road_direction: string; lat: number; lng: number; base: number }[] = [
-  { vd_id: 'VD-TD-01', road_name: '堤頂大道', road_direction: 'N', lat: 25.0645, lng: 121.5728, base: 620 },
-  { vd_id: 'VD-TD-02', road_name: '堤頂大道', road_direction: 'N', lat: 25.0722, lng: 121.5733, base: 580 },
-  { vd_id: 'VD-TD-03', road_name: '堤頂大道', road_direction: 'N', lat: 25.0788, lng: 121.5758, base: 540 },
-  { vd_id: 'VD-NH-01', road_name: '內湖路一段', road_direction: 'E', lat: 25.0832, lng: 121.5652, base: 420 },
-  { vd_id: 'VD-NH-02', road_name: '內湖路一段', road_direction: 'E', lat: 25.0803, lng: 121.5772, base: 460 },
-  { vd_id: 'VD-HD-01', road_name: '環東大道', road_direction: 'N', lat: 25.0602, lng: 121.5851, base: 700 },
-  { vd_id: 'VD-HD-02', road_name: '環東大道', road_direction: 'N', lat: 25.0683, lng: 121.5898, base: 660 },
-  { vd_id: 'VD-MQ-01', road_name: '民權東路六段', road_direction: 'E', lat: 25.0692, lng: 121.5882, base: 380 },
-  { vd_id: 'VD-MQ-02', road_name: '民權東路六段', road_direction: 'E', lat: 25.0706, lng: 121.5948, base: 360 },
-  { vd_id: 'VD-CG-01', road_name: '成功路四段', road_direction: 'N', lat: 25.0801, lng: 121.5912, base: 340 },
-  { vd_id: 'VD-CG-02', road_name: '成功路四段', road_direction: 'N', lat: 25.0849, lng: 121.5931, base: 320 },
-]
 
 /** Where the simulated cars go in the park. */
 const PARK_DESTINATIONS: LatLng[] = [
@@ -70,11 +57,16 @@ const weekdayOf = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay()
 const peak = (min: number) => 0.35 + 0.65 * Math.exp(-(((min - 510) / 50) ** 2))
 const friday = (date: string) => (weekdayOf(date) === 5 ? 1.15 : 1)
 
-function observation(d: (typeof DETECTORS)[number], date: string, min: number, raining: boolean) {
-  const load = peak(min) * friday(date) * (raining ? 1.1 : 1) * (0.9 + rand(`vol:${d.vd_id}:${date}:${min}`) * 0.2)
-  const volume = Math.round(d.base * load)
-  const speed = Math.round((62 - 38 * Math.min(load, 1.2) - (raining ? 6 : 0)) * 10) / 10
-  return { volume, speed }
+/**
+ * One gateway's made-up traffic in a slot: volume follows the morning peak, the speed drops from the
+ * gateway's reference speed (DD-44) as the load grows. Everything is simulated in the mock.
+ */
+function observation(g: CsvGateway, date: string, min: number, raining: boolean) {
+  const load = peak(min) * friday(date) * (raining ? 1.1 : 1) * (0.9 + rand(`vol:${g.vd_id}:${date}:${min}`) * 0.2)
+  const volume = Math.round((g.source === 'freeway' ? 300 : 450) * load)
+  const speed = Math.round(g.reference_speed_kmh * (1.05 - 0.6 * Math.min(load, 1.2)) * (raining ? 0.9 : 1) * 10) / 10
+  const occupancy = Math.round(Math.min(95, 4 + 30 * load) * 10) / 10
+  return { volume, speed, occupancy }
 }
 
 interface SimCar {
@@ -86,7 +78,7 @@ interface SimCar {
   passengers: { showMs: number; matchMs: number }[]
 }
 
-export function createCity(lookups: Lookups, commute: ReturnType<typeof createCommute>) {
+export function createCity(lookups: Lookups, commute: ReturnType<typeof createCommute>, gateways: CsvGateway[]) {
   const pickups: PickupPoint[] = [...lookups.pickupById.values()]
   const place = (p: PickupPoint) => ({ id: p.id, name: p.name, lat: p.lat, lng: p.lng })
   let roundStartMs: number | null = null
@@ -196,6 +188,31 @@ export function createCity(lookups: Lookups, commute: ReturnType<typeof createCo
     }
   }
 
+  /** Days with traffic: today and the past 10 workdays (DD-41). */
+  const knownDay = (today: string, date: string) => date === today || pastWorkdays(today).includes(date)
+
+  /** One slot with the 16 gateways, each next to the past 10 workdays at the same time, its own day left out (4.20). */
+  function slotOf(today: string, date: string, min: number): CityTrafficSlot {
+    const past = pastWorkdays(today).filter((day) => day !== date)
+    const weather = commute.weatherCells(date).find((c) => c.slot === (min - FIRST_SLOT_MIN) / SLOT_MIN)?.weather ?? null
+    const detectors: CityGateway[] = gateways.map((g) => {
+      const o = observation(g, date, min, rainingAt(date, min))
+      const pastSpeeds = past.map((day) => observation(g, day, min, rainingAt(day, min)).speed)
+      return {
+        ...g,
+        volume: o.volume,
+        avg_speed_kmh: o.speed,
+        occupancy_pct: o.occupancy,
+        coverage_pct: 100,
+        past_avg_speed_kmh: Math.round((pastSpeeds.reduce((a, b) => a + b, 0) / pastSpeeds.length) * 10) / 10,
+        past_min_speed_kmh: Math.min(...pastSpeeds),
+        past_max_speed_kmh: Math.max(...pastSpeeds),
+        simulated: true,
+      }
+    })
+    return { slot_start: taipeiIso(date, min), detectors, weather, simulated: true, weather_simulated: true }
+  }
+
   function traffic(nowMs: number, rawSlot: string | null): CityTraffic {
     const clock = clockOf(nowMs)
     let date = clock.today
@@ -208,28 +225,22 @@ export function createCity(lookups: Lookups, commute: ReturnType<typeof createCo
       date = m[1]
       min = Number(m[2]) * 60 + Number(m[3])
     }
-    const known = date === clock.today ? min <= LATEST_SLOT_MIN : pastWorkdays(clock.today).includes(date)
+    const known = date === clock.today ? min <= LATEST_SLOT_MIN : knownDay(clock.today, date)
     if (!known || min < FIRST_SLOT_MIN || min > LAST_SLOT_MIN) throw new MockError(404, 'not_found', '這個時段沒有車流資料')
+    return { ...clock, ...slotOf(clock.today, date, min) }
+  }
 
-    const detectors: CityDetector[] = DETECTORS.map((d) => {
-      const o = observation(d, date, min, rainingAt(date, min))
-      return { vd_id: d.vd_id, road_name: d.road_name, road_direction: d.road_direction, lat: d.lat, lng: d.lng, volume: o.volume, avg_speed_kmh: o.speed, simulated: true }
-    })
-    const weighted = (rows: { volume: number; speed: number }[]) => {
-      const v = rows.reduce((n, r) => n + r.volume, 0)
-      return v === 0 ? null : Math.round((rows.reduce((n, r) => n + r.volume * r.speed, 0) / v) * 10) / 10
-    }
-    const roads: CityRoad[] = [...new Set(DETECTORS.map((d) => d.road_name))].sort().map((road) => {
-      const on = DETECTORS.filter((d) => d.road_name === road)
-      // The base leaves out the slot's own day (PR #151).
-      const past = pastWorkdays(clock.today).filter((day) => day !== date)
-      return {
-        road_name: road,
-        avg_speed_kmh: weighted(on.map((d) => observation(d, date, min, rainingAt(date, min)))),
-        past_avg_speed_kmh: weighted(past.flatMap((day) => on.map((d) => observation(d, day, min, rainingAt(day, min))))),
-      }
-    })
-    return { ...clock, slot_start: taipeiIso(date, min), detectors, roads, simulated: true }
+  /** ?date=: the day's 12 slots, today's through the latest slot (DD-39). */
+  function trafficDay(nowMs: number, rawDate: string): CityTrafficDay {
+    const clock = clockOf(nowMs)
+    const parsed = new Date(`${rawDate}T00:00:00Z`)
+    const valid = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === rawDate
+    if (!valid) throw new MockError(400, 'invalid_request', 'date 須為日期（YYYY-MM-DD，例如 2026-10-22）')
+    if (!knownDay(clock.today, rawDate)) throw new MockError(404, 'not_found', '這一天沒有車流資料')
+    const last = rawDate === clock.today ? LATEST_SLOT_MIN : LAST_SLOT_MIN
+    const slots: CityTrafficSlot[] = []
+    for (let min = FIRST_SLOT_MIN; min <= last; min += SLOT_MIN) slots.push(slotOf(clock.today, rawDate, min))
+    return { ...clock, date: rawDate, slots, simulated: true, weather_simulated: true }
   }
 
   function today(world: World, nowMs: number): CityToday {
@@ -300,6 +311,7 @@ export function createCity(lookups: Lookups, commute: ReturnType<typeof createCo
   return {
     live,
     traffic,
+    trafficDay,
     today,
     history,
     /** A Demo reset starts a new live round at the next dashboard query (DD-40 step 5). */
