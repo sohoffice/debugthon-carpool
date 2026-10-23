@@ -13,13 +13,13 @@ const LINE_OVERHANG = 2000
 
 /**
  * The page title: ink lettering behind the line's white-bar mark, quieter than the two role signs (UD-23).
- * Main name only: the full name wraps to two lines in the column left of the driver sign (UD-23).
+ * 22px keeps the full name on one line inside the side column.
  */
 function Title() {
   return (
-    <h1 className="m-0 flex h-16 items-center text-[30px] font-semibold text-ink">
+    <h1 className="m-0 flex h-16 items-center text-[22px] font-semibold whitespace-nowrap text-ink">
       <span aria-hidden className="mr-4 w-3.5 self-stretch bg-brand" />
-      內科上班順起來
+      內科上班順起來: 內科順路共乘
     </h1>
   )
 }
