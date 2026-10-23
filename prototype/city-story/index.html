@@ -187,9 +187,15 @@ const MUTED_STYLE = [
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#d3e3e6' }] },
 ]
 
-// Story metres per second for a car at its road's free speed; on a detector's stretch it slows down in the same
-// proportion as that detector is below its free (night) speed.
+// Story metres per second for a car at its road's free speed. The animation exaggerates slowdowns so it is plain
+// where the roads are slower than usual: see slowness(). The numbers on screen keep the data's speeds.
 const SPEED = { car: 1400, train: 2400, walk: 600 }
+// How slow a stretch looks, 0..1, from its speed as a share of free speed: nothing above 95%, the full effect from
+// 65% down. A car on it moves at lerp(1, CRAWL, slowness) of its free pace, and glows and heats on the same scale.
+const SLOW_FROM = 0.95, SLOW_FULL = 0.65, CRAWL = 0.15
+const slowness = (share) => clamp01((SLOW_FROM - share) / (SLOW_FROM - SLOW_FULL))
+// A detector's heat fades in and out over this many story seconds as simulated cars come onto and leave its stretch.
+const PRESENCE_EASE = 0.6
 // Few simulated people stand for many real ones, so they leave within a short window to make the jam visible.
 const DEPARTURES = [2, 4.5]
 // Riders per carpool car, in turn: two (three aboard), then one (two aboard), 2.5 people per car on average. Each
@@ -307,22 +313,25 @@ function assign(drivers, perCar, background, share) {
 
 /**
  * Drives every vehicle step by step. Away from detectors a car goes its free speed; on a detector's stretch it
- * slows to that detector's share of free speed. Detectors follow their BPR curve towards the scene's volume as
- * the scene's cars reach the Neihu leg (RUSH), so no road turns red before the cars get there.
+ * slows by that detector's slowness. Detectors follow their BPR curve towards the scene's volume as the scene's
+ * cars reach the Neihu leg (RUSH). `presence` records, per detector, whether simulated cars are on its stretch,
+ * so the heat shows only where the cars on screen are held up.
  * Vehicles: { legs: [path with hits], start, holdUntil? } (a carpool car waits at the end of its first leg).
  * q: vehicles per 15 minutes on each detector at the height of this scene, background included, from assign().
  */
 function simulate(vehicles, t0, q) {
   const live = vehicles.map((v) => ({ v, state: 'home', leg: 0, dist: 0 }))
   vehicles.forEach((v) => { v.track = [] })
-  const speeds = []
+  const speeds = [], presence = []
   let rush = 0
+  let here = new Float64Array(DETECTORS.length)
   for (let step = 0; step < 6000; step++) {
     const t = t0 + step * DT
     const inNeihu = live.filter((s) => s.state === 'moving' && s.dist >= (s.v.legs[s.leg].zoneStart ?? Infinity)).length
     rush += (clamp01(inNeihu / (RUSH.share * vehicles.length)) - rush) * (DT / RUSH.ease)
     const v = DETECTORS.map((d, di) => bprSpeed(d, q[di] * rush))
     speeds.push(v)
+    const onStretch = new Uint8Array(DETECTORS.length)
     for (const s of live) {
       const veh = s.v
       if (s.state === 'home' && t >= veh.start) s.state = 'moving'
@@ -331,15 +340,18 @@ function simulate(vehicles, t0, q) {
       const p = s.state === 'home' ? { at: path.points[0], heading: null } : along(path, s.dist / path.len)
       const hit = s.state === 'moving' && path.hits.find(([, at, reach]) => Math.abs(at - s.dist) < reach / 2)
       const share = hit ? v[hit[0]] / DETECTORS[hit[0]].vf : 1
+      if (hit) onStretch[hit[0]] = 1
       veh.track.push({ at: p.at, heading: p.heading, state: s.state, share })
       if (s.state !== 'moving') continue
-      s.dist += SPEED.car * share * DT
+      s.dist += SPEED.car * lerp(1, CRAWL, slowness(share)) * DT
       if (s.dist < path.len) continue
       s.dist = path.len
       if (s.leg < veh.legs.length - 1) { s.state = 'holding'; veh.reach = t }
       else { s.state = 'arrived'; veh.arrive = t }
     }
-    if (live.every((s) => s.state === 'arrived')) return { t0, speeds, end: t }
+    here = here.map((h, di) => h + (onStretch[di] - h) * (DT / PRESENCE_EASE))
+    presence.push(here)
+    if (live.every((s) => s.state === 'arrived')) return { t0, speeds, presence, end: t }
   }
   throw new Error('simulation did not finish')
 }
@@ -597,7 +609,7 @@ const CAR_INK = '#132126', CAR_POOL = '#00a3ad'
 // as the heat, so mild slowdowns show as well as the bad ones.
 function setCar(s, at, heading, opacity, pooling = false, riders = 0, share = 1) {
   place(s.carEl, at)
-  const red = severity({ vf: 1 }, share)
+  const red = slowness(share)
   const glows = [pooling ? 'drop-shadow(0 0 3px rgba(0,163,173,.95))' : '']
   if (red > 0.05) glows.push(`drop-shadow(0 0 ${2 + 4 * red}px rgba(224,48,42,${0.35 + 0.6 * red}))`)
   s.svg.style.filter = [...glows, 'drop-shadow(0 1px 1px rgba(0,0,0,.35))'].filter(Boolean).join(' ')
@@ -665,12 +677,14 @@ function heatRgb(w) {
 }
 // Heat sits on the real detectors and shows how far each is below its free (night) speed, not how many cars.
 function heatFrame(t) {
-  if (t < T.s2) return { speeds: frameAt(plan.sim1, plan.sim1.speeds, t), fade: 1 - span(t, T.stampEnd, T.s2) }
-  return { speeds: frameAt(plan.sim2, plan.sim2.speeds, t), fade: 1 }
+  const sim = t < T.s2 ? plan.sim1 : plan.sim2
+  const fade = t < T.s2 ? 1 - span(t, T.stampEnd, T.s2) : 1
+  return { speeds: frameAt(sim, sim.speeds, t), presence: frameAt(sim, sim.presence, t), fade }
 }
 // 0 at 92% of free speed or faster, 1 at half of it or slower.
-const severity = (d, v) => clamp01((1 - v / d.vf - 0.08) / 0.42)
-function drawHeat(speeds, fade) {
+// Heat shows only where the simulated cars on screen are slowed down: a detector's slowness while cars are on its
+// stretch, none on roads the simulated cars do not use.
+function drawHeat(speeds, presence, fade) {
   DETECTORS.forEach((d, di) => {
     let el = heatEls.get(di)
     if (!el) {
@@ -679,12 +693,12 @@ function drawHeat(speeds, fade) {
       layer.insertBefore(el, parkLabel)
       heatEls.set(di, el)
     }
-    const w = severity(d, speeds[di])
+    const w = slowness(speeds[di] / d.vf)
     const size = lerp(28, 76, w)
     const core = 0.35 + 0.5 * w
     const rgb = heatRgb(w)
     place(el, d.at)
-    el.style.opacity = fade * clamp01(w / 0.15)
+    el.style.opacity = fade * presence[di] * clamp01(w / 0.15)
     el.style.width = el.style.height = `${size}px`
     el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`
     el.style.background = `radial-gradient(circle, rgba(${rgb},${core}) 0%, rgba(${rgb},${core / 3}) 45%, transparent 70%)`
@@ -724,7 +738,7 @@ function render(t) {
   const hf = heatFrame(t)
   if (base?.ready) {
     sprites.forEach((s) => (t < T.s2 ? renderScene1(s, t) : renderScene2(s, t)))
-    drawHeat(hf.speeds, hf.fade)
+    drawHeat(hf.speeds, hf.presence, hf.fade)
     pins.forEach((p) => { p.el.style.opacity = t < T.stampEnd ? 0.55 : 1 })
     const riding = t >= T.s2 + 1 && t < T.ridersUntil + 1
     mrtPaths.forEach((m) => { m.path.style.opacity = riding ? 0.95 : 0.4 })
