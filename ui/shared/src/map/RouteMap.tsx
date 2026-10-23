@@ -1,7 +1,6 @@
-import { useMap } from '@vis.gl/react-google-maps'
-import { useEffect, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { BusStop, Place, PickupPoint, Route } from '../api/types'
-import type { LatLng } from './config'
+import { FitBounds, type MapPadding } from './FitBounds'
 import { MapView } from './MapView'
 import { PlaceMarker } from './PlaceMarker'
 import { decodePolyline } from './polyline'
@@ -16,28 +15,12 @@ interface RouteMapProps {
   /** Other pickup points to show while choosing one; the map then frames them all. */
   pickupOptions?: PickupPoint[]
   /** Extra space kept free around the route, e.g. under a sheet that covers the map. */
-  padding?: { top: number; right: number; bottom: number; left: number }
+  padding?: MapPadding
   className?: string
   /** False: a picture only (MapView). */
   interactive?: boolean
   /** E.g. a VehicleMarker. */
   children?: ReactNode
-}
-
-const DEFAULT_PADDING = { top: 56, right: 32, bottom: 32, left: 32 }
-
-function FitBounds({ points, padding }: { points: LatLng[]; padding: RouteMapProps['padding'] }) {
-  const map = useMap()
-  const key = points.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(';')
-  useEffect(() => {
-    if (!map || points.length === 0) return
-    const bounds = new google.maps.LatLngBounds()
-    points.forEach((p) => bounds.extend(p))
-    map.fitBounds(bounds, padding ?? DEFAULT_PADDING)
-    // `key` stands for the points; padding is fixed per screen.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, key])
-  return null
 }
 
 /** Pickup point, trip route, bus stops along it and destination, framed to fit (8.3 RouteMap). */

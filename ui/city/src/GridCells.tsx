@@ -66,7 +66,8 @@ export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, l
               aria-label={c.label}
               aria-selected={onRow ? selected === r.gateway.vd_id && s === framed : undefined}
               title={onHover ? undefined : c.label}
-              disabled={c.kind === 'none'}
+              // 總覽 opens a slot, so a cell without data does nothing; 車流熱力 still selects its gateway.
+              disabled={c.kind === 'none' && !onRow}
               onClick={() => onCell(c, r.gateway)}
               onMouseMove={onHover && ((e) => onHover(c, { x: e.clientX, y: e.clientY }))}
               className={`rounded-[2px] disabled:cursor-default ${cellClass(c, mode, s === framed)}`}

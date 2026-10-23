@@ -339,6 +339,24 @@ describe('city war room (SC-C1, UD-27)', () => {
     expect(slotButton('08:30–08:45')).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('on 車流熱力 a cell without data still selects its gateway, the slot stays', async () => {
+    respond = (path) => {
+      const r = ok(path)
+      if (!path.includes('date=')) return r
+      const day = r.body as CityTrafficDay
+      const gap = (g: CityGateway, t: string) => (g.vd_id === 'V2' && t.includes('T07:30') ? { ...g, avg_speed_kmh: null, volume: null } : g)
+      return { ...r, body: { ...day, slots: day.slots.map((sl) => ({ ...sl, detectors: sl.detectors.map((g) => gap(g, sl.slot_start)) })) } }
+    }
+    await renderApp()
+    tab('車流熱力')
+    expect(selectedName()).toHaveTextContent('1. 堤頂大道')
+    const cell = within(screen.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })).getAllByRole('gridcell')[12 + 2]
+    expect(cell).toHaveAttribute('data-kind', 'none')
+    fireEvent.click(cell)
+    expect(selectedName()).toHaveTextContent('2. 環東大道')
+    expect(slotButton('08:00–08:15')).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('比平常 colours by the other days at the same time; 還沒到 is 差不多 (DD-44)', async () => {
     await renderApp()
     tab('車流熱力')

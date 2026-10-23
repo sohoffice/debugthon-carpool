@@ -1,4 +1,4 @@
-import { MapView, type CityHistory, type CityTrafficDay } from '@carpool/shared'
+import { FitBounds, MapView, type CityHistory, type CityTrafficDay } from '@carpool/shared'
 import { useState } from 'react'
 import { LEVEL_BG, LEVEL_NAMES, VS_USUAL_BG, VS_USUAL_NAMES, type CongestionLevel } from './congestion'
 import { GatewayDetail } from './GatewayDetail'
@@ -12,7 +12,7 @@ import { SourceBadge } from './SourceBadge'
 import { TrafficControls } from './TrafficControls'
 import { TrafficTip } from './TrafficTip'
 import { DAY_SLOTS, type SlotChoice } from './trafficSlots'
-import { sourceOf, tooltipLines, type TrafficMode } from './trafficView'
+import { gatewayPath, sourceOf, tooltipLines, type TrafficMode } from './trafficView'
 
 interface TrafficTabProps {
   /** The shown date's 12 slots. */
@@ -30,9 +30,8 @@ interface TrafficTabProps {
 }
 
 const LEVELS: CongestionLevel[] = [1, 2, 3, 4]
-// The 16 gateways around Neihu fill the map (UD-28).
-const NEIHU = { lat: 25.068, lng: 121.585 }
-const NEIHU_ZOOM = 14
+// The 16 gateways fill the map, clear of the legend top left and the date and source top right (UD-28).
+const LINES_PADDING = { top: 72, right: 48, bottom: 32, left: 200 }
 const LEVEL_RANGES = ['≥ 75%', '50–75%', '30–50%', '< 30%']
 const LEVEL_WIDTH = [4, 5, 7, 9]
 const VS_USUAL_WIDTH = [4, 4, 7, 9]
@@ -49,6 +48,8 @@ export function TrafficTab(p: TrafficTabProps) {
   const rows = shown ? gridRows(shown) : []
   const over = shown ? latestIndex(shown) + 1 : 0
   const slotCells = rows.map((r) => r.cells[s]).filter((c): c is GridCell => !!c)
+  // Every gateway's line, so none falls under the legend or off the map (UD-28).
+  const fitPoints = rows.flatMap((r) => gatewayPath(r.gateway))
   const slotData = shown?.slots[s]
   const isToday = !!shown && shown.date === p.today
   const source = slotData ? sourceOf(slotData, isToday && s >= over) : ''
@@ -60,7 +61,10 @@ export function TrafficTab(p: TrafficTabProps) {
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px]">
       <div className="flex min-h-0 min-w-0 flex-col">
         <section aria-label="車流地圖" className="relative min-h-[280px] flex-1">
-          <MapView center={NEIHU} zoom={NEIHU_ZOOM}>{shown && <GatewayLines cells={slotCells} mode={p.mode} selected={p.selected} onSelect={p.onSelect} onHover={hover} />}</MapView>
+          <MapView>
+            <FitBounds points={fitPoints} padding={LINES_PADDING} />
+            {shown && <GatewayLines cells={slotCells} mode={p.mode} selected={p.selected} onSelect={p.onSelect} onHover={hover} />}
+          </MapView>
           <MapLegend mode={p.mode} />
           {p.slot && (
             <p className="absolute top-4 right-4 flex items-center gap-2 rounded-[8px] border border-rule bg-white/95 px-3 py-1.5 text-[15px] font-semibold text-ink" data-testid="map-slot">
