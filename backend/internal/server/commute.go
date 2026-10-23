@@ -102,8 +102,8 @@ func (s *Server) getCommuteTraffic(c *gin.Context) {
 
 // getCommuteWeather returns today's latest weather observed at or before now (REQ-077, DD-41),
 // with now and today's date, so the UI takes "now" from here instead of the device clock.
-// weather is null when today has no observation yet. simulated and weather_simulated both say
-// whether the weather is simulated: this API has no traffic (simulated is kept for the UI until T57).
+// weather is null when today has no observation yet. weather_simulated says whether the weather
+// is simulated; this API has no traffic, so it has no traffic flag (DD-36).
 func (s *Server) getCommuteWeather(c *gin.Context) {
 	m, err := commuteNow(c, s.db, s.now())
 	if err != nil {
@@ -111,13 +111,13 @@ func (s *Server) getCommuteWeather(c *gin.Context) {
 		return
 	}
 	var weather []byte
-	var simulated bool
+	var weatherSimulated bool
 	err = s.db.QueryRow(c, `
 		SELECT weather, weather_simulated FROM traffic_observations
 		 WHERE weather IS NOT NULL AND slot_start >= ($1::date::timestamp AT TIME ZONE 'Asia/Taipei')
 		   AND (weather->>'obs_time')::timestamptz <= $2
 		 ORDER BY (weather->>'obs_time')::timestamptz DESC, vd_id
-		 LIMIT 1`, m.Today.Format(dateLayout), m.Now).Scan(&weather, &simulated)
+		 LIMIT 1`, m.Today.Format(dateLayout), m.Now).Scan(&weather, &weatherSimulated)
 	if err != nil && !isNoRows(err) {
 		s.internalError(c, err)
 		return
@@ -126,8 +126,7 @@ func (s *Server) getCommuteWeather(c *gin.Context) {
 		"now":               m.Now,
 		"today":             m.Today.Format(dateLayout),
 		"weather":           json.RawMessage(nullIfEmpty(weather)),
-		"simulated":         simulated, // REQ-063
-		"weather_simulated": simulated,
+		"weather_simulated": weatherSimulated, // REQ-063
 	})
 }
 
