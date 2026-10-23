@@ -67,23 +67,32 @@ const TRAFFIC: CommuteTraffic = {
 }
 TRAFFIC.days[1].slots[5] = { ...TRAFFIC.days[1].slots[5], volume: 1284, avg_speed_kmh: 22.6 }
 
+/** The Go backend after T54: 10/12-10/22 measured by TDX, 10/23 has no measurement and is simulated;
+ * the weather is simulated every day (DD-36). */
+const MIXED_TRAFFIC: CommuteTraffic = {
+  ...TRAFFIC,
+  days: TRAFFIC.days.map((d) => ({ ...d, slots: d.slots.map((s) => ({ ...s, simulated: d.date === '2026-10-23' })) })),
+}
+
 const WEATHER: CommuteWeather = {
   now: NOW,
   today: '2026-10-26',
   weather: { station_id: 'C0A9F0', station_name: '內湖', obs_time: '2026-10-26T08:10:00+08:00', weather: '陰有雨', air_temperature: 18.2, precipitation: 0.8 },
-  simulated: true,
   weather_simulated: true,
 }
 
 interface FakeOptions {
   now?: string
+  traffic?: CommuteTraffic
+  /** /commute/traffic never answers: still loading. */
+  trafficPending?: boolean
   down?: ('/commute/weather' | '/commute/traffic' | '/commute/pickup-rides' | '/pickup-points')[]
   /** pickup-rides fails only after this many answers (a later change of window or pickup point). */
   ridesDownAfter?: number
 }
 
 /** An ApiClient answering like the Go backend; `down` paths fail with a 500. */
-function fakeApi({ now = NOW, down = [], ridesDownAfter }: FakeOptions = {}) {
+function fakeApi({ now = NOW, down = [], ridesDownAfter, traffic = TRAFFIC, trafficPending = false }: FakeOptions = {}) {
   const calls: string[] = []
   let ridesAnswered = 0
   const get = vi.fn(async (path: string) => {
@@ -91,7 +100,7 @@ function fakeApi({ now = NOW, down = [], ridesDownAfter }: FakeOptions = {}) {
     const [pathname, qs] = path.split('?')
     if (down.some((d) => d === pathname)) throw new ApiError(500, '伺服器發生錯誤', 'internal')
     if (pathname === '/commute/weather') return { ...WEATHER, now }
-    if (pathname === '/commute/traffic') return { ...TRAFFIC, now }
+    if (pathname === '/commute/traffic') return trafficPending ? new Promise(() => {}) : { ...traffic, now }
     if (pathname === '/pickup-points') return POINTS
     if (pathname === '/commute/pickup-rides') {
       if (ridesDownAfter !== undefined && ridesAnswered++ >= ridesDownAfter) throw new ApiError(500, '伺服器發生錯誤', 'internal')
@@ -112,10 +121,12 @@ function show(options: FakeOptions & { ground?: 'light' | 'asphalt'; pickupId?: 
 }
 
 const grid = (name: '載客次數' | '內湖車流') => screen.getByRole('group', { name })
+/** Each row's date cell: date and weekday, the weather icon, and a 「模擬」 mark on simulated traffic rows. */
+const dateCells = (name: '載客次數' | '內湖車流') =>
+  [...grid(name).children].filter((el) => !el.hasAttribute('aria-hidden') && el.tagName === 'SPAN' && el.textContent?.includes('週'))
 /** Each row's label text: date, weekday and the weather icon's name. */
 function rowLabels(name: '載客次數' | '內湖車流') {
-  const cells = [...grid(name).children].filter((el) => !el.hasAttribute('aria-hidden') && el.tagName === 'SPAN' && el.textContent?.includes('週'))
-  return cells.map((el) => `${el.textContent} ${el.querySelector('svg')?.getAttribute('aria-label') ?? ''}`)
+  return dateCells(name).map((el) => `${el.firstChild?.textContent} ${el.querySelector('svg')?.getAttribute('aria-label') ?? ''}`)
 }
 const rideCells = () => within(grid('載客次數')).getAllByRole('img').filter((el) => el.getAttribute('aria-label')?.includes('載客'))
 const trafficCells = () => within(grid('內湖車流')).getAllByRole('button')
@@ -197,7 +208,7 @@ describe('CommuteInfo (DD-38, UD-25, SC-X4)', () => {
     await screen.findByRole('group', { name: '內湖車流' })
     expect(frame('road')).toEqual(frame('ride'))
     for (const name of ['載客次數', '內湖車流'] as const) {
-      const bold = [...grid(name).querySelectorAll('.font-bold')].map((el) => el.textContent)
+      const bold = [...grid(name).querySelectorAll('.font-bold')].map((el) => el.firstChild?.textContent)
       expect(bold).toEqual(['10/19 週一', '10/12 週一'])
     }
   })
@@ -285,12 +296,81 @@ describe('CommuteInfo (DD-38, UD-25, SC-X4)', () => {
     expect(detailLine()).toBe(hint)
   })
 
-  it('marks every simulated block: the weather and each grid’s title (REQ-063)', async () => {
-    show()
-    await ridesShown()
-    await screen.findByRole('group', { name: '內湖車流' })
-    expect(within(screen.getByRole('region', { name: '今天的天氣' })).getByText('模擬')).toBeInTheDocument()
-    expect(screen.getAllByText('模擬')).toHaveLength(3)
+  describe('simulated marks: traffic row by row, weather apart (REQ-063, REQ-077, DD-36, SC-X4)', () => {
+    /** The 「模擬」 marks in one grid row's date cell, by the row's date label. */
+    function rowBadges(name: '載客次數' | '內湖車流') {
+      return Object.fromEntries(dateCells(name).map((el) => [el.firstChild?.textContent, within(el as HTMLElement).queryAllByText('模擬').length]))
+    }
+    /** The marks on a grid's title row. */
+    const titleBadges = (name: '載客次數' | '內湖車流') =>
+      [...screen.getByRole('heading', { name }).parentElement!.querySelectorAll('.border-dashed')].map((el) => el.textContent)
+
+    for (const ground of ['light', 'asphalt'] as const) {
+      it(`${ground === 'light' ? 'passenger' : 'driver'}: only the simulated day’s traffic row is marked; measured days are not`, async () => {
+        show({ ground, traffic: MIXED_TRAFFIC })
+        await ridesShown()
+        await screen.findByRole('group', { name: '內湖車流' })
+        const marks = rowBadges('內湖車流')
+        expect(marks['10/23 週五']).toBe(1)
+        expect(Object.entries(marks).filter(([date]) => date !== '10/23 週五').every(([, n]) => n === 0)).toBe(true)
+        expect(Object.keys(marks)).toHaveLength(10)
+        // The row's mark comes after its date and weather icon.
+        const row = dateCells('內湖車流')[0]
+        expect([...row.childNodes].map((n) => (n.nodeName === 'svg' ? 'icon' : n.textContent))).toEqual(['10/23 週五', 'icon', '模擬'])
+
+        // The traffic title carries the weather's mark only; the rides keep their 「模擬」 (DD-40).
+        expect(titleBadges('內湖車流')).toEqual(['天氣模擬'])
+        expect(titleBadges('載客次數')).toEqual(['模擬', '天氣模擬'])
+        // Ride rows are not marked one by one.
+        expect(Object.values(rowBadges('載客次數')).every((n) => n === 0)).toBe(true)
+        // The weather card: 「天氣模擬」, apart from the traffic's mark.
+        expect(within(screen.getByRole('region', { name: '今天的天氣' })).getByText('天氣模擬')).toBeInTheDocument()
+        expect(screen.getAllByText('天氣模擬')).toHaveLength(3)
+        expect(screen.getAllByText('模擬')).toHaveLength(2)
+      })
+    }
+
+    it('every traffic row is marked when every day is simulated, like the demo backend; weather and rides as usual', async () => {
+      show()
+      await ridesShown()
+      await screen.findByRole('group', { name: '內湖車流' })
+      expect(Object.values(rowBadges('內湖車流'))).toEqual(Array(10).fill(1))
+      expect(titleBadges('內湖車流')).toEqual(['天氣模擬'])
+      expect(titleBadges('載客次數')).toEqual(['模擬', '天氣模擬'])
+      expect(screen.getAllByText('天氣模擬')).toHaveLength(3)
+    })
+
+    it('no 「天氣模擬」 where the API says the weather is measured', async () => {
+      const measured: CommuteTraffic = { ...MIXED_TRAFFIC, weather_simulated: false, days: MIXED_TRAFFIC.days.map((d) => ({ ...d, slots: d.slots.map((s) => ({ ...s, weather_simulated: false })) })) }
+      show({ traffic: measured })
+      await ridesShown()
+      await screen.findByRole('group', { name: '內湖車流' })
+      expect(titleBadges('內湖車流')).toEqual([])
+      expect(titleBadges('載客次數')).toEqual(['模擬'])
+    })
+
+    it('the rides grid’s weather stays marked while the traffic is loading', async () => {
+      show({ trafficPending: true })
+      await ridesShown()
+      expect(screen.queryByRole('group', { name: '內湖車流' })).not.toBeInTheDocument()
+      expect(titleBadges('載客次數')).toEqual(['模擬', '天氣模擬'])
+    })
+
+    it('the rides grid’s weather stays marked when the traffic failed', async () => {
+      show({ down: ['/commute/traffic'] })
+      expect(await screen.findByText('讀不到車流，請稍後再試')).toBeInTheDocument()
+      await ridesShown()
+      expect(titleBadges('載客次數')).toEqual(['模擬', '天氣模擬'])
+    })
+
+    it('both grids keep one column template, the date column wide enough for a row’s mark (UD-25)', async () => {
+      show({ traffic: MIXED_TRAFFIC })
+      await ridesShown()
+      await screen.findByRole('group', { name: '內湖車流' })
+      const template = (name: '載客次數' | '內湖車流') => [...grid(name).classList].find((c) => c.startsWith('grid-cols-'))
+      expect(template('內湖車流')).toBe(template('載客次數'))
+      expect(template('內湖車流')).toBe('grid-cols-[120px_repeat(12,minmax(0,1fr))]')
+    })
   })
 
   it('uses the dark scales on asphalt and the light ones on white (8.1)', async () => {

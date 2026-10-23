@@ -20,6 +20,8 @@ export interface HeatRow {
   /** Today's weekday: the date is bold (UD-25). */
   bold: boolean
   weather: WeatherKind | null
+  /** Traffic only: some slot of the day is simulated, so the row is marked (REQ-063, DD-36, SC-X4). */
+  simulated?: boolean
   /** One per commute slot; null where the day has no data. */
   cells: (HeatCell | null)[]
 }
@@ -45,7 +47,10 @@ interface HeatGridProps {
   rows: HeatRow[]
   /** The chosen window, framed the same way on both grids (UD-25). */
   window: SlotWindow
+  /** The whole grid is simulated: 「模擬」 on the title row. Traffic marks its rows instead (DD-36). */
   simulated: boolean
+  /** 「天氣模擬」 on the title row, apart from the data's own mark (REQ-063, REQ-077, UD-25). */
+  weatherSimulated: boolean
   /** Set for the traffic grid: its cells can be tapped (ui-oi-21). */
   selected?: { date: string; slot: number } | null
   onSelect?: (cell: { date: string; slot: number }) => void
@@ -57,7 +62,7 @@ interface HeatGridProps {
  * cell and leave 0 blank; traffic is colour only. On light ground the light scale, on asphalt the
  * dark one (8.1): there the lighter step is the larger amount, so the cell text flips too.
  */
-export function HeatGrid({ title, scale, ground, rows, window, simulated, selected, onSelect }: HeatGridProps) {
+export function HeatGrid({ title, scale, ground, rows, window, simulated, weatherSimulated, selected, onSelect }: HeatGridProps) {
   const fill = FILL[ground][scale]
   const fromCol = (window.from - WINDOW_START) / SLOT_MINUTES
   const toCol = (window.to - WINDOW_START) / SLOT_MINUTES
@@ -74,14 +79,17 @@ export function HeatGrid({ title, scale, ground, rows, window, simulated, select
             {WORDS[scale][1]}
           </span>
           {simulated && <SimulatedBadge />}
+          {weatherSimulated && <SimulatedBadge label="天氣模擬" />}
         </span>
       </div>
+      {/* The date column is wide enough for a row's 「模擬」 after the weather icon; both grids share
+          this template, so their cells line up (SC-X4, UD-25). */}
       {/* A tap inside the traffic grid never reaches the screen's "tap elsewhere clears" (ui-oi-21). */}
       <div
         role="group"
         aria-label={title}
         onClick={onSelect ? (e) => e.stopPropagation() : undefined}
-        className="grid grid-cols-[80px_repeat(12,minmax(0,1fr))] gap-[2px] tabular-nums"
+        className="grid grid-cols-[120px_repeat(12,minmax(0,1fr))] gap-[2px] tabular-nums"
       >
         {SLOT_STARTS.filter((_, i) => i % 2 === 0).map((m, i) => (
           <span key={m} aria-hidden className="text-[11px]/[1.6] text-fg-soft" style={{ gridRow: 1, gridColumn: `${i * 2 + 2} / span 2` }}>
@@ -128,6 +136,7 @@ function Row({
       <span className={`flex items-center gap-[3px] text-[11.5px]/[1.1] whitespace-nowrap ${row.bold ? 'font-bold' : ''}`} style={{ gridRow, gridColumn: 1 }}>
         {row.label}
         {row.weather && <WeatherIcon kind={row.weather} className="size-[13px] shrink-0 text-fg-soft" />}
+        {row.simulated && <SimulatedBadge size="row" />}
       </span>
       {row.cells.map((cell, slot) => {
         const place = { gridRow, gridColumn: slot + 2 }

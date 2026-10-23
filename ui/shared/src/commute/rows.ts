@@ -43,7 +43,8 @@ export function trafficDetail(label: string, s: TrafficSlot): string {
   return `${label} ${slotRange(s.slot_start)}　車流 ${s.volume.toLocaleString('en-US')} 輛　平均 ${speed}`
 }
 
-/** Traffic: colour only, darker = more vehicles (UD-25). */
+/** Traffic: colour only, darker = more vehicles (UD-25). A day with any simulated slot is marked
+ * by its row, from the API's flag and never by its date (REQ-063, DD-36, SC-X4). */
 export function trafficRows(days: TrafficDay[], todayWeekday: number): HeatRow[] {
   const volumes = days.flatMap((d) => d.slots.map((s) => s.volume))
   const min = Math.min(...volumes)
@@ -56,6 +57,7 @@ export function trafficRows(days: TrafficDay[], todayWeekday: number): HeatRow[]
       label,
       bold: d.weekday === todayWeekday,
       weather: weather && weatherKind(weather.weather),
+      simulated: d.slots.some((s) => s.simulated),
       cells: place(d.slots).map((s): HeatCell | null => s && { level: trafficLevel(s.volume, min, max), label: trafficDetail(label, s) }),
     }
   })

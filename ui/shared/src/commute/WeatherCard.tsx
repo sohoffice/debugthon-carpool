@@ -3,7 +3,7 @@ import { SimulatedBadge } from '../ui/SimulatedBadge'
 import { formatMinutes, isoWeekdayOf, taipeiMinutes, weatherKind, weekdayName } from './slots'
 import { WeatherIcon } from './WeatherIcon'
 
-/** Today's weather from /api/commute/weather (REQ-077): "陰有雨 18°C／內湖站 08:10 觀測 … 今天 10/26 週一". */
+/** Today's weather from /api/commute/weather (REQ-077), marked 「天氣模擬」 by weather_simulated (REQ-063): "陰有雨 18°C／內湖站 08:10 觀測 … 今天 10/26 週一". */
 export function WeatherCard({ data }: { data: CommuteWeather }) {
   const [, month, day] = data.today.split('-').map(Number)
   const w = data.weather
@@ -19,9 +19,9 @@ export function WeatherCard({ data }: { data: CommuteWeather }) {
         ) : (
           <p className="text-base">今天還沒有天氣觀測</p>
         )}
-        {data.simulated && (
+        {data.weather_simulated && (
           <div className="mt-1">
-            <SimulatedBadge />
+            <SimulatedBadge label="天氣模擬" />
           </div>
         )}
       </div>

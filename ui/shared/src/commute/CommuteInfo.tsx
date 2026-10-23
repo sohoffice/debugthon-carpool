@@ -87,6 +87,10 @@ export function CommuteInfo({ api, ground, defaultPickupId, onBack }: CommuteInf
     }
   }, [api, pickupPointId, from, to])
 
+  // Both grids' weather is the traffic table's (REQ-083), and only /api/commute/traffic says
+  // whether it is simulated. Until it answers, or when it fails, the rides grid still shows weather
+  // icons, so they stay marked (REQ-063).
+  const weatherSimulated = traffic.data?.weather_simulated ?? true
   const todayWeekday = rides.data?.summary.weekday ?? (traffic.data ? isoWeekdayOf(traffic.data.today) : weather.data ? isoWeekdayOf(weather.data.today) : 0)
   const selectedSlot = selected && traffic.data?.days.find((d) => d.date === selected.date)
   const detail = selected && selectedSlot ? cellDetail(selectedSlot, selected.slot) : null
@@ -135,6 +139,7 @@ export function CommuteInfo({ api, ground, defaultPickupId, onBack }: CommuteInf
               // change the kept rides stay framed on their own window (UD-25).
               window={summaryWindow(rides.data)}
               simulated={rides.data.simulated}
+              weatherSimulated={weatherSimulated}
             />
           </>
         )}
@@ -152,7 +157,9 @@ export function CommuteInfo({ api, ground, defaultPickupId, onBack }: CommuteInf
               ground={ground}
               rows={trafficRows(traffic.data.days, todayWeekday)}
               window={win}
-              simulated={traffic.data.simulated}
+              // Traffic is marked row by row: measured days are not simulated (DD-36, SC-X4).
+              simulated={false}
+              weatherSimulated={weatherSimulated}
               selected={selected}
               onSelect={(cell) => setSelected((s) => (s?.date === cell.date && s.slot === cell.slot ? null : cell))}
             />
