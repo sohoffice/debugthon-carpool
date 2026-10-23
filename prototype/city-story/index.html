@@ -75,8 +75,6 @@
   .caption p { margin: 4px 0 0; font-size: 15px; color: var(--ink-soft); }
   .caption p:empty { display: none; }
 
-  .stamp { position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%) rotate(-6deg) scale(.6); z-index: 600; font-size: 96px; font-weight: 900; color: var(--danger); border: 8px solid var(--danger); border-radius: 18px; padding: 4px 32px; background: rgba(255,255,255,.88); opacity: 0; pointer-events: none; transition: opacity .25s, transform .35s cubic-bezier(.2,1.6,.4,1); }
-  .stamp.on { opacity: 1; transform: translate(-50%,-50%) rotate(-6deg) scale(1); }
 
   .counts { position: absolute; right: 14px; bottom: 14px; z-index: 500; width: 250px; background: #fff; border-radius: 12px; box-shadow: 0 4px 18px rgba(19,33,38,.18); padding: 10px 16px; }
   .counts h3 { margin: 0 0 4px; font-size: 14px; color: var(--ink-soft); display: flex; justify-content: space-between; align-items: center; }
@@ -85,9 +83,6 @@
   .counts .row span { font-size: 14px; }
   .counts .row b { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
   .counts .row b.cars, .counts .row b.jam { color: var(--danger); }
-  .counts .meter { height: 8px; border-radius: 4px; background: var(--rule); overflow: hidden; margin: 2px 0 2px; }
-  .counts .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, rgb(192,54,44), rgb(236,128,46), rgb(120,190,120)); }
-  .counts .slowest { font-size: 12px; color: var(--ink-soft); }
 
   .summary { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(16px); z-index: 600; background: var(--brand); color: #fff; border-radius: 14px; box-shadow: 0 8px 28px rgba(0,86,96,.35); padding: 14px 26px; text-align: center; opacity: 0; transition: opacity .4s, transform .4s; pointer-events: none; }
   .summary.on { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -128,15 +123,11 @@
 <main id="main">
   <div id="map"></div>
   <div class="caption" id="caption"><h2></h2><p></p></div>
-  <div class="stamp" id="stamp">一人一車</div>
   <div class="counts">
     <h3>往內科 <span class="badge-sim">示意</span></h3>
     <div class="row"><span>出發的人</span><b id="nPeople">0</b></div>
     <div class="row"><span>開上路的車</span><b id="nCars" class="cars">0</b></div>
     <div class="row"><span>每車平均坐</span><b id="nAvg">–</b></div>
-    <div class="row"><span>主要入口平均時速</span><b id="nKeySpeed" class="cars">–</b></div>
-    <div class="meter"><i id="speedMeter"></i></div>
-    <div class="slowest">最慢：<span id="nSlowest">–</span></div>
   </div>
   <div class="summary" id="summary"></div>
   <div class="base-note" id="baseNote">載入底圖中…</div>
@@ -146,7 +137,7 @@
   <button id="restart">從頭</button>
   <div class="scrub"><input type="range" id="scrub" min="0" max="50" step="0.01" value="0"><div class="ticks" id="ticks"></div></div>
   <span class="clock" id="clock">0.0 s</span>
-  <label>採用比例 <select id="ratio"><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3" selected>30%</option><option value="0.5">50%</option></select></label>
+  <label>採用比例 <select id="ratio"><option value="0" selected>0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option><option value="0.5">50%</option></select></label>
   <label>速度 <select id="speed"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label>
 </footer>
 
@@ -282,14 +273,13 @@ function addReach(route) {
 DATA.homes.forEach((h) => h.routes.forEach(addReach))
 Object.values(DATA.onward).forEach((routes) => routes.forEach(addReach))
 
-// Trip times are compared over the Neihu leg only: from the first point within NEIHU_ZONE_M of the park (just
-// before the bridges) to the building. Where people drive from varies too much for whole trips to compare.
+// The Neihu leg of a route starts at its first point within NEIHU_ZONE_M of the park, just before the bridges; the
+// rush builds up as cars reach it.
 const NEIHU_ZONE_M = 1200
 function addNeihuLeg(route) {
   const path = makePath(route.points)
   const i = route.points.findIndex((p) => PARK.some((q) => meters(p, q) < NEIHU_ZONE_M))
   route.zoneStart = i < 0 ? path.len : path.cum[i]
-  route.zoneShare = (path.len - route.zoneStart) / path.len
 }
 DATA.homes.forEach((h) => h.routes.forEach(addNeihuLeg))
 Object.values(DATA.onward).forEach((routes) => routes.forEach(addNeihuLeg))
@@ -416,10 +406,10 @@ const routeCost = (c, speed, bias) => c.duration_s + (bias[c.entry] ?? 0) +
     return sum + delay(DETECTORS[di], speed[di], to - from)
   }, 0)
 /**
- * Seconds added to every route through each entry so that scene 1's measured bridge shares are an equilibrium: with
+ * Seconds added to every route through each entry so that the measured bridge shares (0% adoption) are an equilibrium: with
  * these, the sampled commuters choosing freely end up on the bridges in the shares shareOutBridges() gave them. They
- * stand for what the road network misses (signals, ramps, habit). Scene 2 keeps them, so whoever switches bridges
- * there does so because of congestion alone. Returns the bias and the scene-1 choice it settles on.
+ * stand for what the road network misses (signals, ramps, habit). Runs with adoption keep them, so whoever switches
+ * bridges there does so because of congestion alone. Returns the bias and the 0% choice it settles on.
  */
 function entryBias(candsList, choice0, fit) {
   const count = (choice) => candsList.reduce((m, cands, i) => { const e = cands[choice[i]].entry; m[e] = (m[e] || 0) + 1; return m }, {})
@@ -514,11 +504,11 @@ const keySpeed = (v) => KEY.reduce((s, di) => s + v[di], 0) / KEY.length
 const candPath = (c) => Object.assign(makePath(c.points, c.hits), { zoneStart: c.zoneStart, bridgeSpans: c.bridgeSpans })
 
 /**
- * Ties scene 1 to the data. The simulated commuters are a sample: each stands for `scale` real vehicles per 15
+ * Ties the 0% morning to the data. The simulated commuters are a sample: each stands for `scale` real vehicles per 15
  * minutes, the median ratio of measured peak volume to sampled cars on the detectors they use, but never more
  * than a detector measured in total (so a road the sample happens to crowd is not pushed past its real volume).
  * Whatever else a detector measured on 2026-10-22 (traffic from 汐止, 南港, Neihu itself, through traffic) is its
- * background, so scene 1 carries each detector's measured volume and so runs at its measured speed.
+ * background, so at 0% each detector carries its measured volume and so runs at its measured speed.
  */
 function calibrate(candsList, choice) {
   const zero = new Float64Array(DETECTORS.length)
@@ -539,28 +529,17 @@ function buildPlan(ratio) {
   const n = DATA.homes.length
   const commuters = DATA.homes.map((h, id) => ({ id, home: h.at, destIdx: h.dest, dep1: lerp(DEPARTURES[0], DEPARTURES[1], r()) }))
 
-  // Scene 1: everyone drives, over the bridges in the shares the entry detectors measured, each on the route quickest
-  // for them given those shares (entryBias).
+  // Each commuter's usual route: everyone driving, over the bridges in the shares the entry detectors measured, each on
+  // the route quickest for them given those shares (entryBias).
   const cands1 = commuters.map((c) => DATA.homes[c.id].routes)
   const measured = shareOutBridges(cands1)
   const { bias, choice: choice1 } = entryBias(cands1, measured, calibrate(cands1, measured))
   const fit = calibrate(cands1, choice1)
   const scale = fit.scale
-  commuters.forEach((c, i) => {
-    c.route1 = DATA.homes[c.id].routes[fit.a.choice[i]]
-    c.s1 = { legs: [candPath(c.route1)], start: c.dep1 }
-  })
-  const sim1 = simulate(commuters.map((c) => c.s1), 0, fit.a.q)
+  commuters.forEach((c, i) => { c.route1 = DATA.homes[c.id].routes[fit.a.choice[i]] })
 
-  const T = { intro: DEPARTURES[0] }
-  // Stamp once the main entries are at their slowest; stragglers fade out during the stamp.
-  const key1 = sim1.speeds.map(keySpeed)
-  T.stamp = key1.indexOf(Math.min(...key1)) * DT + 1.5
-  T.stampEnd = T.stamp + 2.8
-  T.s2 = T.stampEnd + 0.8
-  T.app = T.s2 + 0.5
-  // Scene 2 replays the same morning: everyone leaves at the same moment as in scene 1, shifted by this offset.
-  T.offset = T.s2 + 1.8 - DEPARTURES[0]
+  // Everyone leaves home at the same moment whatever the adoption rate; those who adopted open the app first.
+  const T = { intro: DEPARTURES[0], app: 0.5 }
 
   // People living near one of the lines (not right next to a pickup station) take the MRT, to whichever
   // pickup station is quickest by walk plus ride.
@@ -590,8 +569,8 @@ function buildPlan(ratio) {
     c.pickup = line.pickup
     c.walk1 = makePath([c.home, latLng(seq[0])])
     c.ride = makePath(seq.map(latLng))
-    c.dep2 = c.dep1 + T.offset - 0.6
-    c.rideStart = c.dep2 + 0.4 + c.walk1.len / SPEED.walk
+    c.walkStart = c.dep1 - 0.6
+    c.rideStart = c.walkStart + 0.4 + c.walk1.len / SPEED.walk
     c.rideEnd = c.rideStart + c.ride.len / SPEED.train
   })
 
@@ -626,57 +605,45 @@ function buildPlan(ratio) {
   commuters.filter((c) => c.role === 'rider' && !c.driver).forEach((c) => { c.role = undefined })
   commuters.filter((c) => !c.role).forEach((c) => { c.role = 'solo' })
 
-  // Scene 2, the same morning with fewer cars: everyone still driving starts from their usual bridge (a carpool car
-  // from the pickup point, over its driver's usual bridge where it can) and then rebalances, moving off whichever
-  // bridge is now more congested than the others. Background traffic is assumed to switch to carpooling in the same
-  // share as the simulated commuters.
-  const drivers2 = commuters.filter((c) => c.role !== 'rider')
-  const share = drivers2.length / n
-  const cands2 = drivers2.map((c) => (c.role === 'carpool' ? DATA.onward[`${c.pickupIdx}|${c.destIdx}`] : DATA.homes[c.id].routes))
-  const choice2 = drivers2.map((c, i) => {
-    if (c.role !== 'carpool') return cands2[i].indexOf(c.route1)
-    const same = cands2[i].findIndex((r) => r.entry === c.route1.entry)
+  // The morning at this adoption rate. With no one adopting it is the measured morning, unchanged. Otherwise
+  // everyone still driving starts from their usual bridge (a carpool car from the pickup point, over its driver's
+  // usual bridge where it can) and then rebalances, moving off whichever bridge is now more congested than the others.
+  // Background traffic is assumed to switch to carpooling in the same share as the simulated commuters.
+  const drivers = commuters.filter((c) => c.role !== 'rider')
+  const share = drivers.length / n
+  const cands = drivers.map((c) => (c.role === 'carpool' ? DATA.onward[`${c.pickupIdx}|${c.destIdx}`] : DATA.homes[c.id].routes))
+  const usual = drivers.map((c, i) => {
+    if (c.role !== 'carpool') return cands[i].indexOf(c.route1)
+    const same = cands[i].findIndex((r) => r.entry === c.route1.entry)
     return same >= 0 ? same : 0
   })
-  const a2 = rebalance(cands2, choice2, fit.perCar, fit.background, share, bias)
-  drivers2.forEach((c, i) => {
-    c.route2 = cands2[i][a2.choice[i]]
+  const a = ratio > 0 ? rebalance(cands, usual, fit.perCar, fit.background, share, bias) : fit.a
+  drivers.forEach((c, i) => {
+    c.route = cands[i][a.choice[i]]
     if (c.role === 'carpool') {
       const last = Math.max(...c.riders.map((x) => x.atPickup))
       const leg1 = makePath(DATA.homes[c.id].toPickups[c.pickupIdx].points)
-      c.s2 = { legs: [leg1, candPath(c.route2)], start: Math.max(T.s2 + 1.8, last + 0.4 - leg1.len / SPEED.car), holdUntil: last + 0.6 }
+      c.trip = { legs: [leg1, candPath(c.route)], start: Math.max(T.intro - 0.2, last + 0.4 - leg1.len / SPEED.car), holdUntil: last + 0.6 }
     } else {
-      c.s2 = { legs: [candPath(c.route2)], start: c.dep1 + T.offset }
+      c.trip = { legs: [candPath(c.route)], start: c.dep1 }
     }
   })
-  const sim2 = simulate(drivers2.map((c) => c.s2), T.s2, a2.q)
+  const sim = simulate(drivers.map((c) => c.trip), 0, a.q)
 
+  // When the main entries are at their slowest.
+  const key = sim.speeds.map(keySpeed)
+  T.peak = key.indexOf(Math.min(...key)) * DT
   T.ridersUntil = Math.max(0, ...commuters.filter((c) => c.role === 'rider').map((c) => c.rideEnd))
-  const arrivals2 = drivers2.map((c) => c.s2.arrive).sort((a, b) => a - b)
-  T.summary = arrivals2[Math.floor(arrivals2.length * 0.9)] + 0.5
+  const arrivals = drivers.map((c) => c.trip.arrive).sort((x, y) => x - y)
+  T.summary = arrivals[Math.floor(arrivals.length * 0.9)] + 0.5
   T.total = T.summary + 6
 
-  // Average speed on the Neihu leg (just before the bridges to the building) of every car on the road in each
-  // scene: the leg's length over its time, that leg's share of OSRM's empty-road time plus the time lost on the
-  // detectors along it at the scene's equilibrium speed.
-  const lost = (route, speed) => route.hits.reduce((s, [di, at, reach]) => s + (at >= route.zoneStart ? delay(DETECTORS[di], speed[di], reach) : 0), 0)
-  const legKmh = (routes, speed) => {
-    const metres = routes.reduce((s, r) => s + r.distance_m * r.zoneShare, 0)
-    const seconds = routes.reduce((s, r) => s + r.duration_s * r.zoneShare + lost(r, speed), 0)
-    return (metres / seconds) * 3.6
-  }
-  const entries = (cs, key) => cs.reduce((m, c) => { const e = c[key].entry; m[e] = (m[e] || 0) + 1; return m }, {})
-  // Peak speed per bottleneck in both scenes, for the summary and the console check against the data.
-  const bottlenecks = KEY.map((di) => ({ d: DETECTORS[di], v1: fit.a.speed[di], v2: a2.speed[di], q1: fit.a.q[di], q2: a2.q[di] }))
+  const entries = (cs, k) => cs.reduce((m, c) => { const e = c[k].entry; m[e] = (m[e] || 0) + 1; return m }, {})
   return {
-    commuters, T, sim1, sim2, n, scale, fitErr: fit.err, cars2: drivers2.length, nRiders: n - drivers2.length,
+    commuters, T, sim, n, scale, fitErr: fit.err, cars: drivers.length, nRiders: n - drivers.length,
     adopters: commuters.filter((c) => c.role === 'rider' || c.role === 'carpool').length,
-    legKmh1: legKmh(commuters.map((c) => c.route1), fit.a.speed),
-    legKmh2: legKmh(drivers2.map((c) => c.route2), a2.speed),
-    keyPeak1: Math.min(...key1), keyPeak2: Math.min(...sim2.speeds.map(keySpeed)),
-    bottlenecks, entries1: entries(commuters, 'route1'), entries2: entries(drivers2, 'route2'),
-    switched: drivers2.filter((c, i) => c.role === 'solo' && c.route2.entry !== cands2[i][choice2[i]].entry).length,
-    solo: drivers2.filter((c) => c.role === 'solo').length,
+    entries1: entries(commuters, 'route1'), entries: entries(drivers, 'route'),
+    solo: drivers.filter((c) => c.role === 'solo').length,
   }
 }
 
@@ -803,41 +770,32 @@ function setPerson(s, at, opacity, app, onMrt = false) {
   s.personEl.classList.toggle('on-mrt', onMrt)
 }
 
-function renderScene1(s, t) {
+function renderCommuter(s, t) {
   const c = s.c
-  const show = span(t, 0.3, 1.2) * (1 - span(t, T.stampEnd, T.s2))
-  const p = trackAt(plan.sim1, c.s1, t)
-  setCar(s, p.at, p.heading, show * (p.state === 'arrived' ? 0.3 : 1), false, 0, p.jam)
-  setPerson(s, c.home, p.state === 'home' ? show : 0, false)
-  if (s.walk) s.walk.style.opacity = 0
-}
-
-function renderScene2(s, t) {
-  const c = s.c
-  const show = span(t, T.s2, T.s2 + 0.5)
-  const app = t >= T.app
+  const show = span(t, 0.3, 1.2)
+  const app = plan.adopters > 0 && t >= T.app
   if (c.role === 'rider') {
-    setCar(s, c.home, null, show * (t >= c.dep2 ? 0.2 : 1))
-    const leave = c.driver?.s2.leave
+    setCar(s, c.home, null, show * (t >= c.walkStart ? 0.2 : 1))
+    const leave = c.driver?.trip.leave
     const gone = leave !== undefined && t >= leave
     let at = c.home, onMrt = false
-    if (t >= c.dep2 && t < c.rideStart) at = along(c.walk1, span(t, c.dep2, c.rideStart)).at
+    if (t >= c.walkStart && t < c.rideStart) at = along(c.walk1, span(t, c.walkStart, c.rideStart)).at
     else if (t >= c.rideStart && t < c.rideEnd) { at = along(c.ride, span(t, c.rideStart, c.rideEnd)).at; onMrt = true }
     else if (t >= c.rideEnd) at = along(c.walk2, span(t, c.rideEnd, c.atPickup)).at
     setPerson(s, at, gone ? 0 : show, app && !onMrt && t < c.atPickup, onMrt)
-    s.walk.style.opacity = t >= c.dep2 && t < c.rideStart + 1 ? 0.8 : 0
+    s.walk.style.opacity = t >= c.walkStart && t < c.rideStart + 1 ? 0.8 : 0
     return
   }
-  const p = trackAt(plan.sim2, c.s2, t)
-  const boarded = c.role === 'carpool' && c.s2.leave !== undefined && t >= c.s2.leave ? c.riders.length : 0
+  const p = trackAt(plan.sim, c.trip, t)
+  const boarded = c.role === 'carpool' && c.trip.leave !== undefined && t >= c.trip.leave ? c.riders.length : 0
   // Arrived carpool cars stay visible so the result is easy to read in the park.
   const arrivedOpacity = c.role === 'carpool' ? 0.85 : 0.3
   setCar(s, p.at, p.heading, show * (p.state === 'arrived' ? arrivedOpacity : 1), c.role === 'carpool', boarded, p.jam)
   setPerson(s, c.home, p.state === 'home' ? show : 0, app && p.state === 'home')
 }
 
-// Yellow → orange → red as a road slows down. Red is kept for the worst jams (scene 1's bottlenecks reach 85–100,
-// most of scene 2 settles around 40–75), so the two scenes read as red against orange and yellow.
+// Yellow → orange → red as a road slows down. Red is kept for the worst jams (at 0% the bottlenecks reach 85–100, at
+// 30% most settle around 40–75), so the runs read as red against orange and yellow.
 const HEAT_STOPS = [[0, [245, 215, 110]], [0.45, [244, 190, 72]], [0.68, [238, 140, 40]], [0.78, [234, 118, 40]], [0.88, [204, 48, 40]], [1, [190, 36, 38]]]
 function heatRgb(w) {
   for (let i = 1; i < HEAT_STOPS.length; i++) {
@@ -850,16 +808,14 @@ function heatRgb(w) {
   }
   return HEAT_STOPS[HEAT_STOPS.length - 1][1].join(',')
 }
-// Heat sits on the real detectors and shows how far each is below its free (night) speed, not how many cars.
+// Heat sits on the real detectors and shows their congestion (speed or occupancy, whichever is worse), not how many cars.
 function heatFrame(t) {
-  const sim = t < T.s2 ? plan.sim1 : plan.sim2
-  const fade = t < T.s2 ? 1 - span(t, T.stampEnd, T.s2) : 1
-  return { speeds: frameAt(sim, sim.speeds, t), jams: frameAt(sim, sim.jams, t), presence: frameAt(sim, sim.presence, t), bridges: frameAt(sim, sim.bridgePresence, t), fade }
+  const { sim } = plan
+  return { jams: frameAt(sim, sim.jams, t), presence: frameAt(sim, sim.presence, t), bridges: frameAt(sim, sim.bridgePresence, t) }
 }
-// 0 at 92% of free speed or faster, 1 at half of it or slower.
-// Heat shows only where the simulated cars on screen are held up: a detector's congestion while cars are on its
-// stretch, none on roads the simulated cars do not use.
-function drawHeat(jams, presence, fade) {
+// Heat shows only where the simulated cars on screen are held up: a detector's congestion while cars are near it,
+// none on roads the simulated cars do not use.
+function drawHeat(jams, presence) {
   DETECTORS.forEach((d, di) => {
     let el = heatEls.get(di)
     if (!el) {
@@ -873,21 +829,21 @@ function drawHeat(jams, presence, fade) {
     const core = 0.35 + 0.5 * w
     const rgb = heatRgb(w)
     place(el, d.at)
-    el.style.opacity = fade * presence[di] * clamp01(w / 0.15)
+    el.style.opacity = presence[di] * clamp01(w / 0.15)
     el.style.width = el.style.height = `${size}px`
     el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`
     el.style.background = `radial-gradient(circle, rgba(${rgb},${core}) 0%, rgba(${rgb},${core / 3}) 45%, transparent 70%)`
   })
 }
 
-function drawBridgeHeat(jams, presence, fade) {
+function drawBridgeHeat(jams, presence) {
   bridgeHeat.forEach(({ el, at, bi }, si) => {
     const w = jams[BOTTLENECK_BRIDGES[bi].di]
     const size = lerp(28, 76, w)
     const core = 0.35 + 0.5 * w
     const rgb = heatRgb(w)
     place(el, at)
-    el.style.opacity = fade * presence[si] * clamp01(w / 0.15)
+    el.style.opacity = presence[si] * clamp01(w / 0.15)
     el.style.width = el.style.height = `${size}px`
     el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`
     el.style.background = `radial-gradient(circle, rgba(${rgb},${core}) 0%, rgba(${rgb},${core / 3}) 45%, transparent 70%)`
@@ -896,29 +852,41 @@ function drawBridgeHeat(jams, presence, fade) {
 
 function captionAt(t) {
   const adopt = Math.round((plan.adopters / plan.n) * 100)
-  if (t < T.intro) return ['平日早上，往內湖科學園區', '儀表板上的車流熱力（模擬資料）']
-  if (t < T.stamp) return ['大家從台北各地同時開車進內科', '每台車大多只坐一個人；路越慢，越紅']
-  if (t < T.stampEnd) return ['一人一車：進內科的路塞成停車場', '']
-  if (t < T.app) return ['同一個早上，如果改用「內科上班順起來」…', '']
+  if (!plan.adopters) {
+    if (t < T.intro) return ['平日早上，往內湖科學園區', '儀表板上的車流熱力（模擬資料）']
+    if (t < T.peak) return ['大家從台北各地同時開車進內科', '每台車大多只坐一個人；路越塞，越紅']
+    if (t < T.summary) return ['一人一車：進內科的路塞成停車場', '']
+    return ['一人一車', '各路段車流量照 2026-10-22 早上實測']
+  }
+  if (t < T.intro) return ['同一個早上，如果改用「內科上班順起來」…', `假設原本開車的人有 ${adopt}% 採用（司機與乘客都算）`]
   if (t < T.ridersUntil + 0.5) return ['住捷運沿線的人，車留在家', '走到捷運站，搭到行天宮、松山車站、世貿、大巨蛋']
   if (t < T.summary) return ['同一棟大樓的人，順路一起進內科', '路上的車少了，剩下的車也開得比較順']
   return ['同樣多的人，更少的車', `示意：假設原本開車的人有 ${adopt}% 採用（司機與乘客都算），每台共乘車平均 2.5 人`]
 }
 
 function countsAt(t) {
-  const cs = plan.commuters
-  if (t < T.s2) {
-    const going = cs.filter((c) => t >= c.dep1).length
-    return [going, going, going ? 1 : 0]
-  }
   let people = 0, cars = 0, aboard = 0
-  for (const c of cs) {
+  for (const c of plan.commuters) {
     if (c.role === 'rider') {
-      if (t >= c.dep2) people++
-      if (c.driver?.s2.leave !== undefined && t >= c.driver.s2.leave) aboard++
-    } else if (t >= c.s2.start) { people++; cars++; aboard++ }
+      if (t >= c.walkStart) people++
+      if (c.driver?.trip.leave !== undefined && t >= c.driver.trip.leave) aboard++
+    } else if (t >= c.trip.start) { people++; cars++; aboard++ }
   }
   return [people, cars, cars ? aboard / cars : 0]
+}
+
+const HEAT_NOTE = '熱力圖：用 TDX 2026-10-22 晨峰車輛偵測器的實測資料，把各路段車流量換算成車速與佔有率，取較塞的一項，只畫在模擬車輛正經過的路段'
+function summaryHtml() {
+  if (!plan.adopters) {
+    return `<div class="big">0% 採用：${plan.n} 人進內科，就是 ${plan.n} 台車</div>` +
+      `<div class="sub">一人一車，每台車平均坐 1.0 人</div>` +
+      `<div class="note">${HEAT_NOTE}；0% 時各路段車流量等於當天實測值</div>`
+  }
+  const carPct = Math.round((1 - plan.cars / plan.n) * 100)
+  const adoptPct = Math.round((plan.adopters / plan.n) * 100)
+  return `<div class="big">${adoptPct}% 採用：${plan.n} 人進內科，車 <s>${plan.n}</s> → ${plan.cars} 台（−${carPct}%）</div>` +
+    `<div class="sub">${plan.nRiders} 人搭捷運到上車點，坐上 ${plan.cars - plan.solo} 台共乘車；${plan.solo} 人仍自己開車</div>` +
+    `<div class="note">採用比例為假設，每台共乘車平均 2.5 人。${HEAT_NOTE}；假設汐止、南港等其他地區的車也同比例減少，顏色變化為示意</div>`
 }
 
 const $ = (id) => document.getElementById(id)
@@ -926,34 +894,21 @@ let lastCaption = ''
 function render(t) {
   const hf = heatFrame(t)
   if (base?.ready) {
-    sprites.forEach((s) => (t < T.s2 ? renderScene1(s, t) : renderScene2(s, t)))
-    drawHeat(hf.jams, hf.presence, hf.fade)
-    drawBridgeHeat(hf.jams, hf.bridges, hf.fade)
-    pins.forEach((p) => { p.el.style.opacity = t < T.stampEnd ? 0.55 : 1 })
-    const riding = t >= T.s2 + 1 && t < T.ridersUntil + 1
+    sprites.forEach((s) => renderCommuter(s, t))
+    drawHeat(hf.jams, hf.presence)
+    drawBridgeHeat(hf.jams, hf.bridges)
+    pins.forEach((p) => { p.el.style.opacity = plan.adopters ? 1 : 0.55 })
+    const riding = plan.adopters > 0 && t >= T.app && t < T.ridersUntil + 1
     mrtPaths.forEach((m) => { m.path.style.opacity = riding ? 0.95 : 0.4 })
   }
   const [h2, p] = captionAt(t)
   if (h2 + p !== lastCaption) { $('caption').querySelector('h2').textContent = h2; $('caption').querySelector('p').textContent = p; lastCaption = h2 + p }
-  $('stamp').classList.toggle('on', t >= T.stamp && t < T.stampEnd)
   const [people, cars, avg] = countsAt(t)
   $('nPeople').textContent = people
   $('nCars').textContent = cars
   $('nAvg').textContent = avg ? avg.toFixed(1) : '–'
-  const v = hf.speeds
-  const kmh = keySpeed(v)
-  const free = KEY.reduce((sum, di) => sum + DETECTORS[di].vf, 0) / KEY.length
-  $('nKeySpeed').textContent = Math.round(kmh)
-  $('speedMeter').style.width = `${Math.round(clamp01(kmh / free) * 100)}%`
-  const slowest = DETECTORS.map((d, di) => ({ d, ratio: v[di] / d.vf, kmh: v[di] })).sort((a, b) => a.ratio - b.ratio)[0]
-  $('nSlowest').textContent = slowest.ratio < 0.92 ? `${slowest.d.road} ${Math.round(slowest.kmh)} km/h（平常 ${Math.round(slowest.d.vf)}）` : '各路段順暢'
-  const carPct = Math.round((1 - plan.cars2 / plan.n) * 100)
-  const adoptPct = Math.round((plan.adopters / plan.n) * 100)
-  const worst = [...plan.bottlenecks].sort((a, b) => (b.v2 - b.v1) - (a.v2 - a.v1)).slice(0, 3)
-  $('summary').innerHTML = `<div class="big">${adoptPct}% 採用：${plan.n} 人進內科，車 <s>${plan.n}</s> → ${plan.cars2} 台（−${carPct}%）</div>` +
-    `<div class="sub">進內湖路段（橋前到大樓）平均時速 ${Math.round(plan.legKmh1)} → ${Math.round(plan.legKmh2)} km/h　·　` +
-    worst.map((b) => `${b.d.road} ${Math.round(b.v1)}→${Math.round(b.v2)} km/h`).join('、') + `</div>` +
-    `<div class="note">仍自己開車的 ${plan.solo} 人中，${plan.switched} 人看哪座橋較不塞而改走別座。示意：車流量→車速依 TDX 2026-10-22 晨峰 VD 資料校準（每台模擬車約代表每 15 分鐘 ${plan.scale} 輛）；採用比例為假設，每台共乘車平均 2.5 人，未模擬地區（汐止、南港等）假設同比例減少</div>`
+  // Only while it shows, so a card fading out after a switch of adoption rate keeps the rate it was about.
+  if (t >= T.summary) $('summary').innerHTML = summaryHtml()
   $('summary').classList.toggle('on', t >= T.summary)
   $('clock').textContent = `${t.toFixed(1)} / ${T.total.toFixed(0)} s`
   $('scrub').value = t
@@ -1076,7 +1031,9 @@ function usePlan(ratio) {
   plan = buildPlan(ratio)
   T = plan.T
   $('scrub').max = T.total
-  const ticks = [[0, '現況'], [DEPARTURES[0], '同時出發'], [T.stamp, '一人一車'], [T.s2, '改用 App'], [T.summary, '成果']]
+  const ticks = plan.adopters
+    ? [[0, '改用 App'], [T.intro, '同時出發'], [T.summary, '成果']]
+    : [[0, '現況'], [T.intro, '同時出發'], [T.peak, '一人一車'], [T.summary, '成果']]
   $('ticks').innerHTML = ticks.map(([s, label]) => `<span style="left:${(s / T.total) * 100}%">${label}</span>`).join('')
   mountSprites()
 }
@@ -1088,7 +1045,7 @@ $('ratio').onchange = (e) => { usePlan(Number(e.target.value)); t = 0; redraw();
 document.addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); $('play').click() } })
 window.addEventListener('resize', () => { base?.refit(); redraw() })
 
-usePlan(0.3)
+usePlan(Number($('ratio').value))
 render(0)
 startBaseMap()
 requestAnimationFrame(frame)
