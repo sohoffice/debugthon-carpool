@@ -23,7 +23,8 @@ python3 prototype/city-story/serve.py
 
 - 模擬的通勤者是樣本。第一幕各偵測器的車流量等於實測值，模擬車輛以外的部分視為背景車流（汐止、南港、內湖本地、路過的車）。
 - 第二幕依採用比例減少車流，背景車流假設同比例減少，再由同一條曲線算出車速。
-- 選路：每個人在幾條候選路線中，選把塞車算進去之後最快的那條；第二幕重新選。
+- 塞車程度：車速掉幅與佔有率（occupancy）取較嚴重者；偵測器不在橋上，民權大橋、麥帥橋、成美橋各取最近的進內湖方向偵測器。
+- 選路：第一幕各橋的車數按入口偵測器的實測流量分配；每座橋另加一個校準秒數（代表號誌、匝道、習慣等路網沒有的因素），讓這個分配本身就是均衡，也就是每個人照 BPR 車速算出的延誤自由選路，結果仍是同樣的比例。第二幕保留這些秒數，從原本的橋出發重新均衡，所以改走別座橋的人只因為塞車程度改變。
 - 偵測器量的是路段中間的點車速，量不到路口與匝道排隊，所以延誤可能被低估。
 
 ## 重新產生 `data.js`
@@ -33,5 +34,5 @@ python3 prototype/city-story/serve.py
 1. `tdx.py`：呼叫 TDX API。另外用它下載臺北市 VD 靜態資料到 `$W/tdx/vd_static.json`。
 2. `fetch_peak.py .env $W 2026-10-22`：下載整天的 VD 歷史資料（約 1 GB），彙整內湖各路段晨峰每 15 分鐘的資料。
 3. `calibrate_vd.py $W 2026-10-22`：產生 `$W/tdx/detectors_2026-10-22.json`，即各偵測器的自由車速與容量。
-4. `build_routes.py $W/routes_v4.json $W/park.json`：產生住家、候選路線與經過的偵測器。需要 `$W/osm/bridges.json`（Overpass 抓的內湖周邊橋梁），請求結果快取在 `$W/route_cache.json`。
-5. `inject.py $W prototype/city-story/data.js routes_v4.json`：合併 `$W/stations.json`、`$W/mrt_lines.json`（Overpass 抓的捷運車站順序與軌道）與 `$W/park.json`，寫出 `data.js`。
+4. `build_routes.py $W/routes_v5.json $W/park.json`：產生住家、候選路線與經過的偵測器。需要 `$W/osm/bridges.json`（Overpass 抓的內湖周邊橋梁），請求結果快取在 `$W/route_cache.json`。
+5. `inject.py $W prototype/city-story/data.js routes_v5.json`：合併 `$W/stations.json`、`$W/mrt_lines.json`（Overpass 抓的捷運車站順序與軌道）與 `$W/park.json`，寫出 `data.js`。

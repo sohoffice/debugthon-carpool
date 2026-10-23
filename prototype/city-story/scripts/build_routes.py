@@ -1,7 +1,7 @@
 """Homes and candidate road routes for the story prototype.
 
-Each driver gets a few sensible candidate routes (OSRM's fastest and alternatives, plus routes over the other
-bridges that are at most 30% slower); the page picks among them by congested travel time. Every candidate
+Each driver gets a few candidate routes (OSRM's fastest and alternatives, plus routes over the other bridges that
+are at most DETOUR slower); the page shares people out over the bridges in the volumes the detectors measured. Every candidate
 lists the TDX detectors it passes, so speeds come from the detectors' calibrated volume-speed curves. Routed with the public OSRM demo server; every
 response is cached in route_cache.json.
 """
@@ -158,7 +158,9 @@ for e in json.loads((OUT.parent / 'osm' / 'bridges.json').read_text())['elements
     BRIDGE_WAYS[e['tags']['name']] += [(p['lat'], p['lon']) for p in e['geometry']]
 BRIDGE_GROUP = {'大直橋': '大直橋', '濱江跨越橋': '大直橋', '民權大橋': '民權大橋', '麥帥一橋': '麥帥橋', '麥帥二橋': '麥帥橋',
                 '正氣橋': '麥帥橋', '成美橋': '成美橋', '自強橋': '自強橋', '成功橋': '成功橋', '大湖橋': '大湖橋'}
-DETOUR = 1.2
+# A candidate may be at most this much slower than the fastest route on empty roads; wide enough that most
+# people have a route over each of the busy bridges, which the page then fills in the measured shares.
+DETOUR = 1.6
 
 
 def seg_dist(p, a, b):

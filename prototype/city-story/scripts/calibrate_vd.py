@@ -3,10 +3,15 @@
 speed(q) = vf / (1 + 0.15 * (q / C) ** 4), q in vehicles per 15 minutes.
 vf is the volume-weighted speed between 01:00 and 05:00, when the roads are nearly empty (the 85th
 percentile 10:00-16:00 speed where night traffic is too thin); C is solved so that the curve
-passes through the busiest 15-minute slot of the 07:00-09:30 peak. Usage: calibrate_vd.py <work dir> <date>
+passes through the busiest 15-minute slot of the 07:00-09:30 peak, whose occupancy is kept too (occupancy is
+the share of time a car sits on the sensor: queues at signals raise it even where the average speed holds up),
+with the exponent b of occupancy ~ volume^b fitted over the peak's 15-minute slots (how fast queues ease when
+fewer cars come).
+Usage: calibrate_vd.py <work dir> <date>
 """
 import collections
 import json
+import math
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -63,7 +68,7 @@ for r in peak:
     s.sort()
     vf = night.get((r['vd'], r['dir'])) or s[int(len(s) * 0.85)]
     busy = max(r['slots'].items(), key=lambda kv: kv[1]['volume'])
-    q, v = busy[1]['volume'], busy[1]['speed']
+    q, v, occ = busy[1]['volume'], busy[1]['speed'], busy[1]['occupancy'] or 0
     if not q or not v:
         continue
     vf = max(vf, v)
@@ -73,9 +78,16 @@ for r in peak:
     else:
         cap = q * 1.6
     speeds = [x['speed'] for x in r['slots'].values() if x['speed']]
+    pts = [(math.log(x['volume']), math.log(x['occupancy'])) for x in r['slots'].values() if x['volume'] and x['occupancy']]
+    exp = 1.0
+    if len(pts) >= 5:
+        mx, my = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+        sxx = sum((p[0] - mx) ** 2 for p in pts)
+        if sxx > 0:
+            exp = min(3.0, max(0.5, sum((p[0] - mx) * (p[1] - my) for p in pts) / sxx))
     out.append({
         'vd': r['vd'], 'road': r['road'], 'dir': r['dir'], 'bearing': BEARING[r['dir']], 'at': [r['lat'], r['lng']],
-        'vf': round(vf, 1), 'qPeak': q, 'vPeak': round(v, 1), 'cap': round(cap, 1), 'vMin': round(min(speeds), 1),
+        'vf': round(vf, 1), 'qPeak': q, 'vPeak': round(v, 1), 'occPeak': round(occ, 1), 'occExp': round(exp, 2), 'cap': round(cap, 1), 'vMin': round(min(speeds), 1),
     })
 (SCRATCH / 'tdx' / f'detectors_{DATE}.json').write_text(json.dumps(out, ensure_ascii=False, indent=1))
 print(len(out), 'detector-directions calibrated')

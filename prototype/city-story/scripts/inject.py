@@ -19,8 +19,20 @@ tracks = json.loads((scratch / 'mrt_lines.json').read_text())
 daan = stations['淡水信義'][-3]
 tracks['淡水信義'].append([[daan['lat'], daan['lng']]] + [[s['lat'], s['lng']] for s in xinyi_tail])
 
+routes = json.loads((scratch / routes_file).read_text())
+# Detector fields can be recalibrated without rebuilding the routes, as long as the order stays the same.
+fresh = scratch / 'tdx' / 'detectors_2026-10-22.json'
+if fresh.exists():
+    recalibrated = json.loads(fresh.read_text())
+    assert [(d['vd'], d['dir']) for d in recalibrated] == [(d['vd'], d['dir']) for d in routes['detectors']]
+    routes['detectors'] = recalibrated
+# Road bridges into Neihu, by name, each a list of OSM ways ([[lat, lng], ...]), from an Overpass export.
+bridges = {}
+for way in json.loads((scratch / 'osm' / 'bridges.json').read_text())['elements']:
+    bridges.setdefault(way['tags']['name'], []).append([[round(p['lat'], 5), round(p['lon'], 5)] for p in way['geometry']])
 data = {
-    'routes': json.loads((scratch / routes_file).read_text()),
+    'bridges': bridges,
+    'routes': routes,
     'stations': stations,
     'tracks': tracks,
     'park': json.loads((scratch / 'park.json').read_text()),
