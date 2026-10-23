@@ -205,6 +205,8 @@ export function createCity(lookups: Lookups, commute: ReturnType<typeof createCo
         occupancy_pct: o.occupancy,
         coverage_pct: 100,
         past_avg_speed_kmh: Math.round((pastSpeeds.reduce((a, b) => a + b, 0) / pastSpeeds.length) * 10) / 10,
+        past_min_speed_kmh: Math.min(...pastSpeeds),
+        past_max_speed_kmh: Math.max(...pastSpeeds),
         simulated: true,
       }
     })

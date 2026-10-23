@@ -13,7 +13,7 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
     * def clockShape = { now: '#string', today: '#string', demo_clock: '#boolean' }
     * def placeShape = { id: '#number', name: '#string', lat: '#number', lng: '#number' }
     * def weatherShape = { station_id: '#string', station_name: '#string', obs_time: '#string', weather: '#string', air_temperature: '#number', precipitation: '#number? _ >= 0' }
-    * def gatewayShape = { vd_id: '#string', source: '#? _ == "city" || _ == "freeway"', gateway: '#string', road_name: '#string', road_direction: '#string', bearing: '#string', lat: '#number', lng: '#number', shape: '##[_ > 1]', proxy: '#boolean', proxy_note: '##string', reference_speed_kmh: '#number? _ > 0', volume: '##number? _ >= 0', avg_speed_kmh: '##number', occupancy_pct: '##number', coverage_pct: '##number', past_avg_speed_kmh: '##number', simulated: '#boolean' }
+    * def gatewayShape = { vd_id: '#string', source: '#? _ == "city" || _ == "freeway"', gateway: '#string', road_name: '#string', road_direction: '#string', bearing: '#string', sort_order: '#number', location_note: '#string', lat: '#number', lng: '#number', shape: '##[_ > 1]', proxy: '#boolean', proxy_note: '##string', reference_speed_kmh: '#number? _ > 0', volume: '##number? _ >= 0', avg_speed_kmh: '##number', occupancy_pct: '##number', coverage_pct: '##number', past_avg_speed_kmh: '##number', past_min_speed_kmh: '##number', past_max_speed_kmh: '##number', simulated: '#boolean' }
     * def countsShape = { vehicles: '#number? _ >= 0', on_board: '#number? _ >= 0', waiting: '#number? _ >= 0', matched: '#number? _ >= 0' }
     * def noIdentity = function(body) { var s = JSON.stringify(body); return ['username', 'display_name', 'plate', 'passenger_name', 'driver_id', 'passenger_id', 'trip_id'].filter(function(k) { return s.indexOf('"' + k + '"') >= 0 }) }
 
@@ -45,6 +45,12 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
     * match shaped == '#[6]'
     * def proxies = karate.filter(response.detectors, function(g) { return g.proxy == true && g.proxy_note != null })
     * match proxies == '#[2]'
+    # gateways by sort_order 1-16, UD-28's grid rows (city roads from Dazhi, then the freeway ramps)
+    * match karate.map(response.detectors, function(g) { return g.sort_order }) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    * match response.detectors[0].gateway == '內湖路一段'
+    * match response.detectors[10].gateway == '國道1號高架 堤頂交流道（北向出口）'
+    * match response.detectors[15].gateway == '國道1號 東湖交流道（北向出口）'
+    * match each response.detectors == '#? _.past_min_speed_kmh == null || (_.past_min_speed_kmh <= _.past_avg_speed_kmh && _.past_avg_speed_kmh <= _.past_max_speed_kmh)'
     # the latest slot ends no later than now (DD-41)
     * match new Date(response.slot_start).getTime() + 15 * 60000 <= new Date(response.now).getTime() == true
 
@@ -72,6 +78,7 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
     * match response.slots == '#[12]'
     * match each response.slots == { slot_start: '#string', detectors: '#[16]', weather: '#(weatherShape)', simulated: '#boolean', weather_simulated: true }
     * match each response.slots[0].detectors == gatewayShape
+    * match each response.slots == '#? karate.map(_.detectors, function(g) { return g.sort_order }).join() == "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16"'
 
   Scenario: today by date runs only through the latest slot
     * path 'api', 'city', 'traffic'

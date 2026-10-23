@@ -439,6 +439,10 @@ export interface CityGateway {
   road_direction: string
   /** Direction into Neihu, e.g. NE: drawn from lat/lng when there is no shape (DD-39). */
   bearing: string
+  /** Place and number on screen, 1-16 in UD-28's grid order; the API sends gateways in this order. */
+  sort_order: number
+  /** Where the gateway is, e.g. 區界外 10 公尺，東向; small text under the name. */
+  location_note: string
   lat: number
   lng: number
   /** TDX section shape, points in the direction of travel; null for 10 of the 16. */
@@ -456,6 +460,9 @@ export interface CityGateway {
   coverage_pct: number | null
   /** The same time over the past 10 workdays before today, the slot's own day left out; null without data. */
   past_avg_speed_kmh: number | null
+  /** The slowest and fastest of the same days at the same time; null without data. */
+  past_min_speed_kmh: number | null
+  past_max_speed_kmh: number | null
   /** Traffic simulated, not TDX (REQ-063); false without data. */
   simulated: boolean
 }

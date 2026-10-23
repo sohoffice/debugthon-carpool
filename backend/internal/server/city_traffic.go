@@ -14,26 +14,31 @@ import (
 // cityGateway is one of the 16 gateways into Neihu in one slot, with the detector standing for it.
 // The slot's values are null when the gateway has no row in that slot.
 type cityGateway struct {
-	VDID          string          `json:"vd_id"`
-	Source        string          `json:"source"` // city or freeway
-	Gateway       string          `json:"gateway"`
-	RoadName      string          `json:"road_name"`
-	RoadDirection string          `json:"road_direction"`
-	Bearing       string          `json:"bearing"` // direction into Neihu, e.g. NE; drawn from lat/lng when shape is null
-	Lat           float64         `json:"lat"`
-	Lng           float64         `json:"lng"`
-	Shape         json.RawMessage `json:"shape"` // [{lat, lng}, ...] in the direction of travel, or null
-	Proxy         bool            `json:"proxy"`
-	ProxyNote     *string         `json:"proxy_note"` // where a proxy detector really is
+	VDID          string `json:"vd_id"`
+	Source        string `json:"source"` // city or freeway
+	Gateway       string `json:"gateway"`
+	RoadName      string `json:"road_name"`
+	RoadDirection string `json:"road_direction"`
+	Bearing       string `json:"bearing"` // direction into Neihu, e.g. NE; drawn from lat/lng when shape is null
+	// Place and number on screen, UD-28's grid order; gateways come in this order.
+	SortOrder    int             `json:"sort_order"`
+	LocationNote string          `json:"location_note"`
+	Lat          float64         `json:"lat"`
+	Lng          float64         `json:"lng"`
+	Shape        json.RawMessage `json:"shape"` // [{lat, lng}, ...] in the direction of travel, or null
+	Proxy        bool            `json:"proxy"`
+	ProxyNote    *string         `json:"proxy_note"` // where a proxy detector really is
 	// All-day p85 speed, the base of the congestion levels (DD-44).
 	ReferenceSpeedKmh float64  `json:"reference_speed_kmh"`
 	Volume            *int     `json:"volume"`
 	AvgSpeedKmh       *float64 `json:"avg_speed_kmh"`
 	OccupancyPct      *float64 `json:"occupancy_pct"`
 	CoveragePct       *float64 `json:"coverage_pct"` // lane-minutes received out of those expected
-	// The same time of day over the past 10 workdays before today (DD-41), the slot's own day left
-	// out (4.20); null without data.
+	// Mean speed at the same time of day over the past 10 workdays before today (DD-41), the slot's
+	// own day left out (4.20); null without data.
 	PastAvgSpeedKmh *float64 `json:"past_avg_speed_kmh"`
+	PastMinSpeedKmh *float64 `json:"past_min_speed_kmh"` // the same days' slowest and fastest
+	PastMaxSpeedKmh *float64 `json:"past_max_speed_kmh"`
 	Simulated       bool     `json:"simulated"` // REQ-063; false without data
 }
 
@@ -175,23 +180,25 @@ func (s *Server) citySlots(ctx context.Context, m commuteMoment, first, last tim
 		    SELECT d FROM commute_past_workdays($3::date, $4) d),
 		g AS (
 		    SELECT s AS slot_start FROM generate_series($1::timestamptz, $2::timestamptz, interval '15 minutes') s),
-		-- The past 10 workdays' mean speed per gateway and time of day, the asked day left out (4.20).
+		-- The past 10 workdays' mean, lowest and highest speed per gateway and time of day, the asked
+		-- day left out (4.20).
 		past AS (
-		    SELECT h.vd_id, (h.slot_start AT TIME ZONE 'Asia/Taipei')::time AS at, round(avg(h.avg_speed_kmh), 1)::float8 AS speed
+		    SELECT h.vd_id, (h.slot_start AT TIME ZONE 'Asia/Taipei')::time AS at, round(avg(h.avg_speed_kmh), 1)::float8 AS speed,
+		           min(h.avg_speed_kmh)::float8 AS low, max(h.avg_speed_kmh)::float8 AS high
 		      FROM traffic_observations h, day
 		     WHERE (h.slot_start AT TIME ZONE 'Asia/Taipei')::date IN (SELECT d FROM base)
 		       AND (h.slot_start AT TIME ZONE 'Asia/Taipei')::date <> day.day
 		     GROUP BY 1, 2)
-		SELECT g.slot_start, d.vd_id, d.source, d.gateway, d.road_name, d.road_direction, d.bearing, d.lat, d.lng,
+		SELECT g.slot_start, d.vd_id, d.source, d.gateway, d.road_name, d.road_direction, d.bearing, d.sort_order, d.location_note, d.lat, d.lng,
 		       d.shape, d.proxy, d.proxy_note, d.reference_speed_kmh::float8,
 		       o.volume, o.avg_speed_kmh::float8, o.occupancy_pct::float8, o.coverage_pct::float8,
-		       p.speed, COALESCE(o.simulated, false), o.weather, COALESCE(o.weather_simulated, false)
+		       p.speed, p.low, p.high, COALESCE(o.simulated, false), o.weather, COALESCE(o.weather_simulated, false)
 		  FROM day, g CROSS JOIN traffic_detectors d
 		  LEFT JOIN traffic_observations o ON o.vd_id = d.vd_id AND o.slot_start = g.slot_start
 		  LEFT JOIN past p ON p.vd_id = d.vd_id AND p.at = (g.slot_start AT TIME ZONE 'Asia/Taipei')::time
 		 WHERE (day.day = $3::date OR day.day IN (SELECT d FROM base))
 		   AND EXISTS (SELECT 1 FROM traffic_observations x WHERE x.slot_start BETWEEN $1 AND $2)
-		 ORDER BY g.slot_start, d.source, d.vd_id`,
+		 ORDER BY g.slot_start, d.sort_order`,
 		first, last, m.Today.Format(dateLayout), commutePastWorkdays)
 	if err != nil {
 		return nil, err
@@ -204,9 +211,9 @@ func (s *Server) citySlots(ctx context.Context, m commuteMoment, first, last tim
 		var shape, weather []byte
 		var simulated, weatherSimulated bool
 		if err := rows.Scan(&slotStart, &g.VDID, &g.Source, &g.Gateway, &g.RoadName, &g.RoadDirection, &g.Bearing,
-			&g.Lat, &g.Lng, &shape, &g.Proxy, &g.ProxyNote, &g.ReferenceSpeedKmh,
+			&g.SortOrder, &g.LocationNote, &g.Lat, &g.Lng, &shape, &g.Proxy, &g.ProxyNote, &g.ReferenceSpeedKmh,
 			&g.Volume, &g.AvgSpeedKmh, &g.OccupancyPct, &g.CoveragePct,
-			&g.PastAvgSpeedKmh, &simulated, &weather, &weatherSimulated); err != nil {
+			&g.PastAvgSpeedKmh, &g.PastMinSpeedKmh, &g.PastMaxSpeedKmh, &simulated, &weather, &weatherSimulated); err != nil {
 			return nil, err
 		}
 		g.Shape = nullIfEmpty(shape)

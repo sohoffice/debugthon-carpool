@@ -55,6 +55,8 @@ function gateway(vd_id: string, name: string, speed: number, past: number): City
     road_name: name,
     road_direction: 'N',
     bearing: 'N',
+    sort_order: vd_id === 'V1' ? 1 : 2,
+    location_note: '區界外',
     lat: 25.07,
     lng: 121.57,
     shape: null,
@@ -66,6 +68,8 @@ function gateway(vd_id: string, name: string, speed: number, past: number): City
     occupancy_pct: 10,
     coverage_pct: 100,
     past_avg_speed_kmh: past,
+    past_min_speed_kmh: past - 5,
+    past_max_speed_kmh: past + 5,
     simulated: true,
   }
 }

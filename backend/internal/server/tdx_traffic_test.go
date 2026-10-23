@@ -15,6 +15,14 @@ import (
 // The TDX measurements in version control (DD-36), loaded by migration 20261023180000.
 const tdxDataDir = "../../../docs/data/tdx-vd/"
 
+// ud28Order is UD-28's gateway × slot grid rows, top to bottom.
+var ud28Order = []string{
+	"內湖路一段", "堤頂大道（大直端）", "基湖路", "民權大橋", "麥帥一橋（環東大道快速道路）", "麥帥一橋（平面）",
+	"成美橋", "成功橋", "環東大道（南港端）", "東湖路",
+	"國道1號高架 堤頂交流道（北向出口）", "國道1號高架 堤頂交流道（南向出口）", "國道1號 內湖交流道（北向出口）",
+	"國道1號 內湖交流道（南向出口，往成功路）", "國道1號 內湖交流道（南向出口，往環東大道）", "國道1號 東湖交流道（北向出口）",
+}
+
 func readCSV(t *testing.T, name string) []map[string]string {
 	t.Helper()
 	f, err := os.Open(tdxDataDir + name)
@@ -47,7 +55,8 @@ func parseNum(t *testing.T, s string) float64 {
 }
 
 // REQ-076, DD-36, DD-44: the database holds the 16 gateways of detectors.csv, 6 with a shape,
-// 成美橋 and 成功橋 as proxies with the detector's real place; reference_speed_kmh is the all-day p85.
+// 成美橋 and 成功橋 as proxies with the detector's real place; reference_speed_kmh is the all-day p85;
+// every gateway has a location note and its place 1-16 in UD-28's grid order.
 func TestTDXDetectorsMatchCSV(t *testing.T) {
 	tx := testTx(t)
 	csvRows := readCSV(t, "detectors.csv")
@@ -62,15 +71,17 @@ func TestTDXDetectorsMatchCSV(t *testing.T) {
 		t.Fatalf("%d detectors, want 16", n)
 	}
 	for _, r := range csvRows {
-		var source, gateway, road, dir, bearing string
+		var source, gateway, road, dir, bearing, locationNote string
+		var sortOrder int
 		var lat, lng, ref float64
 		var proxy bool
 		var note *string
 		var shape []byte
 		if err := tx.QueryRow(context.Background(), `
-			SELECT source, gateway, road_name, road_direction, bearing, lat, lng, proxy, proxy_note, reference_speed_kmh::float8, shape
+			SELECT source, gateway, road_name, road_direction, bearing, sort_order, location_note, lat, lng, proxy, proxy_note,
+			       reference_speed_kmh::float8, shape
 			  FROM traffic_detectors WHERE vd_id = $1`, r["vd_id"]).
-			Scan(&source, &gateway, &road, &dir, &bearing, &lat, &lng, &proxy, &note, &ref, &shape); err != nil {
+			Scan(&source, &gateway, &road, &dir, &bearing, &sortOrder, &locationNote, &lat, &lng, &proxy, &note, &ref, &shape); err != nil {
 			t.Fatalf("%s: %v", r["vd_id"], err)
 		}
 		if source != r["source"] || gateway != r["gateway"] || road != r["road_name"] || dir != r["road_direction"] ||
@@ -78,6 +89,9 @@ func TestTDXDetectorsMatchCSV(t *testing.T) {
 			ref != parseNum(t, r["reference_speed_kmh"]) || r["reference_speed_kmh"] != refs[r["vd_id"]] ||
 			strconv.FormatBool(proxy) != r["proxy"] {
 			t.Errorf("%s: database %s/%s/%s/%s/%s %v,%v proxy %v ref %v; CSV %v", r["vd_id"], source, gateway, road, dir, bearing, lat, lng, proxy, ref, r)
+		}
+		if strconv.Itoa(sortOrder) != r["sort_order"] || locationNote != r["location_note"] || locationNote == "" {
+			t.Errorf("%s: sort_order %d, location_note %q; CSV %s, %q", r["vd_id"], sortOrder, locationNote, r["sort_order"], r["location_note"])
 		}
 		if (note == nil) != (r["proxy_note"] == "") || (note != nil && *note != r["proxy_note"]) {
 			t.Errorf("%s: proxy_note %v, CSV %q", r["vd_id"], note, r["proxy_note"])
@@ -99,10 +113,25 @@ func TestTDXDetectorsMatchCSV(t *testing.T) {
 			t.Errorf("%s: shape differs from the CSV", r["vd_id"])
 		}
 	}
+	// UD-28's grid rows: city roads clockwise from Dazhi, then the freeway ramps west to east.
+	rows, err := tx.Query(context.Background(), `SELECT gateway FROM traffic_detectors ORDER BY sort_order`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	order, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !jsonEqual(t, order, ud28Order) {
+		t.Errorf("gateways by sort_order %v, want %v", order, ud28Order)
+	}
+	if n := queryInt(t, tx, `SELECT count(*) FROM traffic_detectors WHERE sort_order BETWEEN 1 AND 16`); n != 16 {
+		t.Errorf("%d gateways with sort_order 1-16, want 16", n)
+	}
 	if n := queryInt(t, tx, `SELECT count(*) FROM traffic_detectors WHERE shape IS NOT NULL`); n != 6 {
 		t.Errorf("%d gateways with a shape, want 6", n)
 	}
-	rows, err := tx.Query(context.Background(), `SELECT vd_id || ' ' || proxy_note FROM traffic_detectors WHERE proxy ORDER BY vd_id`)
+	rows, err = tx.Query(context.Background(), `SELECT vd_id || ' ' || proxy_note FROM traffic_detectors WHERE proxy ORDER BY vd_id`)
 	if err != nil {
 		t.Fatal(err)
 	}

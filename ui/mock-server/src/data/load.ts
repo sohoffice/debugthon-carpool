@@ -17,6 +17,8 @@ export interface CsvGateway {
   road_name: string
   road_direction: string
   bearing: string
+  sort_order: number
+  location_note: string
   lat: number
   lng: number
   shape: LatLng[] | null
@@ -31,7 +33,7 @@ export interface StaticData {
   csvStops: Map<number, CsvStop>
   /** Park boundary ring, [lng, lat] pairs. */
   parkRing: [number, number][]
-  /** The 16 gateways into Neihu, in the CSV's order. */
+  /** The 16 gateways into Neihu, by sort_order (UD-28). */
   gateways: CsvGateway[]
 }
 
@@ -64,7 +66,7 @@ function csvRows(text: string): string[][] {
 
 function parseGateways(text: string): CsvGateway[] {
   const [header, ...rows] = csvRows(text)
-  return rows.map((cells) => {
+  const gateways = rows.map((cells): CsvGateway => {
     const r = Object.fromEntries(header.map((h, i) => [h, cells[i]]))
     if (r.source !== 'city' && r.source !== 'freeway') throw new Error(`detectors.csv: bad source for ${r.vd_id}`)
     return {
@@ -74,6 +76,8 @@ function parseGateways(text: string): CsvGateway[] {
       road_name: r.road_name,
       road_direction: r.road_direction,
       bearing: r.bearing,
+      sort_order: Number(r.sort_order),
+      location_note: r.location_note,
       lat: Number(r.lat),
       lng: Number(r.lng),
       shape: r.shape ? (JSON.parse(r.shape) as LatLng[]) : null,
@@ -82,6 +86,7 @@ function parseGateways(text: string): CsvGateway[] {
       reference_speed_kmh: Number(r.reference_speed_kmh),
     }
   })
+  return [...gateways].sort((a, b) => a.sort_order - b.sort_order)
 }
 
 /** Reads the Go migrations and the open data from the repo; fails loudly if a file moved. */

@@ -77,6 +77,14 @@ describe('mock /api/city/* (DD-39, DD-40, DD-41)', () => {
     expect(latest.detectors.filter((g) => g.shape !== null)).toHaveLength(6)
     expect(latest.detectors.filter((g) => g.proxy).map((g) => g.gateway)).toEqual(['成美橋', '成功橋'])
     expect(latest).toMatchObject({ simulated: true, weather_simulated: true })
+    // By sort_order, UD-28's grid rows.
+    expect(latest.detectors.map((g) => g.sort_order)).toEqual(Array.from({ length: 16 }, (_, i) => i + 1))
+    expect(latest.detectors[0].gateway).toBe('內湖路一段')
+    for (const g of latest.detectors) {
+      expect(g.location_note).not.toBe('')
+      expect(g.past_min_speed_kmh!).toBeLessThanOrEqual(g.past_avg_speed_kmh!)
+      expect(g.past_avg_speed_kmh!).toBeLessThanOrEqual(g.past_max_speed_kmh!)
+    }
     const past = get<CityTraffic>(`/api/city/traffic?slot=${encodeURIComponent('2026-10-20T09:30:00+08:00')}`)
     expect(past.slot_start).toBe('2026-10-20T09:30:00+08:00')
     expect(call(`/api/city/traffic?slot=${encodeURIComponent('2026-10-26T08:15:00+08:00')}`).status).toBe(404)

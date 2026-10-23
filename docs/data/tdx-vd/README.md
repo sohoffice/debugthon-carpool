@@ -29,6 +29,8 @@
 - `gateway`：畫面上的入口名稱。`from`、`note`：入口從哪裡進來、偵測器的位置說明。
 - `road_direction`、`bearing`：進內湖方向那一筆 `DetectionLinks` 的 `RoadDirection` 與 `Bearing`。兩者可能不同，例如堤頂大道（大直端）是 `S` 與 `E`。
 - `lanes`：進內湖方向的車道數。
+- `sort_order`：入口在畫面上的順序與編號（1～16），依 UD-28 的格子列：市區道路由大直起順時針，再來是國道匝道由西到東。
+- `location_note`：位置說明，畫面上以小字顯示；目前與 `note` 相同。
 - `proxy`、`proxy_note`：以附近路段的偵測器代替入口時為 `true`，並寫偵測器的實際位置。成美橋（VMSV820）在橋北端的新明路；成功橋（VQ6WK40）在橋北約 900 公尺的成功路二段。
 - `reference_speed_kmh`：全天 p85，同 `reference-speeds.csv` 的 `p85_all_day`。
 - `shape`：路段線形，JSON 陣列 `[{"lat":…,"lng":…}, …]`，點序就是車流方向；沒有線形時為空。
