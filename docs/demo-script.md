@@ -1,6 +1,6 @@
 # Demo 劇本
 
-內科順路共乘的 2 分鐘 Demo（[#36 T18C](https://github.com/sohoffice/debugthon-carpool/issues/36)）。全程在本機執行（DD-24），接 Go 後端與真實路線。預演見 [#37 T18D](https://github.com/sohoffice/debugthon-carpool/issues/37)。
+內科上班順起來: 內科順路共乘的 2 分鐘 Demo（[#36 T18C](https://github.com/sohoffice/debugthon-carpool/issues/36)）。全程在本機執行（DD-24），接 Go 後端與真實路線。預演見 [#37 T18D](https://github.com/sohoffice/debugthon-carpool/issues/37)。
 
 ## 目錄
 

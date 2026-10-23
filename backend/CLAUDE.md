@@ -9,7 +9,7 @@
 
 ## 概覽
 
-內科順路共乘的後端：Go（Gin）HTTP API，資料存於 PostgreSQL（pgx），結構以 goose SQL 遷移管理（`migrations/`）。進入點為 `cmd/server`，路由與處理函式在 `internal/server`，設定在 `internal/settings`。指令（`just backend …`）與環境設定見 `../DEV.md`。
+內科上班順起來: 內科順路共乘的後端：Go（Gin）HTTP API，資料存於 PostgreSQL（pgx），結構以 goose SQL 遷移管理（`migrations/`）。進入點為 `cmd/server`，路由與處理函式在 `internal/server`，設定在 `internal/settings`。指令（`just backend …`）與環境設定見 `../DEV.md`。
 
 ## 測試策略
 

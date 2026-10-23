@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-內科順路共乘（市政 debug松 議題 #4）。專案背景見 `OVERVIEW.md`；前端開發原則見 `ui/CLAUDE.md`。
+內科上班順起來: 內科順路共乘（市政 debug松 議題 #4）。專案背景見 `OVERVIEW.md`；前端開發原則見 `ui/CLAUDE.md`。
 
 ## 語言
 

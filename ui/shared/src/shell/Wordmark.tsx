@@ -7,7 +7,7 @@ export function Wordmark({ className = '' }: { className?: string }) {
         <rect x="10" y="4.75" width="12" height="2.5" fill="currentColor" />
         <rect x="21" y="1.5" width="9" height="9" rx="1" fill="currentColor" />
       </svg>
-      內科順路共乘
+      內科上班順起來: 內科順路共乘
     </span>
   )
 }
