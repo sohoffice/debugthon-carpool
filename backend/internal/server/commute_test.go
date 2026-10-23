@@ -87,7 +87,6 @@ type weatherResp struct {
 	Now              time.Time       `json:"now"`
 	Today            string          `json:"today"`
 	Weather          *commuteWeather `json:"weather"`
-	Simulated        bool            `json:"simulated"`
 	WeatherSimulated bool            `json:"weather_simulated"`
 }
 
@@ -414,8 +413,8 @@ func TestCommuteWeatherBeforeNow(t *testing.T) {
 	regenerateAt(t, tx, real)
 
 	r := getWeather(t, tx, real)
-	if !r.Now.Equal(taipeiTime(t, "2026-10-22 08:15")) || r.Today != "2026-10-22" || !r.Simulated {
-		t.Fatalf("now %v, today %s, simulated %v", r.Now, r.Today, r.Simulated)
+	if !r.Now.Equal(taipeiTime(t, "2026-10-22 08:15")) || r.Today != "2026-10-22" || !r.WeatherSimulated {
+		t.Fatalf("now %v, today %s, weather simulated %v", r.Now, r.Today, r.WeatherSimulated)
 	}
 	if r.Weather == nil {
 		t.Fatal("weather is null")
