@@ -26,7 +26,7 @@ beforeEach(() => {
 describe('commute endpoints match the Go backend (T36, T37)', () => {
   it('weather: now is today at 08:15, Saturday moved to Monday, the latest observation before now', () => {
     const w = json<CommuteWeather>('/api/commute/weather')
-    expect(w).toMatchObject({ now: '2026-10-26T08:15:00+08:00', today: '2026-10-26', simulated: true, weather_simulated: true })
+    expect(w).toMatchObject({ now: '2026-10-26T08:15:00+08:00', today: '2026-10-26', weather_simulated: true })
     expect(w.weather).toMatchObject({ station_id: 'C0A9F0', station_name: '內湖', obs_time: '2026-10-26T08:10:00+08:00' })
     expect(Object.keys(w.weather!).sort()).toEqual(['air_temperature', 'obs_time', 'precipitation', 'station_id', 'station_name', 'weather'])
   })

@@ -558,8 +558,6 @@ export interface CommuteWeather {
   /** YYYY-MM-DD, Taipei. */
   today: string
   weather: WeatherObservation | null
-  /** Same as weather_simulated: this API has only the weather (kept until T57). */
-  simulated: boolean
   weather_simulated: boolean
 }
 
