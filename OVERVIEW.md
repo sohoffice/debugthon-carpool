@@ -48,7 +48,7 @@
 - **縣市即時路況（VD 每 5 分鐘統計）** — data.gov.tw · API — https://data.gov.tw/dataset/166031
 - **TDX 運輸資料流通服務平臺**（需申請金鑰）— 交通部 — https://tdx.transportdata.tw/
 - **臺北捷運各站分時進出量（文湖線）** — data.taipei · CSV — https://data.taipei/dataset/detail?id=63f31c7e-7fc3-418b-bd82-b95158755b4d
-- **沒有現成的歷史 15 分鐘 VD 序列**，需自行累積 → 可用模擬資料
+- **TDX 有每分鐘的歷史 VD 資料**（見第 5 節），需自行彙總成 15 分鐘
 
 > [!WARNING]
 > **data.gov.tw #166031 已下架。** 此資料集已於 2025-02-25 下架（歷史資料專區）。2026-10-17 測試時，下載連結逾時無回應。即時 VD 資料請改用 **TDX**（見第 5 節）。
