@@ -193,7 +193,8 @@ func (s *Server) historyDays(ctx context.Context, m commuteMoment) ([]historyDay
 		           AND slot_start < ((d.day + 1)::timestamp AT TIME ZONE 'Asia/Taipei')) st ON true
 		  LEFT JOIN LATERAL (
 		        SELECT o.weather FROM traffic_observations o
-		         WHERE o.slot_start >= (d.day::timestamp AT TIME ZONE 'Asia/Taipei')
+		         WHERE o.weather IS NOT NULL
+		           AND o.slot_start >= (d.day::timestamp AT TIME ZONE 'Asia/Taipei')
 		           AND o.slot_start < ((d.day + 1)::timestamp AT TIME ZONE 'Asia/Taipei')
 		         ORDER BY (o.weather->>'precipitation')::numeric DESC, o.slot_start, o.vd_id
 		         LIMIT 1) w ON true

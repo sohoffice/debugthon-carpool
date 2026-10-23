@@ -67,6 +67,7 @@ export function App() {
     const request = polling.data.pending[0]
     screen = (
       <TripRequestScreen
+        tripId={tripId}
         passengers={polling.data.passengers}
         request={request}
         busy={busy}

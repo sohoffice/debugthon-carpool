@@ -122,7 +122,7 @@ func (s *Server) getPickupRides(c *gin.Context) {
 // slotWeather is the slot's one weather from the traffic table (DD-36, REQ-083).
 const slotWeather = `
 	LEFT JOIN LATERAL (SELECT o.weather FROM traffic_observations o
-	                    WHERE o.slot_start = %s ORDER BY o.vd_id LIMIT 1) w ON true`
+	                    WHERE o.slot_start = %s AND o.weather IS NOT NULL ORDER BY o.vd_id LIMIT 1) w ON true`
 
 func (s *Server) pastRideDays(c *gin.Context, pickupID int64, m commuteMoment) ([]rideDay, error) {
 	rows, err := s.db.Query(c, `

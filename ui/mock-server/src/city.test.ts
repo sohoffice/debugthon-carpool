@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { CityHistory, CityLive, CityToday, CityTraffic, CommuteTraffic, PickupRides } from '../../shared/src/api/types.ts'
+import type { CityHistory, CityLive, CityToday, CityTraffic, CityTrafficDay, CommuteTraffic, PickupRides } from '../../shared/src/api/types.ts'
 import { createMockApi } from './api.ts'
 import { commuteMoment, pastWorkdays } from './commute.ts'
 import { loadStaticData } from './data/load.ts'
@@ -72,11 +72,37 @@ describe('mock /api/city/* (DD-39, DD-40, DD-41)', () => {
   it('defaults traffic to the latest slot, 08:00 today, and answers a past slot', () => {
     const latest = get<CityTraffic>('/api/city/traffic')
     expect(latest.slot_start).toBe('2026-10-26T08:00:00+08:00')
-    expect(latest.detectors.length).toBeGreaterThan(9)
+    // The 16 gateways of docs/data/tdx-vd/detectors.csv (DD-36), 6 with a shape, 2 proxies.
+    expect(latest.detectors).toHaveLength(16)
+    expect(latest.detectors.filter((g) => g.shape !== null)).toHaveLength(6)
+    expect(latest.detectors.filter((g) => g.proxy).map((g) => g.gateway)).toEqual(['成美橋', '成功橋'])
+    expect(latest).toMatchObject({ simulated: true, weather_simulated: true })
+    // By sort_order, UD-28's grid rows.
+    expect(latest.detectors.map((g) => g.sort_order)).toEqual(Array.from({ length: 16 }, (_, i) => i + 1))
+    expect(latest.detectors[0].gateway).toBe('內湖路一段')
+    for (const g of latest.detectors) {
+      expect(g.location_note).not.toBe('')
+      expect(g.past_min_speed_kmh!).toBeLessThanOrEqual(g.past_avg_speed_kmh!)
+      expect(g.past_avg_speed_kmh!).toBeLessThanOrEqual(g.past_max_speed_kmh!)
+    }
     const past = get<CityTraffic>(`/api/city/traffic?slot=${encodeURIComponent('2026-10-20T09:30:00+08:00')}`)
     expect(past.slot_start).toBe('2026-10-20T09:30:00+08:00')
     expect(call(`/api/city/traffic?slot=${encodeURIComponent('2026-10-26T08:15:00+08:00')}`).status).toBe(404)
     expect(call(`/api/city/traffic?slot=${encodeURIComponent('2026-10-20T09:31:00+08:00')}`).status).toBe(400)
+  })
+
+  it('traffic by date: 12 slots of 16 gateways, today through the latest slot; bad and unknown dates refused', () => {
+    const day = get<CityTrafficDay>('/api/city/traffic?date=2026-10-22')
+    expect(day.slots).toHaveLength(12)
+    expect(day.slots.every((s) => s.detectors.length === 16)).toBe(true)
+    // The day's 08:30 is the same as asking for that slot.
+    expect(day.slots[6]).toEqual((({ now, today, demo_clock, ...slot }) => slot)(get<CityTraffic>(`/api/city/traffic?slot=${encodeURIComponent('2026-10-22T08:30:00+08:00')}`)))
+    expect(get<CityTrafficDay>('/api/city/traffic?date=2026-10-26').slots.map((s) => s.slot_start.slice(11, 16))).toEqual(['07:00', '07:15', '07:30', '07:45', '08:00'])
+    expect(call('/api/city/traffic?date=2026/10/22').status).toBe(400)
+    expect(call('/api/city/traffic?date=2026-10-32').status).toBe(400)
+    expect(call(`/api/city/traffic?date=2026-10-22&slot=${encodeURIComponent('2026-10-22T08:00:00+08:00')}`).status).toBe(400)
+    expect(call('/api/city/traffic?date=2026-10-24').status).toBe(404)
+    expect(call('/api/city/traffic?date=2026-10-09').status).toBe(404)
   })
 
   it('history: ten days newest first, each with weather, and per-day pickup averages', () => {

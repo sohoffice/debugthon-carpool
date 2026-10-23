@@ -87,7 +87,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
   const previews = new Map<number, { driverId: number; pickupPointId: number; lat: number; lng: number; used: boolean }>()
   const now = () => clock() + world.clockOffsetMs
   const commute = createCommute(now)
-  const city = createCity(lookups, commute)
+  const city = createCity(lookups, commute, data.gateways)
   /** Today's completed rides at a pickup point, by the request's real Taipei date (commute_real_rides). */
   const realRidesToday = (pickupPointId: number) => {
     const day = (ms: number) => new Date(ms + 8 * 3600 * 1000).toISOString().slice(0, 10)
@@ -321,7 +321,17 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
 
     // ---- City dashboard (Phase 2, DD-39)
     { method: 'GET', pattern: '/api/city/live', access: 'city', run: () => ok(city.live(world, now())) },
-    { method: 'GET', pattern: '/api/city/traffic', access: 'city', run: ({ query }) => ok(city.traffic(now(), query.get('slot') || null)) },
+    {
+      method: 'GET',
+      pattern: '/api/city/traffic',
+      access: 'city',
+      run: ({ query }) => {
+        const slot = query.get('slot') || null
+        const date = query.get('date') || null
+        if (slot && date) throw new MockError(400, 'invalid_request', 'slot 與 date 只能擇一')
+        return ok(date ? city.trafficDay(now(), date) : city.traffic(now(), slot))
+      },
+    },
     { method: 'GET', pattern: '/api/city/today', access: 'city', run: () => ok(city.today(world, now())) },
     { method: 'GET', pattern: '/api/city/history', access: 'city', run: () => ok(city.history(now())) },
     // ---- Commute info (T36, T37; DD-38, DD-41)

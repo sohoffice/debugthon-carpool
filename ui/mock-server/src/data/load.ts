@@ -9,12 +9,84 @@ export interface CsvStop extends LatLng {
   name: string
 }
 
+/** A gateway into Neihu from docs/data/tdx-vd/detectors.csv (DD-36): its static fields only. */
+export interface CsvGateway {
+  vd_id: string
+  source: 'city' | 'freeway'
+  gateway: string
+  road_name: string
+  road_direction: string
+  bearing: string
+  sort_order: number
+  location_note: string
+  lat: number
+  lng: number
+  shape: LatLng[] | null
+  proxy: boolean
+  proxy_note: string | null
+  reference_speed_kmh: number
+}
+
 export interface StaticData {
   seed: Seed
   /** Every Taipei bus stop by open-data stop id (the corridors use stops outside the park). */
   csvStops: Map<number, CsvStop>
   /** Park boundary ring, [lng, lat] pairs. */
   parkRing: [number, number][]
+  /** The 16 gateways into Neihu, by sort_order (UD-28). */
+  gateways: CsvGateway[]
+}
+
+/** RFC 4180 rows: a field may be quoted, with "" for a quote inside; no quoted line breaks. */
+function csvRows(text: string): string[][] {
+  return text
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => {
+      const fields: string[] = []
+      let field = ''
+      let quoted = false
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (quoted && ch === '"' && line[i + 1] === '"') {
+          field += '"'
+          i++
+        } else if (ch === '"') {
+          quoted = !quoted
+        } else if (ch === ',' && !quoted) {
+          fields.push(field)
+          field = ''
+        } else {
+          field += ch
+        }
+      }
+      return [...fields, field]
+    })
+}
+
+function parseGateways(text: string): CsvGateway[] {
+  const [header, ...rows] = csvRows(text)
+  const gateways = rows.map((cells): CsvGateway => {
+    const r = Object.fromEntries(header.map((h, i) => [h, cells[i]]))
+    if (r.source !== 'city' && r.source !== 'freeway') throw new Error(`detectors.csv: bad source for ${r.vd_id}`)
+    return {
+      vd_id: r.vd_id,
+      source: r.source,
+      gateway: r.gateway,
+      road_name: r.road_name,
+      road_direction: r.road_direction,
+      bearing: r.bearing,
+      sort_order: Number(r.sort_order),
+      location_note: r.location_note,
+      lat: Number(r.lat),
+      lng: Number(r.lng),
+      shape: r.shape ? (JSON.parse(r.shape) as LatLng[]) : null,
+      proxy: r.proxy === 'true',
+      proxy_note: r.proxy_note || null,
+      reference_speed_kmh: Number(r.reference_speed_kmh),
+    }
+  })
+  return [...gateways].sort((a, b) => a.sort_order - b.sort_order)
 }
 
 /** Reads the Go migrations and the open data from the repo; fails loudly if a file moved. */
@@ -44,5 +116,7 @@ export function loadStaticData(): StaticData {
   const geojson = JSON.parse(read('backend/config/park/boundary.geojson'))
   const parkRing = geojson.features[0].geometry.coordinates[0] as [number, number][]
 
-  return { seed, csvStops, parkRing }
+  const gateways = parseGateways(read('docs/data/tdx-vd/detectors.csv'))
+
+  return { seed, csvStops, parkRing, gateways }
 }

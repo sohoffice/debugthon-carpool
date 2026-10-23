@@ -18,6 +18,8 @@ interface RouteMapProps {
   /** Extra space kept free around the route, e.g. under a sheet that covers the map. */
   padding?: { top: number; right: number; bottom: number; left: number }
   className?: string
+  /** False: a picture only (MapView). */
+  interactive?: boolean
   /** E.g. a VehicleMarker. */
   children?: ReactNode
 }
@@ -39,13 +41,13 @@ function FitBounds({ points, padding }: { points: LatLng[]; padding: RouteMapPro
 }
 
 /** Pickup point, trip route, bus stops along it and destination, framed to fit (8.3 RouteMap). */
-export function RouteMap({ pickup, destination, route, dropoffStopId = null, pickupOptions = [], padding, className, children }: RouteMapProps) {
+export function RouteMap({ pickup, destination, route, dropoffStopId = null, pickupOptions = [], padding, className, interactive, children }: RouteMapProps) {
   const path = route ? decodePolyline(route.polyline) : []
   const stops: BusStop[] = route?.bus_stops ?? []
   const options = pickupOptions.filter((p) => p.id !== pickup?.id)
   const fit = [...path, ...(pickup ? [pickup] : []), ...(destination ? [destination] : []), ...options]
   return (
-    <MapView className={className}>
+    <MapView className={className} interactive={interactive}>
       <FitBounds points={fit} padding={padding} />
       {route && <RoutePolyline encodedPath={route.polyline} />}
       {stops.map((s) => (
