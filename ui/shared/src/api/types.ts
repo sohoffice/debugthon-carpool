@@ -484,8 +484,9 @@ export interface CityTrafficSlot {
 export interface CityTraffic extends CityClock, CityTrafficSlot {}
 
 /**
- * GET /api/city/traffic?date=YYYY-MM-DD (REQ-079, DD-39): the day's 12 slots 07:00-09:45, today's
- * only through the latest slot. Only today and the past 10 workdays; otherwise 404. Not with slot.
+ * GET /api/city/traffic?date=YYYY-MM-DD (REQ-079, DD-39): the day's 12 slots 07:00-09:45. Today's
+ * slots after the latest slot have no traffic or weather yet (null, simulated false), only the past
+ * speeds (4.18). Only today and the past 10 workdays; otherwise 404. Not with slot.
  */
 export interface CityTrafficDay extends CityClock {
   date: string

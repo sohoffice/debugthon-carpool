@@ -80,20 +80,28 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
     * match each response.slots[0].detectors == gatewayShape
     * match each response.slots == '#? karate.map(_.detectors, function(g) { return g.sort_order }).join() == "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16"'
 
-  Scenario: today by date runs only through the latest slot
+  Scenario: today by date has all 12 slots, those after the latest slot without traffic or weather
     * path 'api', 'city', 'traffic'
     * header Authorization = 'Bearer city:city1'
     * method get
     * status 200
-    * def latest = response.slot_start
+    * def latest = new Date(response.slot_start).getTime()
     * def today = response.today
     * path 'api', 'city', 'traffic'
     * param date = today
     * header Authorization = 'Bearer city:city1'
     * method get
     * status 200
-    * match response.slots == '#[_ > 0 && _ <= 12]'
-    * match new Date(response.slots[response.slots.length - 1].slot_start).getTime() == new Date(latest).getTime()
+    * match response.slots == '#[12]'
+    * def over = karate.filter(response.slots, function(s) { return new Date(s.slot_start).getTime() <= latest })
+    * def notYet = karate.filter(response.slots, function(s) { return new Date(s.slot_start).getTime() > latest })
+    * match new Date(over[over.length - 1].slot_start).getTime() == latest
+    * match each over contains { simulated: true, weather: '#notnull' }
+    * match each notYet contains { simulated: false, weather_simulated: false, weather: null }
+    * def notYetGateways = []
+    * karate.forEach(notYet, function(s) { karate.forEach(s.detectors, function(g) { notYetGateways.push(g) }) })
+    * match notYetGateways == '#[_ > 0]'
+    * match each notYetGateways contains { volume: null, avg_speed_kmh: null, occupancy_pct: null, coverage_pct: null, simulated: false, past_avg_speed_kmh: '#number', past_min_speed_kmh: '#number', past_max_speed_kmh: '#number' }
 
   Scenario Outline: traffic <case> is refused - <status>
     * path 'api', 'city', 'traffic'
@@ -111,6 +119,24 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
       | date without data     | date  | 2020-01-06                | 404    | not_found       |
       | date not a date       | date  | 2026/10/22                | 400    | invalid_request |
       | date out of range     | date  | 2026-10-32                | 400    | invalid_request |
+
+  Scenario Outline: today's slot at <time>, outside the commute window, is not found
+    * path 'api', 'city', 'traffic'
+    * header Authorization = 'Bearer city:city1'
+    * method get
+    * status 200
+    * def today = response.today
+    * path 'api', 'city', 'traffic'
+    * param slot = today + 'T<time>:00+08:00'
+    * header Authorization = 'Bearer city:city1'
+    * method get
+    * status 404
+    * match response.error.code == 'not_found'
+
+    Examples:
+      | time  |
+      | 06:00 |
+      | 06:45 |
 
   Scenario: slot and date together are refused
     * path 'api', 'city', 'traffic'

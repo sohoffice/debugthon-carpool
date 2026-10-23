@@ -73,7 +73,8 @@ type citySlotResponse struct {
 //   - no parameter: the latest slot, the last complete 15-minute slot before now (DD-41), 08:00-08:15
 //     in the Demo;
 //   - slot (RFC 3339, the slot's start): that slot;
-//   - date (YYYY-MM-DD): that day's 12 slots 07:00-09:45, today's only through the latest slot (DD-39).
+//   - date (YYYY-MM-DD): that day's 12 slots 07:00-09:45 (DD-39); today's slots after the latest
+//     slot have no traffic or weather yet, only the past speeds (4.18).
 //
 // Only today and the past 10 workdays can be asked for; a slot or day without data is not found.
 func (s *Server) getCityTraffic(c *gin.Context) {
@@ -99,8 +100,10 @@ func (s *Server) getCityTraffic(c *gin.Context) {
 			apiError(c, http.StatusBadRequest, "invalid_request", "slot 須為 15 分鐘時段的開始時間（RFC 3339，例如 2026-10-23T08:00:00+08:00）")
 			return
 		}
-		// A slot not over yet has no data, even on a measured day that is today (DD-41).
-		if slot.Add(commuteSlotMinutes * time.Minute).After(m.Now) {
+		// A slot not over yet has no data, even on a measured day that is today (DD-41); nor has one
+		// outside the commute window, which today's day query would otherwise fill with nulls.
+		at := slot.In(taipei).Hour()*60 + slot.In(taipei).Minute()
+		if slot.Add(commuteSlotMinutes*time.Minute).After(m.Now) || at < commuteWindowStart || at >= commuteWindowEnd {
 			apiError(c, http.StatusNotFound, "not_found", "這個時段沒有車流資料")
 			return
 		}
@@ -141,16 +144,10 @@ func (s *Server) cityTrafficDay(c *gin.Context, m commuteMoment, raw string) {
 	}
 	first := day.Add(commuteWindowStart * time.Minute)
 	last := day.Add((commuteWindowEnd - commuteSlotMinutes) * time.Minute)
-	if latest := m.Now.Add(-commuteSlotMinutes * time.Minute); day.Equal(m.Today) && latest.Before(last) {
-		last = latest.Truncate(commuteSlotMinutes * time.Minute)
-	}
-	slots := []citySlot{}
-	if !last.Before(first) {
-		slots, err = s.citySlots(c, m, first, last)
-		if err != nil {
-			s.internalError(c, err)
-			return
-		}
+	slots, err := s.citySlots(c, m, first, last)
+	if err != nil {
+		s.internalError(c, err)
+		return
 	}
 	if len(slots) == 0 {
 		apiError(c, http.StatusNotFound, "not_found", "這一天沒有車流資料")
@@ -170,8 +167,9 @@ func (s *Server) cityTrafficDay(c *gin.Context, m commuteMoment, raw string) {
 }
 
 // citySlots lists the slots from first through last (one day) with every gateway in each. It is
-// empty when the day is neither today nor one of the past 10 workdays, or has no data at all; a
-// slot inside a day with data is kept even without rows, its gateways' values null.
+// empty when the day is not today and either is not one of the past 10 workdays or has no data; a
+// slot is kept even without rows, its gateways' values null. A slot not over by now (DD-41) has
+// no traffic or weather even if rows exist, only the past speeds: today's 還沒到 (4.18).
 func (s *Server) citySlots(ctx context.Context, m commuteMoment, first, last time.Time) ([]citySlot, error) {
 	rows, err := s.db.Query(ctx, `
 		WITH day AS (
@@ -195,11 +193,13 @@ func (s *Server) citySlots(ctx context.Context, m commuteMoment, first, last tim
 		       p.speed, p.low, p.high, COALESCE(o.simulated, false), o.weather, COALESCE(o.weather_simulated, false)
 		  FROM day, g CROSS JOIN traffic_detectors d
 		  LEFT JOIN traffic_observations o ON o.vd_id = d.vd_id AND o.slot_start = g.slot_start
+		       AND o.slot_start + interval '15 minutes' <= $5
 		  LEFT JOIN past p ON p.vd_id = d.vd_id AND p.at = (g.slot_start AT TIME ZONE 'Asia/Taipei')::time
-		 WHERE (day.day = $3::date OR day.day IN (SELECT d FROM base))
-		   AND EXISTS (SELECT 1 FROM traffic_observations x WHERE x.slot_start BETWEEN $1 AND $2)
+		 WHERE day.day = $3::date
+		    OR (day.day IN (SELECT d FROM base)
+		        AND EXISTS (SELECT 1 FROM traffic_observations x WHERE x.slot_start BETWEEN $1 AND $2))
 		 ORDER BY g.slot_start, d.sort_order`,
-		first, last, m.Today.Format(dateLayout), commutePastWorkdays)
+		first, last, m.Today.Format(dateLayout), commutePastWorkdays, m.Now)
 	if err != nil {
 		return nil, err
 	}

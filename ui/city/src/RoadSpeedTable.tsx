@@ -1,5 +1,6 @@
 import { SimulatedBadge, type CityGateway, type CityTraffic } from '@carpool/shared'
 import { slotLabel } from './format'
+import { shortGateway } from './gatewayRows'
 import { slotTime } from './trafficSlots'
 
 /** 20% or more slower than the same time over the past 10 workdays (REQ-079, UD-26); a missing side is not slow. */
@@ -7,11 +8,11 @@ export function isSlow(road: CityGateway): boolean {
   return road.avg_speed_kmh !== null && road.past_avg_speed_kmh !== null && road.avg_speed_kmh <= road.past_avg_speed_kmh * 0.8
 }
 
-const kmh = (v: number | null) => (v === null ? '—' : `${Math.round(v)} km/h`)
+const kmh = (v: number | null) => (v === null ? '—' : String(Math.round(v)))
 
 /**
  * The gateways' speed in the shown slot next to the past 10 workdays at the same time (REQ-079).
- * Minimal compile fix for T54's per-gateway API; T55/T56 replace this table.
+ * 平常 is the past 10 workdays at the same time. T41's table kept in 車流熱力 until T56 replaces it.
  */
 export function RoadSpeedTable({ traffic, today }: { traffic: CityTraffic; today: string }) {
   const slotDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date(traffic.slot_start))
@@ -22,20 +23,20 @@ export function RoadSpeedTable({ traffic, today }: { traffic: CityTraffic; today
         {slotLabel(slotTime(traffic.slot_start))}
         {traffic.simulated && <SimulatedBadge />}
       </h3>
-      <table className="mt-1 w-full text-sm">
+      <table className="mt-1 w-full text-[13px]">
         <thead>
           <tr className="text-left text-ink-soft">
             <th className="py-1 font-medium">入口</th>
-            <th className="py-1 text-right font-medium">此時段</th>
-            <th className="py-1 text-right font-medium">過去 10 個上班日同時段</th>
+            <th className="py-1 text-right font-medium whitespace-nowrap">此時段 km/h</th>
+            <th className="py-1 pl-2 text-right font-medium whitespace-nowrap">平常 km/h</th>
           </tr>
         </thead>
         <tbody>
           {traffic.detectors.map((r) => (
             <tr key={r.vd_id} className={`border-t border-rule ${isSlow(r) ? 'font-bold text-danger' : ''}`}>
-              <td className="py-1">{r.gateway}</td>
-              <td className="py-1 text-right tabular-nums">{kmh(r.avg_speed_kmh)}</td>
-              <td className="py-1 text-right tabular-nums">{kmh(r.past_avg_speed_kmh)}</td>
+              <td className="py-[3px] whitespace-nowrap">{shortGateway(r.gateway)}</td>
+              <td className="py-[3px] text-right tabular-nums">{kmh(r.avg_speed_kmh)}</td>
+              <td className="py-[3px] text-right tabular-nums">{kmh(r.past_avg_speed_kmh)}</td>
             </tr>
           ))}
         </tbody>

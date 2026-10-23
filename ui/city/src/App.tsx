@@ -1,22 +1,23 @@
-import { ApiError, usePolling, type CityHistory, type CityLive, type CityToday, type CityTraffic } from '@carpool/shared'
+import { ApiError, usePolling, type CityHistory, type CityLive, type CityToday, type CityTraffic, type CityTrafficDay } from '@carpool/shared'
 import { useState } from 'react'
 import { api, HISTORY_POLL_MS, LIVE_POLL_MS, TODAY_POLL_MS, TRAFFIC_POLL_MS } from './config'
-import { HistoryBars } from './HistoryBars'
-import { MapPanel, type MapTab } from './MapPanel'
-import { PickupTable } from './PickupTable'
-import { TodayPanel } from './TodayPanel'
-import { TopBar } from './TopBar'
+import { latestIndex } from './gatewayRows'
+import { LiveTab } from './LiveTab'
+import { OverviewTab } from './OverviewTab'
+import { TopBar, type Tab } from './TopBar'
+import { TrafficTab } from './TrafficTab'
 import { slotParam, slotTime, type SlotChoice } from './trafficSlots'
 
 /** A city token for an account that is not a city admin: 401 for an unknown account, 403 otherwise (DD-39). */
 const noAccess = (error: Error | undefined) => error instanceof ApiError && (error.status === 401 || error.status === 403)
 
 /**
- * The city dashboard (SC-C1, UD-26): desktop only, read only. Each area polls on its own (DD-03) and
- * keeps its last data when a poll fails; only /api/city/* is called (DD-39).
+ * The city war room (SC-C1, UD-27): desktop only, read only, three tabs switched in React state.
+ * Every area polls on its own whatever the tab (DD-03), so switching tabs never refetches, and keeps
+ * its last data when a poll fails; only /api/city/* is called (DD-39).
  */
 export function App() {
-  const [tab, setTab] = useState<MapTab>('live')
+  const [tab, setTab] = useState<Tab>('overview')
   // null: the latest slot, which /api/city/traffic returns without a slot (DD-41).
   const [choice, setChoice] = useState<SlotChoice | null>(null)
   const [latestTime, setLatestTime] = useState<string>()
@@ -34,7 +35,13 @@ export function App() {
   }
   const traffic = usePolling(fetchTraffic, TRAFFIC_POLL_MS, true, trafficPath)
 
-  if ([live, today, history, traffic].some((p) => noAccess(p.error))) {
+  const clock = live.data ?? today.data ?? history.data ?? traffic.data
+  const todayDate = clock?.today
+  // Today's 12 slots for the overview grid and the top bar lights (DD-39); asked once today is known.
+  const dayPath = `/city/traffic?date=${todayDate ?? ''}`
+  const trafficDay = usePolling(() => api.get<CityTrafficDay>(dayPath), TRAFFIC_POLL_MS, !!todayDate, dayPath)
+
+  if ([live, today, history, traffic, trafficDay].some((p) => noAccess(p.error))) {
     return (
       <main className="flex h-dvh items-center justify-center bg-paper">
         <p role="alert" className="text-2xl font-bold text-ink">
@@ -44,33 +51,49 @@ export function App() {
     )
   }
 
-  const clock = live.data ?? today.data ?? history.data ?? traffic.data
-  const todayDate = clock?.today
   const shownSlot = choice ?? (todayDate && latestTime ? { date: todayDate, time: latestTime } : undefined)
   // Picking the latest slot again goes back to following the latest slot.
   const pickSlot = (c: SlotChoice) => setChoice(c.date === todayDate && c.time === latestTime ? null : c)
+  const day = trafficDay.data
+  const latest = day ? day.slots[latestIndex(day)]?.detectors : undefined
+  // A grid cell opens 車流熱力 at that slot of today; one not over yet opens the latest slot (SC-C1).
+  // The latest slot itself is null too, so the traffic tab keeps following it.
+  const openCell = (time: string) => {
+    const latestAt = day ? day.slots[latestIndex(day)]?.slot_start : undefined
+    const past = todayDate && latestAt && time < slotTime(latestAt)
+    setChoice(past ? { date: todayDate, time } : null)
+    setTab('traffic')
+  }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-paper">
-      <TopBar clock={clock} />
-      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_440px] grid-rows-[minmax(0,1fr)_260px]">
-        <MapPanel
-          tab={tab}
-          onTab={setTab}
-          live={live.data}
-          liveError={!!live.error}
-          traffic={traffic.data}
-          trafficError={!!traffic.error}
-          history={history.data}
-          latestTime={latestTime}
-          slot={shownSlot}
-          onSlot={pickSlot}
-        />
-        <TodayPanel today={today.data} todayError={!!today.error} traffic={traffic.data} trafficError={!!traffic.error} />
-        <div className="col-span-2 grid min-h-0 grid-cols-[minmax(0,1fr)_640px] border-t border-rule">
-          <HistoryBars history={history.data} historyError={!!history.error} today={today.data} />
-          <PickupTable history={history.data} live={live.data} today={today.data} error={!!(history.error || live.error || today.error)} />
-        </div>
+    <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-paper">
+      <TopBar clock={clock} tab={tab} onTab={setTab} latest={latest} />
+      <main className="flex min-h-0 flex-1 flex-col">
+        {tab === 'overview' && (
+          <OverviewTab
+            live={live.data}
+            liveError={!!live.error}
+            today={today.data}
+            todayError={!!today.error}
+            history={history.data}
+            historyError={!!history.error}
+            trafficDay={day}
+            trafficDayError={!!trafficDay.error}
+            onCell={openCell}
+          />
+        )}
+        {tab === 'live' && <LiveTab live={live.data} liveError={!!live.error} today={today.data} history={history.data} />}
+        {tab === 'traffic' && (
+          <TrafficTab
+            traffic={traffic.data}
+            trafficError={!!traffic.error}
+            history={history.data}
+            today={todayDate}
+            latestTime={latestTime}
+            slot={shownSlot}
+            onSlot={pickSlot}
+          />
+        )}
       </main>
     </div>
   )
