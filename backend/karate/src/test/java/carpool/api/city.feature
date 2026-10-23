@@ -98,7 +98,9 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
     * match new Date(over[over.length - 1].slot_start).getTime() == latest
     * match each over contains { simulated: true, weather: '#notnull' }
     * match each notYet contains { simulated: false, weather_simulated: false, weather: null }
-    * def notYetGateways = karate.reduce(notYet, function(all, s) { return all.concat(s.detectors) }, [])
+    * def notYetGateways = []
+    * karate.forEach(notYet, function(s) { karate.forEach(s.detectors, function(g) { notYetGateways.push(g) }) })
+    * match notYetGateways == '#[_ > 0]'
     * match each notYetGateways contains { volume: null, avg_speed_kmh: null, occupancy_pct: null, coverage_pct: null, simulated: false, past_avg_speed_kmh: '#number', past_min_speed_kmh: '#number', past_max_speed_kmh: '#number' }
 
   Scenario Outline: traffic <case> is refused - <status>
