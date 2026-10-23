@@ -59,8 +59,7 @@ Feature: commute traffic and weather (REQ-063, REQ-076, REQ-077, REQ-084, DD-36,
     * header Authorization = 'Bearer <token>'
     * method get
     * status 200
-    * match response == { now: '#string', today: '#string', weather: '##(weatherShape)', simulated: '#boolean', weather_simulated: '#boolean' }
-    * match response.weather_simulated == response.simulated
+    * match response == { now: '#string', today: '#string', weather: '##(weatherShape)', weather_simulated: '#boolean' }
     # the observation is no later than now (DD-41)
     * if (response.weather) karate.match(new Date(response.weather.obs_time).getTime() <= new Date(response.now).getTime(), true)
 
