@@ -42,8 +42,14 @@ export interface DateOption {
   label: string
 }
 
-/** Today first, then the past 10 workdays, newest first: "10/26 週一（今天）", "10/23 週五". */
+/**
+ * Today first, then the past 10 workdays, newest first, each with where its traffic comes from
+ * (UD-28, REQ-063): "10/26 週一（今天 · 模擬）", "10/22 週四 · 實測". Today is always simulated (DD-36).
+ */
 export function dateOptions(today: string, days: CityHistoryDay[]): DateOption[] {
   const label = (date: string) => `${monthDay(date)} 週${weekdayOf(date)}`
-  return [{ date: today, label: `${label(today)}（今天）` }, ...days.map((d) => ({ date: d.date, label: label(d.date) }))]
+  return [
+    { date: today, label: `${label(today)}（今天 · 模擬）` },
+    ...days.map((d) => ({ date: d.date, label: `${label(d.date)} · ${d.traffic_simulated ? '模擬' : '實測'}` })),
+  ]
 }

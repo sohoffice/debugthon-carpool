@@ -323,3 +323,25 @@ func TestCityHistoryLeavesTodayOut(t *testing.T) {
 		t.Error("a ride today changed the history")
 	}
 }
+
+// REQ-063, DD-36: each day's traffic source is that day's ?date= simulated: 10/12-10/22 are TDX
+// measured (false), 10/23 has no measured data (true); the rides' simulated flag stays apart.
+func TestCityHistoryTrafficSimulated(t *testing.T) {
+	a := demoMonday(t)
+	got := cityGet[cityHistoryResp](a, "/api/city/history")
+	if len(got.Days) != 10 {
+		t.Fatalf("%d days, want 10", len(got.Days))
+	}
+	for _, d := range got.Days {
+		day := cityGet[cityTrafficDayResp](a, slotQuery("/api/city/traffic", "date", d.Date))
+		if d.TrafficSimulated != day.Simulated {
+			t.Errorf("%s: traffic simulated %v, ?date= says %v", d.Date, d.TrafficSimulated, day.Simulated)
+		}
+		if want := d.Date == "2026-10-23"; d.TrafficSimulated != want {
+			t.Errorf("%s: traffic simulated %v, want %v", d.Date, d.TrafficSimulated, want)
+		}
+		if !d.Simulated {
+			t.Errorf("%s: rides simulated false, want the simulated statistics", d.Date)
+		}
+	}
+}

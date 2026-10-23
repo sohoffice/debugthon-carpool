@@ -66,6 +66,11 @@
   --color-congestion-2: #e3a51c;
   --color-congestion-3: #e2632c;
   --color-congestion-4: #b42232;
+  /* 比平常 (UD-28, DD-44): 快 10% 以上, 差不多, 慢 10–25%, 慢 25% 以上; a diverging scale with a grey middle. */
+  --color-vs-usual-1: #3b82c4;
+  --color-vs-usual-2: #a3adb1;
+  --color-vs-usual-3: #e2632c;
+  --color-vs-usual-4: #b42232;
   --color-no-data: #a9b7ba;
 
   /*

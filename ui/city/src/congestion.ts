@@ -21,6 +21,31 @@ export function congestionLevel(ratio: number): CongestionLevel {
   return 4
 }
 
+/** 比平常's four levels (DD-44): 1 快 10% 以上, 2 差不多, 3 慢 10–25%, 4 慢 25% 以上. */
+export type VsUsualLevel = 1 | 2 | 3 | 4
+
+export const VS_USUAL_NAMES: Record<VsUsualLevel, string> = { 1: '比平常快', 2: '差不多', 3: '慢 10–25%', 4: '慢 25% 以上' }
+
+export const VS_USUAL_BG: Record<VsUsualLevel, string> = {
+  1: 'bg-vs-usual-1',
+  2: 'bg-vs-usual-2',
+  3: 'bg-vs-usual-3',
+  4: 'bg-vs-usual-4',
+}
+
+/**
+ * The slot's speed against the other days' average at the same time, the slot's day left out (DD-44):
+ * ≥ +10% 快, within ±10% 差不多, slower by 10–25%, slower by 25% or more. As in congestionLevel, a
+ * threshold goes to the better side: exactly −10% is 差不多, exactly −25% is 慢 10–25%.
+ */
+export function vsUsualLevel(speed: number, usual: number): VsUsualLevel {
+  const ratio = speed / usual
+  if (ratio >= 1.1) return 1
+  if (ratio >= 0.9) return 2
+  if (ratio >= 0.75) return 3
+  return 4
+}
+
 /** The gateway's level in its slot; null without a speed. */
 export function gatewayLevel(g: Pick<CityGateway, 'avg_speed_kmh' | 'reference_speed_kmh'>): CongestionLevel | null {
   return g.avg_speed_kmh === null ? null : congestionLevel(g.avg_speed_kmh / g.reference_speed_kmh)

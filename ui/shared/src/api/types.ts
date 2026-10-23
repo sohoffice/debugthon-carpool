@@ -520,7 +520,10 @@ export interface CityHistoryDay {
   rides: number
   /** The slot with the most rain that day (DD-38); null without observations. */
   weather: WeatherObservation | null
+  /** The rides are simulated (REQ-063). */
   simulated: boolean
+  /** The day's commute traffic is simulated, not TDX measured: that day's ?date= simulated (REQ-063, DD-36). */
+  traffic_simulated: boolean
 }
 
 /** GET /api/city/history (REQ-080, REQ-082): the past 10 workdays before today, newest first. */
