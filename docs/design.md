@@ -1292,7 +1292,7 @@ erDiagram
 
 **負責需求：** REQ-063、REQ-076、REQ-077、REQ-079、REQ-083、REQ-084
 
-**互動：** 駕駛介面與乘客介面經 API 層讀取 `GET /api/commute/traffic`（過去 10 個上班日每個時段 16 個入口的總車流量、平均速度與天氣，每天附星期幾）與 `GET /api/commute/weather`（今天在現在之前最新的一筆天氣，並附上現在與今天的日期，DD-41；模擬標示依 `weather_simulated`）；市府管理介面讀取 `GET /api/city/traffic`：指定時段每個入口的位置、線形、車流量、平均車速、佔有率、參考速度、過去 10 個上班日同時段的平均、最低與最高車速（`past_avg_speed_kmh`、`past_min_speed_kmh`、`past_max_speed_kmh`，不含所選的那一天）、是否為代理值、位置說明與資料完整度，以及車流與天氣是否為模擬（`simulated`、`weather_simulated`，REQ-063），入口依 `sort_order` 排列；未指定時為最新時段，即現在之前最後一個完整的 15 分鐘時段（DD-41）；以 `date` 指定日期時，一次回傳該日期上班時段的 12 格，供入口 × 時段的格子使用（DD-39）。載客統計（[4.19](#419-供需統計phase-2)）的天氣也從這裡取得。過去上班日的實測車流由遷移檔從 `docs/data/tdx-vd/` 載入；今天與沒有實測資料的上班日的車流，以及所有天氣，由 DD-40 的產生函式產生（DD-36）。
+**互動：** 駕駛介面與乘客介面經 API 層讀取 `GET /api/commute/traffic`（過去 10 個上班日每個時段 16 個入口的總車流量、平均速度與天氣，每天附星期幾）與 `GET /api/commute/weather`（今天在現在之前最新的一筆天氣，並附上現在與今天的日期，DD-41；模擬標示依 `weather_simulated`）；市府管理介面讀取 `GET /api/city/traffic`：指定時段每個入口的位置、線形、車流量、平均車速、佔有率、參考速度、過去 10 個上班日同時段的平均、最低與最高車速（`past_avg_speed_kmh`、`past_min_speed_kmh`、`past_max_speed_kmh`，查詢時由這些日子同一時段的 `avg_speed_kmh` 算出，不含所選的那一天，沒有資料時為 `null`）、是否為代理值、位置說明與資料完整度，以及車流與天氣是否為模擬（`simulated`、`weather_simulated`，REQ-063），入口依 `sort_order` 排列；未指定時為最新時段，即現在之前最後一個完整的 15 分鐘時段（DD-41）；以 `date` 指定日期時，一次回傳該日期上班時段的 12 格，供入口 × 時段的格子使用（DD-39）。載客統計（[4.19](#419-供需統計phase-2)）的天氣也從這裡取得。過去上班日的實測車流由遷移檔從 `docs/data/tdx-vd/` 載入；今天與沒有實測資料的上班日的車流，以及所有天氣，由 DD-40 的產生函式產生（DD-36）。
 
 **資料表：**
 
@@ -1335,7 +1335,6 @@ erDiagram
 - `reference_speed_kmh` 是該入口的參考速度，用來分級路況（DD-44）。
 - `sort_order` 是入口在畫面上的順序與編號（1～16），依 UD-28 的格子列：市區道路由大直起順時針，再來是國道匝道由西到東；地圖上偵測器的圓圈寫同一個編號。
 - `location_note` 是入口的位置說明（例如「區界外 10 公尺，東向」），格子列的入口名稱下以小字顯示。
-- 過去 10 個上班日同時段的平均、最低與最高車速，取該入口在這些日子同一時段的 `avg_speed_kmh`，不含所選的那一天（4.20）；沒有資料時為 `null`。
 - `slot_start` 是時段開始的時間，對齊台北時間的 :00、:15、:30、:45；只保存上班時段（07:00–10:00），本服務只處理上班進內湖的方向。
 - `volume`、`avg_speed_kmh`、`occupancy_pct` 由 TDX 歷史資料（`/api/historical/v2/Historical/Road/Traffic/Live/VD/City/Taipei` 與 `.../VD/Freeway`，每分鐘一筆，每個車道、每種車型各有 `Volume`、`Speed`，每個車道另有 `Occupancy`）彙總：車流量為時段內進入內湖方向所有車道、所有車型的加總，有車道分鐘缺漏時依收到的比例補足；速度以車流量加權平均；佔有率為各車道的平均。`coverage_pct` 是時段內收到的車道分鐘占應有的比例，畫面依此提示資料不完整；模擬的資料為 100。
 - `weather` 保存該時段的天氣，格式取自中央氣象署自動氣象站觀測（O-A0001-001）：`{"station_id", "station_name", "obs_time", "weather", "air_temperature", "precipitation"}`。同一時段的每個偵測器存同一份。
