@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react'
 
-function fit(width: number, height: number, margin: number): number {
-  const available = Math.min((window.innerWidth - margin * 2) / width, (window.innerHeight - margin * 2) / height)
+function fit(width: number, height: number, margin: number, reservedHeight: number): number {
+  const available = Math.min(
+    (window.innerWidth - margin * 2) / width,
+    (window.innerHeight - margin * 2 - reservedHeight) / height,
+  )
   return Math.min(1, Math.max(available, 0.1))
 }
 
-/** Scale (at most 1) that fits a fixed-size box into the window, so the phone never deforms (UD-13, UD-18). */
-export function useFitScale(width: number, height: number, margin: number): number {
-  const [scale, setScale] = useState(() => fit(width, height, margin))
+/**
+ * Scale (at most 1) that fits a fixed-size box into the window, so the phone never deforms (UD-13, UD-18).
+ * `reservedHeight` is unscaled space above or below the box, e.g. a header row.
+ */
+export function useFitScale(width: number, height: number, margin: number, reservedHeight = 0): number {
+  const [scale, setScale] = useState(() => fit(width, height, margin, reservedHeight))
   useEffect(() => {
-    const update = () => setScale(fit(width, height, margin))
+    const update = () => setScale(fit(width, height, margin, reservedHeight))
     update()
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
-  }, [width, height, margin])
+  }, [width, height, margin, reservedHeight])
   return scale
 }
