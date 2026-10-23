@@ -48,7 +48,7 @@
 - **縣市即時路況（VD 每 5 分鐘統計）** — data.gov.tw · API — https://data.gov.tw/dataset/166031
 - **TDX 運輸資料流通服務平臺**（需申請金鑰）— 交通部 — https://tdx.transportdata.tw/
 - **臺北捷運各站分時進出量（文湖線）** — data.taipei · CSV — https://data.taipei/dataset/detail?id=63f31c7e-7fc3-418b-bd82-b95158755b4d
-- **沒有現成的歷史 15 分鐘 VD 序列**，需自行累積 → 可用模擬資料
+- **TDX 有每分鐘的歷史 VD 資料**（見第 5 節），需自行彙總成 15 分鐘
 
 > [!WARNING]
 > **data.gov.tw #166031 已下架。** 此資料集已於 2025-02-25 下架（歷史資料專區）。2026-10-17 測試時，下載連結逾時無回應。即時 VD 資料請改用 **TDX**（見第 5 節）。
@@ -64,7 +64,7 @@ VD（車輛偵測器）是設在路側或路面下的感測器（線圈、微波
 
 **對我們的影響：**
 
-- 沒有歷史資料，只能從現在開始輪詢 TDX 自行累積，或產生模擬資料（需標示清楚）。
+- TDX 有歷史資料（見第 5 節），可以直接下載過去的上班日，不必自行輪詢累積；沒有實測資料的日子（例如今天）再以模擬補上（需標示清楚）。
 - VD 無法提供人數；人流要看捷運分時進出量（見第 6 節）。
 
 ## 5. TDX API 實測
@@ -77,6 +77,8 @@ VD（車輛偵測器）是設在路側或路面下的感測器（線圈、微波
 | 臺北市 VD 靜態資料 `/api/basic/v2/Road/Traffic/VD/City/Taipei` | ✅ 604 個偵測器，每日更新 |
 | 臺北市 VD 即時資料 `/api/basic/v2/Road/Traffic/Live/VD/City/Taipei` | ✅ 610 個偵測器，**每分鐘更新**，601 個正常回報 |
 | 國道 VD 靜態資料 `/api/basic/v2/Road/Traffic/VD/Freeway` | ✅ 3,283 個偵測器 |
+| 臺北市 VD 歷史資料 `/api/historical/v2/Historical/Road/Traffic/Live/VD/City/Taipei?Dates=YYYY-MM-DD` | ✅ 每分鐘一筆、逐車道；只能整天下載 |
+| 國道 VD 歷史資料 `/api/historical/v2/Historical/Road/Traffic/Live/VD/Freeway?Dates=YYYY-MM-DD` | ✅ 同上 |
 
 **內湖周邊的偵測器：**
 
@@ -88,6 +90,7 @@ VD（車輛偵測器）是設在路側或路面下的感測器（線圈、微波
 
 1. 用 Client ID、Secret 向 `https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token` 取得 token（`grant_type=client_credentials`）。
 2. 呼叫 `/api/basic/...` 時帶上 `Authorization: Bearer <token>`，可用 OData 參數（`$filter`、`$select`、`$top`）篩選。
+3. 歷史資料（`/api/historical/...`）以 `Dates` 指定日期，**`$filter` 對歷史 API 無效**，只能整天下載後自行篩選；臺北市一天的資料解壓後超過 1 GB。前一天的資料約在隔天 00:05 後才能下載。
 
 ## 6. 捷運各站分時進出量
 
