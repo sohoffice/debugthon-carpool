@@ -80,6 +80,11 @@ Feature: ride request flow after submission (driver response, timeout, boarding,
     * match doGet(driverToken('first'), 'api/trips/' + first).response contains { seats_held: 0 }
     * match doGet(driverToken('second'), 'api/trips/' + second).response contains { seats_held: 1 }
     * match doGet(pt, 'api/passenger/requests/' + req.id).response.reassigned_count == 1
+    # REQ-050, DD-13: the next driver is offered it only after the reassign delay
+    * match doGet(driverToken('second'), 'api/driver/requests').response.pending == []
+    * Db.exec("UPDATE ride_requests SET offered_at = now() - interval '1 second' WHERE id = ?", req.id)
+    * def offered = doGet(driverToken('second'), 'api/driver/requests').response
+    * match offered.pending[*].id == [#(req.id)]
     # the declined driver no longer owns it
     * match doPost(driverToken('first'), 'api/driver/requests/' + req.id + '/accept').responseStatus == 404
     * def last = doPost(driverToken('second'), 'api/driver/requests/' + req.id + '/decline')
