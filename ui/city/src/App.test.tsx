@@ -285,7 +285,9 @@ describe('city war room (SC-C1, UD-27)', () => {
     expect(today).toHaveTextContent('今天')
     expect(today).toHaveTextContent('47')
     expect(today.querySelector('.bg-ink')).not.toBeNull()
-    expect(within(screen.getByRole('region', { name: '過去 10 個上班日的共乘數' })).getByRole('heading')).toHaveTextContent('10/23 週五最多，60 趟')
+    const box = screen.getByRole('region', { name: '過去 10 個上班日的共乘數' })
+    expect(within(box).getByRole('heading')).toHaveTextContent('10/23 週五最多，60 趟')
+    expect(within(box).getByText('含模擬')).toBeInTheDocument()
   })
 
   it('車流熱力 keeps T41: date then slot; picking a past slot asks for it', async () => {

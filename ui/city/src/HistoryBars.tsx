@@ -23,7 +23,8 @@ export function HistoryBars({ history, historyError, today }: HistoryBarsProps) 
     <Panel
       name="過去 10 個上班日的共乘數"
       kicker="過去 10 個上班日的共乘數"
-      marks={[(history?.simulated || today?.simulated) && '模擬']}
+      // 今天 adds the real Demo rides to the simulated days (REQ-083): mixed, so 含模擬 (REQ-063).
+      marks={[(history?.simulated || today?.simulated) && '含模擬']}
       title={history && busiestDay(history)}
       error={historyError && '歷史資料讀取失敗，顯示上一次的資料'}
     >

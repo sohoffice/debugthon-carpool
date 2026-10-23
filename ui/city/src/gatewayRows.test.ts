@@ -82,6 +82,12 @@ describe('gateway × slot grid (REQ-079, SC-C1)', () => {
     expect(slowestRun(gridRows(day))).toBe('入口2 07:15–08:00 最慢')
   })
 
+  it('the headline uses the short name (UD-27)', () => {
+    const day = today(() => 20)
+    day.slots = day.slots.map((s) => ({ ...s, detectors: s.detectors.map((g) => (g.sort_order === 1 ? { ...g, gateway: '國道1號高架 堤頂交流道（南向出口）' } : g)) }))
+    expect(slowestRun(gridRows(day))).toBe('國1 堤頂 南向出口 07:00–08:15 最慢')
+  })
+
   it('the headline only looks at slots that are over: 還沒到 is the past average, not today', () => {
     // 入口1 slow all day, including the past average after 08:00.
     const day = today(() => 20)

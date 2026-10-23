@@ -67,7 +67,7 @@ const endOf = (time: string) => slotLabel(time).split('–')[1]
 
 /**
  * The headline as a conclusion (UD-27): the slowest gateway of the day and the slots it is within one
- * level of its worst (at least 車多), e.g. 「國道1號高架 堤頂交流道（南向出口） 07:30–09:15 最慢」.
+ * level of its worst (at least 車多), short name as in UD-27, e.g. 「國1 堤頂 南向出口 07:30–09:15 最慢」.
  */
 export function slowestRun(rows: GridRow[]): string {
   if (!rows.some((r) => r.cells.some((c) => c.kind === 'data'))) return '今天還沒有車流資料'
@@ -83,5 +83,5 @@ export function slowestRun(rows: GridRow[]): string {
   const worstLevel = Math.max(1, ...measured.map((c) => c.level ?? 1))
   if (!worst || worstLevel <= 1) return '今天各入口都順暢'
   const run = measured.filter((c) => (c.level ?? 0) >= Math.max(2, worstLevel - 1))
-  return `${worst.row.gateway.gateway} ${run[0].time}–${endOf(run[run.length - 1].time)} 最慢`
+  return `${shortGateway(worst.row.gateway.gateway)} ${run[0].time}–${endOf(run[run.length - 1].time)} 最慢`
 }

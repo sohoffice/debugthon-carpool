@@ -120,6 +120,24 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
       | date not a date       | date  | 2026/10/22                | 400    | invalid_request |
       | date out of range     | date  | 2026-10-32                | 400    | invalid_request |
 
+  Scenario Outline: today's slot at <time>, outside the commute window, is not found
+    * path 'api', 'city', 'traffic'
+    * header Authorization = 'Bearer city:city1'
+    * method get
+    * status 200
+    * def today = response.today
+    * path 'api', 'city', 'traffic'
+    * param slot = today + 'T<time>:00+08:00'
+    * header Authorization = 'Bearer city:city1'
+    * method get
+    * status 404
+    * match response.error.code == 'not_found'
+
+    Examples:
+      | time  |
+      | 06:00 |
+      | 06:45 |
+
   Scenario: slot and date together are refused
     * path 'api', 'city', 'traffic'
     * param slot = '2026-10-22T08:00:00+08:00'
