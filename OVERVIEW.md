@@ -64,7 +64,7 @@ VD（車輛偵測器）是設在路側或路面下的感測器（線圈、微波
 
 **對我們的影響：**
 
-- 沒有歷史資料，只能從現在開始輪詢 TDX 自行累積，或產生模擬資料（需標示清楚）。
+- TDX 有歷史資料（見第 5 節），可以直接下載過去的上班日，不必自行輪詢累積；沒有實測資料的日子（例如今天）再以模擬補上（需標示清楚）。
 - VD 無法提供人數；人流要看捷運分時進出量（見第 6 節）。
 
 ## 5. TDX API 實測
@@ -77,6 +77,8 @@ VD（車輛偵測器）是設在路側或路面下的感測器（線圈、微波
 | 臺北市 VD 靜態資料 `/api/basic/v2/Road/Traffic/VD/City/Taipei` | ✅ 604 個偵測器，每日更新 |
 | 臺北市 VD 即時資料 `/api/basic/v2/Road/Traffic/Live/VD/City/Taipei` | ✅ 610 個偵測器，**每分鐘更新**，601 個正常回報 |
 | 國道 VD 靜態資料 `/api/basic/v2/Road/Traffic/VD/Freeway` | ✅ 3,283 個偵測器 |
+| 臺北市 VD 歷史資料 `/api/historical/v2/Historical/Road/Traffic/Live/VD/City/Taipei?Dates=YYYY-MM-DD` | ✅ 每分鐘一筆、逐車道；只能整天下載 |
+| 國道 VD 歷史資料 `/api/historical/v2/Historical/Road/Traffic/Live/VD/Freeway?Dates=YYYY-MM-DD` | ✅ 同上 |
 
 **內湖周邊的偵測器：**
 
@@ -88,6 +90,7 @@ VD（車輛偵測器）是設在路側或路面下的感測器（線圈、微波
 
 1. 用 Client ID、Secret 向 `https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token` 取得 token（`grant_type=client_credentials`）。
 2. 呼叫 `/api/basic/...` 時帶上 `Authorization: Bearer <token>`，可用 OData 參數（`$filter`、`$select`、`$top`）篩選。
+3. 歷史資料（`/api/historical/...`）以 `Dates` 指定日期，**`$filter` 對歷史 API 無效**，只能整天下載後自行篩選；臺北市一天的資料解壓後超過 1 GB。前一天的資料約在隔天 00:05 後才能下載。
 
 ## 6. 捷運各站分時進出量
 
