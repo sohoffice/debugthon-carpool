@@ -184,10 +184,10 @@ const MUTED_STYLE = [
 
 // Story metres per second for a car at its road's free speed. The animation exaggerates slowdowns so it is plain
 // where the roads are slower than usual: see slowness(). The numbers on screen keep the data's speeds.
-const SPEED = { car: 1400, train: 2400, walk: 600 }
+const SPEED = { car: 1000, train: 1500, walk: 400 }
 // How slow a stretch looks, 0..1, from its speed as a share of free speed: nothing above 95%, the full effect from
 // 65% down. A car on it moves at lerp(1, CRAWL, slowness) of its free pace, and glows and heats on the same scale.
-const SLOW_FROM = 0.95, SLOW_FULL = 0.65, CRAWL = 0.15
+const SLOW_FROM = 0.95, SLOW_FULL = 0.65, CRAWL = 0.3
 const slowness = (share) => clamp01((SLOW_FROM - share) / (SLOW_FROM - SLOW_FULL))
 // Occupancy (the share of time a car sits on the sensor) catches queues at signals where the average speed holds
 // up, as on 民權大橋. It scales from the busiest slot measured as volume^occExp, the exponent fitted per detector
@@ -623,7 +623,7 @@ function buildPlan(ratio) {
     if (c.role === 'carpool') {
       const last = Math.max(...c.riders.map((x) => x.atPickup))
       const leg1 = makePath(DATA.homes[c.id].toPickups[c.pickupIdx].points)
-      c.trip = { legs: [leg1, candPath(c.route)], start: Math.max(T.intro - 0.2, last + 0.4 - leg1.len / SPEED.car), holdUntil: last + 0.6 }
+      c.trip = { legs: [leg1, candPath(c.route)], start: Math.max(T.intro - 0.2, last + 0.4 - leg1.len / SPEED.car), holdUntil: last + 1.0 }
     } else {
       c.trip = { legs: [candPath(c.route)], start: c.dep1 }
     }
@@ -634,9 +634,12 @@ function buildPlan(ratio) {
   const key = sim.speeds.map(keySpeed)
   T.peak = key.indexOf(Math.min(...key)) * DT
   T.ridersUntil = Math.max(0, ...commuters.filter((c) => c.role === 'rider').map((c) => c.rideEnd))
+  // Half the carpool cars have picked up their riders: the story moves from the MRT to the ride into the park.
+  const leaves = drivers.filter((c) => c.role === 'carpool').map((c) => c.trip.leave).sort((x, y) => x - y)
+  T.pooling = leaves.length ? leaves[Math.floor(leaves.length / 2)] : 0
   const arrivals = drivers.map((c) => c.trip.arrive).sort((x, y) => x - y)
-  T.summary = arrivals[Math.floor(arrivals.length * 0.9)] + 0.5
-  T.total = T.summary + 6
+  T.summary = arrivals[Math.floor(arrivals.length * 0.85)] + 0.3
+  T.total = T.summary + 3
 
   const entries = (cs, k) => cs.reduce((m, c) => { const e = c[k].entry; m[e] = (m[e] || 0) + 1; return m }, {})
   return {
@@ -859,7 +862,7 @@ function captionAt(t) {
     return ['一人一車', '各路段車流量照 2026-10-22 早上實測']
   }
   if (t < T.intro) return ['同一個早上，如果改用「內科上班順起來」…', `假設原本開車的人有 ${adopt}% 採用（司機與乘客都算）`]
-  if (t < T.ridersUntil + 0.5) return ['住捷運沿線的人，車留在家', '走到捷運站，搭到行天宮、松山車站、世貿、大巨蛋']
+  if (t < T.pooling) return ['住捷運沿線的人，車留在家', '走到捷運站，搭到行天宮、松山車站、世貿、大巨蛋']
   if (t < T.summary) return ['同一棟大樓的人，順路一起進內科', '路上的車少了，剩下的車也開得比較順']
   return ['同樣多的人，更少的車', `示意：假設原本開車的人有 ${adopt}% 採用（司機與乘客都算），每台共乘車平均 2.5 人`]
 }
@@ -1032,7 +1035,7 @@ function usePlan(ratio) {
   T = plan.T
   $('scrub').max = T.total
   const ticks = plan.adopters
-    ? [[0, '改用 App'], [T.intro, '同時出發'], [T.summary, '成果']]
+    ? [[0, '改用 App'], [T.intro, '同時出發'], [T.pooling, '共乘上路'], [T.summary, '成果']]
     : [[0, '現況'], [T.intro, '同時出發'], [T.peak, '一人一車'], [T.summary, '成果']]
   $('ticks').innerHTML = ticks.map(([s, label]) => `<span style="left:${(s / T.total) * 100}%">${label}</span>`).join('')
   mountSprites()
