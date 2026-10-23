@@ -1,4 +1,4 @@
-# 內科上班順起來 — 第一層設計：系統架構
+# 內科上班順起來: 內科順路共乘 — 第一層設計：系統架構
 
 議題 #4 · 來源文件：[點子發想（proposal.md）](proposal.md)、[需求規格（requirement.md）](requirement.md)、[範圍決定（OVERVIEW.md 第 9 節）](../OVERVIEW.md#9-範圍決定)
 
