@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/sohoffice/debugthon-carpool/backend/internal/settings"
 )
 
 type statusResp struct {
@@ -104,6 +106,16 @@ func (e *supplyEnv) outcomes(t *testing.T, id int64) map[int]string {
 func (e *supplyEnv) overdue(t *testing.T, id int64) {
 	t.Helper()
 	mustExec(t, e.tx, `UPDATE ride_requests SET response_deadline_at = now() - interval '1 second' WHERE id = $1`, id)
+}
+
+// setting reads a system setting as the request flow does (DD-20).
+func (e *supplyEnv) setting(t *testing.T, key string) float64 {
+	t.Helper()
+	v, err := settings.New(e.tx).Get(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }
 
 func assigned(t *testing.T, r requestResp, trip int64) {
@@ -258,6 +270,51 @@ func TestDeclineReassignsToTheNextCar(t *testing.T) {
 	e.answer(t, "accept", r.ID, e.driverToken(t, second), http.StatusOK)
 }
 
+// REQ-050: the next car is offered the request only after the reassign delay, so the passenger
+// hears of the decline first; its time limit starts when it is offered.
+func TestReassignOffersTheNextCarAfterTheDelay(t *testing.T) {
+	e := newSupplyEnv(t)
+	first := e.addTrip(t, tripSpec{northM: 500})
+	second := e.addTrip(t, tripSpec{northM: 2000})
+	mustExec(t, e.tx, `UPDATE system_settings SET value = 2 WHERE key = 'reassign_delay'`)
+	r := e.submit(t, e.near(), nil)
+	pending := func() int {
+		w := call(t, e.tx, http.MethodGet, "/api/driver/requests", e.driverToken(t, second), "")
+		wantStatus(t, w, http.StatusOK, "")
+		return len(decode[driverListResp](t, w).Pending)
+	}
+
+	got := e.answer(t, "decline", r.ID, e.driverToken(t, first), http.StatusOK)
+	assigned(t, got.requestResp, second)
+	if s := e.status(t, r.ID); s.ReassignedCount != 1 {
+		t.Errorf("reassigned_count = %d right after the decline, want 1", s.ReassignedCount)
+	}
+	if n := pending(); n != 0 {
+		t.Errorf("next car sees %d pending requests during the delay, want 0", n)
+	}
+	if d := time.Until(*got.ResponseDeadlineAt); d < 61*time.Second || d > 62*time.Second {
+		t.Errorf("deadline in %v, want the 60 s limit counted from the offer 2 s from now", d)
+	}
+
+	// Once the delay is over the next car sees it.
+	mustExec(t, e.tx, `UPDATE ride_requests SET offered_at = now() - interval '1 second' WHERE id = $1`, r.ID)
+	if n := pending(); n != 1 {
+		t.Errorf("next car sees %d pending requests after the delay, want 1", n)
+	}
+}
+
+// The first car is offered the request at once: the delay is only for reassignments.
+func TestFirstAssignmentIsOfferedAtOnce(t *testing.T) {
+	e := newSupplyEnv(t)
+	trip := e.addTrip(t, tripSpec{})
+	mustExec(t, e.tx, `UPDATE system_settings SET value = 2 WHERE key = 'reassign_delay'`)
+	e.submit(t, e.near(), nil)
+	w := call(t, e.tx, http.MethodGet, "/api/driver/requests", e.driverToken(t, trip), "")
+	if l := decode[driverListResp](t, w); len(l.Pending) != 1 {
+		t.Errorf("first car sees %d pending requests, want 1 at once", len(l.Pending))
+	}
+}
+
 // Acceptance: consecutive declines until no car is left.
 func TestConsecutiveDeclinesEndInNoMatch(t *testing.T) {
 	e := newSupplyEnv(t)
@@ -315,8 +372,10 @@ func TestTimeoutReassignsAndOnlyWhenDue(t *testing.T) {
 	}
 	got := e.status(t, r.ID)
 	assigned(t, got.requestResp, second)
-	if d := time.Until(*got.ResponseDeadlineAt); d < 20*time.Second || d > 31*time.Second {
-		t.Errorf("new deadline in %v, want about the 30 s setting", d)
+	// Counted from the offer, which comes after the reassign delay (REQ-050).
+	delay := e.setting(t, "reassign_delay")
+	if d := time.Until(*got.ResponseDeadlineAt); d < time.Duration(20+delay)*time.Second || d > time.Duration(31+delay)*time.Second {
+		t.Errorf("new deadline in %v, want about the 30 s setting after the %v s delay", d, delay)
 	}
 	if held, _ := e.seats(t, first); held != 0 {
 		t.Errorf("timed-out car still holds %d seats", held)

@@ -6,7 +6,7 @@ const DEFAULT_ACCOUNT = 'driver4'
 
 // Polls the trip and its pending request. Must stay well below the driver confirm timeout
 // (DD-03), or drivers miss requests.
-export const POLL_INTERVAL_MS = 2000
+export const POLL_INTERVAL_MS = 1000
 
 /** Seats a driver can offer (可載人數). */
 export const CAPACITY_RANGE = { min: 1, max: 6, fallback: 3 }

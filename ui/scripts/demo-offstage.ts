@@ -16,6 +16,7 @@ const POLL_MS = 1000
 type Trip = { id: number; destination: { name: string; lat: number; lng: number }; pickup_point: { id: number }; passed_pickup: boolean }
 type Requests = { trip_id: number | null; pending: { id: number; passenger_name: string }[] }
 type Defaults = { pickup_point_id: number | null; destination: Trip['destination'] | null }
+type LocationReport = { trip_id: number | null }
 
 const say = (text: string) => console.log(`${new Date().toLocaleTimeString('zh-TW', { hour12: false })}  ${text}`)
 
@@ -50,6 +51,12 @@ async function departDriver5() {
   })
   if (trip.status !== 201) throw new Error(`driver5 出發失敗：${trip.status} ${JSON.stringify(trip.body)}`)
   say(`driver5 帶「${STAGE_TAGS.join('」「')}」出發了，往${destination.name}（台下，觀眾看不到）。`)
+}
+
+/** Whether the simulator has reported the driver's position on this trip yet. */
+async function hasReported(account: string, tripId: number | null): Promise<boolean> {
+  const reports = (await api<LocationReport[]>(account, 'GET', '/me/location-reports')).body
+  return reports.some((r) => r.trip_id === tripId)
 }
 
 /** Lead in seconds, from the first argument or DEMO_LEAD_S; anything but a non-negative integer is an error. */
@@ -122,8 +129,10 @@ async function runLoop(leadS: number, stopping: () => boolean) {
       driver4Seen = true
       say('driver4 出發了。')
     }
-    // Both simulated paths start about 500 m before the pickup, so the stage can start right away.
-    if (driver4Seen && !toldStart) {
+    // Both simulated paths start about 500 m before the pickup, so the stage can start as soon as
+    // the simulator reports driver4 (it looks for new trips every 5 s). Matching skips a car that
+    // has not reported yet, so a request sent before then never reaches driver4.
+    if (driver4Seen && !toldStart && (await hasReported('driver4', d4.trip_id))) {
       say('▶ 現在可以開始台上的 2 分鐘：從乘客看供給看板開始（劇本 0:00）。')
       toldStart = true
     }

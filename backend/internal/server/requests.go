@@ -316,7 +316,7 @@ func (s *Server) assign(ctx context.Context, id int64, r rankedTrip, relaxed boo
 		return requestView{}, err
 	}
 	err = transition(ctx, s.db, id, reqSubmitted, reqWaitingDriver,
-		`trip_id = $4, dropoff_bus_stop_id = $5, relaxed = $6, response_deadline_at = now() + make_interval(secs => $7)`,
+		`trip_id = $4, dropoff_bus_stop_id = $5, relaxed = $6, offered_at = now(), response_deadline_at = now() + make_interval(secs => $7)`,
 		r.TripID, r.DropOff.StopID, relaxed, timeout)
 	if err != nil {
 		return requestView{}, err
