@@ -1022,6 +1022,7 @@ erDiagram
         bigint dropoff_bus_stop_id FK
         text status
         boolean relaxed
+        timestamptz offered_at
         timestamptz response_deadline_at
         timestamptz boarded_at
     }

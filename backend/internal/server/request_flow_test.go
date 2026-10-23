@@ -276,7 +276,8 @@ func TestReassignOffersTheNextCarAfterTheDelay(t *testing.T) {
 	e := newSupplyEnv(t)
 	first := e.addTrip(t, tripSpec{northM: 500})
 	second := e.addTrip(t, tripSpec{northM: 2000})
-	mustExec(t, e.tx, `UPDATE system_settings SET value = 2 WHERE key = 'reassign_delay'`)
+	// Not the 2 s default: the delay must come from system_settings (DD-20).
+	mustExec(t, e.tx, `UPDATE system_settings SET value = 5 WHERE key = 'reassign_delay'`)
 	r := e.submit(t, e.near(), nil)
 	pending := func() int {
 		w := call(t, e.tx, http.MethodGet, "/api/driver/requests", e.driverToken(t, second), "")
@@ -292,8 +293,8 @@ func TestReassignOffersTheNextCarAfterTheDelay(t *testing.T) {
 	if n := pending(); n != 0 {
 		t.Errorf("next car sees %d pending requests during the delay, want 0", n)
 	}
-	if d := time.Until(*got.ResponseDeadlineAt); d < 61*time.Second || d > 62*time.Second {
-		t.Errorf("deadline in %v, want the 60 s limit counted from the offer 2 s from now", d)
+	if d := time.Until(*got.ResponseDeadlineAt); d < 64*time.Second || d > 65*time.Second {
+		t.Errorf("deadline in %v, want the 60 s limit counted from the offer 5 s from now", d)
 	}
 
 	// Once the delay is over the next car sees it.
