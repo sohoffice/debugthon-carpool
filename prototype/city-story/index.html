@@ -205,8 +205,11 @@ const slowness = (share) => clamp01((SLOW_FROM - share) / (SLOW_FROM - SLOW_FULL
 const OCC = [15, 55]
 const occupancy = (d, q) => d.occPeak * Math.pow(Math.max(0, q) / d.qPeak, d.occExp)
 const congestion = (d, q, v) => Math.max(slowness(v / d.vf), clamp01((occupancy(d, q) - OCC[0]) / (OCC[1] - OCC[0])))
-// A detector's heat fades in and out over this many story seconds as simulated cars come onto and leave its stretch.
-const PRESENCE_EASE = 0.6
+// Heat shows only within HEAT_RADIUS_M of a simulated car: it fades in over PRESENCE_EASE story seconds as cars
+// arrive and out over PRESENCE_RELEASE once they have gone.
+const HEAT_RADIUS_M = 200
+const PRESENCE_EASE = 0.5, PRESENCE_RELEASE = 0.2
+const easePresence = (h, on) => h + (on - h) * (DT / (on > h ? PRESENCE_EASE : PRESENCE_RELEASE))
 // Few simulated people stand for many real ones, so they leave within a short window to make the jam visible.
 const DEPARTURES = [2, 4.5]
 // Riders per carpool car, in turn: two (three aboard), then one (two aboard), 2.5 people per car on average. Each
@@ -304,6 +307,12 @@ const BOTTLENECK_BRIDGES = [
   const at = [pts.reduce((sum, p) => sum + p[0], 0) / pts.length, pts.reduce((sum, p) => sum + p[1], 0) / pts.length]
   return { ...b, lines, pts, di, at }
 })
+// Heat spots along every way of each bridge (both carriageways and the ramps), about 100 m apart; each glows only
+// while a car crossing that bridge is near it.
+const BRIDGE_SPOTS = BOTTLENECK_BRIDGES.flatMap((b, bi) => b.pts.reduce((spots, p) => {
+  if (spots.every((s) => meters(s.at, p) >= 100)) spots.push({ bi, at: p })
+  return spots
+}, []))
 // Distance in metres from p to segment a-b, and how far along the segment (0..1) the nearest point is.
 function segDist(p, a, b) {
   const bx = (b[1] - a[1]) * M_PER_LNG, by = (b[0] - a[0]) * M_PER_LAT
@@ -449,7 +458,7 @@ function simulate(vehicles, t0, q) {
   const speeds = [], jams = [], presence = []
   let rush = 0
   let here = new Float64Array(DETECTORS.length)
-  let hereBridge = new Float64Array(BOTTLENECK_BRIDGES.length)
+  let hereBridge = new Float64Array(BRIDGE_SPOTS.length)
   const bridgePresence = []
   for (let step = 0; step < 6000; step++) {
     const t = t0 + step * DT
@@ -460,7 +469,7 @@ function simulate(vehicles, t0, q) {
     speeds.push(v)
     jams.push(jam)
     const onStretch = new Uint8Array(DETECTORS.length)
-    const onBridge = new Uint8Array(BOTTLENECK_BRIDGES.length)
+    const onBridge = new Uint8Array(BRIDGE_SPOTS.length)
     for (const s of live) {
       const veh = s.v
       if (s.state === 'home' && t >= veh.start) s.state = 'moving'
@@ -469,12 +478,12 @@ function simulate(vehicles, t0, q) {
       const p = s.state === 'home' ? { at: path.points[0], heading: null } : along(path, s.dist / path.len)
       const hit = s.state === 'moving' && path.hits.find(([, at, reach]) => Math.abs(at - s.dist) < reach / 2)
       let jamHere = hit ? jam[hit[0]] : 0
-      if (hit) onStretch[hit[0]] = 1
+      if (hit && Math.abs(hit[1] - s.dist) < HEAT_RADIUS_M) onStretch[hit[0]] = 1
       // On a bottleneck bridge a car slows as much as the bridge's detector says.
       const span = s.state === 'moving' && path.bridgeSpans?.find(([, from, to]) => s.dist >= from && s.dist <= to)
       if (span) {
         jamHere = Math.max(jamHere, jam[BOTTLENECK_BRIDGES[span[0]].di])
-        onBridge[span[0]] = 1
+        BRIDGE_SPOTS.forEach((spot, si) => { if (spot.bi === span[0] && meters(spot.at, p.at) < HEAT_RADIUS_M) onBridge[si] = 1 })
       }
       veh.track.push({ at: p.at, heading: p.heading, state: s.state, jam: jamHere })
       if (s.state !== 'moving') continue
@@ -484,9 +493,9 @@ function simulate(vehicles, t0, q) {
       if (s.leg < veh.legs.length - 1) { s.state = 'holding'; veh.reach = t }
       else { s.state = 'arrived'; veh.arrive = t }
     }
-    here = here.map((h, di) => h + (onStretch[di] - h) * (DT / PRESENCE_EASE))
+    here = here.map((h, di) => easePresence(h, onStretch[di]))
     presence.push(here)
-    hereBridge = hereBridge.map((h, bi) => h + (onBridge[bi] - h) * (DT / PRESENCE_EASE))
+    hereBridge = hereBridge.map((h, si) => easePresence(h, onBridge[si]))
     bridgePresence.push(hereBridge)
     if (live.every((s) => s.state === 'arrived')) return { t0, speeds, jams, presence, bridgePresence, end: t }
   }
@@ -702,22 +711,18 @@ const pins = PICKUPS.map((p, i) => {
 })
 // The office buildings everyone works in; a carpool only joins people going to the same one.
 // The bottlenecks the hackathon brief names, always labelled; 堤頂大道 is a road, so it only gets a label.
-const bottleneckLabels = [...BOTTLENECK_BRIDGES.map((b) => ({ name: b.name, at: b.at })), { name: '堤頂大道', at: [25.0795, 121.5638] }].map((b) => {
+const bottleneckLabels = [...BOTTLENECK_BRIDGES.map((b) => ({ name: b.name, at: b.at })), { name: '堤頂大道', at: [25.0737, 121.5745] }].map((b) => {
   const el = document.createElement('div')
   el.className = 'bneck'
   el.innerHTML = `<span>${b.name}</span>`
   layer.append(el)
   return { el, at: b.at }
 })
-// Heat on each bottleneck bridge: three spots along its longest way, while simulated cars are on it.
-const bridgeHeat = BOTTLENECK_BRIDGES.map((b) => {
-  const way = [...b.lines].sort((x, y) => y.length - x.length)[0]
-  return [0.2, 0.5, 0.8].map((f) => {
-    const el = document.createElement('div')
-    el.className = 'heat'
-    layer.insertBefore(el, parkLabel)
-    return { el, at: way[Math.min(way.length - 1, Math.round(f * (way.length - 1)))] }
-  })
+const bridgeHeat = BRIDGE_SPOTS.map((spot) => {
+  const el = document.createElement('div')
+  el.className = 'heat'
+  layer.insertBefore(el, parkLabel)
+  return { ...spot, el }
 })
 // 光寶總部 and 內科服務大樓 stand about 400 m apart, closer than their labels are wide.
 const LABEL_SHIFT_PX = { 內科服務大樓: 30 }
@@ -876,18 +881,16 @@ function drawHeat(jams, presence, fade) {
 }
 
 function drawBridgeHeat(jams, presence, fade) {
-  bridgeHeat.forEach((spots, bi) => {
+  bridgeHeat.forEach(({ el, at, bi }, si) => {
     const w = jams[BOTTLENECK_BRIDGES[bi].di]
     const size = lerp(28, 76, w)
     const core = 0.35 + 0.5 * w
     const rgb = heatRgb(w)
-    spots.forEach(({ el, at }) => {
-      place(el, at)
-      el.style.opacity = fade * presence[bi] * clamp01(w / 0.15)
-      el.style.width = el.style.height = `${size}px`
-      el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`
-      el.style.background = `radial-gradient(circle, rgba(${rgb},${core}) 0%, rgba(${rgb},${core / 3}) 45%, transparent 70%)`
-    })
+    place(el, at)
+    el.style.opacity = fade * presence[si] * clamp01(w / 0.15)
+    el.style.width = el.style.height = `${size}px`
+    el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`
+    el.style.background = `radial-gradient(circle, rgba(${rgb},${core}) 0%, rgba(${rgb},${core / 3}) 45%, transparent 70%)`
   })
 }
 
