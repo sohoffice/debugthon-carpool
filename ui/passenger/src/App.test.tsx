@@ -2,7 +2,7 @@ import type { PassengerProfile, RequestStatusView, Supply, Tag, TripView } from 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
-import { POLL_INTERVAL_MS } from './config'
+import { POLL_INTERVAL_MS, REASSIGN_HOLD_MS } from './config'
 
 // Google Places is never called in tests (DD-32): one place in the park and one outside for any query.
 vi.mock('../../shared/src/map/usePlaceSearch', () => {
@@ -328,13 +328,47 @@ describe('passenger App', () => {
     fakeBackend({ statuses: [request({}), request({ reassigned_count: 1 })] })
     render(<App />)
     await sendRequest()
+    await screen.findByRole('heading', { name: '駕駛無法載你' })
+    await act(() => vi.advanceTimersByTimeAsync(REASSIGN_HOLD_MS))
     expect(await screen.findByText('上一位駕駛無法載你，已改配下一台車。')).toBeInTheDocument()
+  })
+
+  it('a reassignment holds the board on 駕駛無法載你 for a moment before waiting for the next car (REQ-050, REQ-053)', async () => {
+    fakeBackend({ statuses: [request({}), request({ reassigned_count: 1 })] })
+    render(<App />)
+    await sendRequest()
+    expect(await screen.findByRole('heading', { name: '駕駛無法載你' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '正在等駕駛確認' })).not.toBeInTheDocument()
+
+    await act(() => vi.advanceTimersByTimeAsync(REASSIGN_HOLD_MS))
+    expect(await screen.findByRole('heading', { name: '正在等駕駛確認' })).toBeInTheDocument()
+    expect(screen.getByText('上一位駕駛無法載你，已改配下一台車。')).toBeInTheDocument()
+  })
+
+  it('a request declined before its first status read still holds on 駕駛無法載你 (REQ-050)', async () => {
+    fakeBackend({ statuses: [request({ reassigned_count: 1 })] })
+    render(<App />)
+    await sendRequest()
+    expect(await screen.findByRole('heading', { name: '駕駛無法載你' })).toBeInTheDocument()
+    await act(() => vi.advanceTimersByTimeAsync(REASSIGN_HOLD_MS))
+    expect(await screen.findByRole('heading', { name: '正在等駕駛確認' })).toBeInTheDocument()
+  })
+
+  it('a request already reassigned when the page loads goes straight to waiting (REQ-053)', async () => {
+    const reassigned = request({ reassigned_count: 1 })
+    fakeBackend({ current: [reassigned], statuses: [reassigned] })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '正在等駕駛確認' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '駕駛無法載你' })).not.toBeInTheDocument()
   })
 
   it('does not claim why it was reassigned: the status only has a count (REQ-053)', async () => {
     fakeBackend({ statuses: [request({}), request({ reassigned_count: 2 })] })
     render(<App />)
     await sendRequest()
+    await screen.findByText(/正在改配下一台車/)
+    expect(screen.queryByText(/沒有回應|婉拒|逾時/)).not.toBeInTheDocument()
+    await act(() => vi.advanceTimersByTimeAsync(REASSIGN_HOLD_MS))
     await screen.findByText(/已改配下一台車/)
     // reassigned_count does not say whether the driver declined or timed out.
     expect(screen.queryByText(/沒有回應|婉拒|逾時/)).not.toBeInTheDocument()

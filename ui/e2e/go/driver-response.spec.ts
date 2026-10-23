@@ -46,7 +46,10 @@ test('decline on Go, another car: the request goes to the next car (REQ-050, REQ
   await expect(driver5.getByRole('heading', { name: '有乘客要搭車' })).toBeHidden()
   await driver.getByRole('button', { name: '婉拒' }).click()
 
-  // Reassigned: driver5 is asked while the passenger keeps waiting, told why.
+  // Reassigned: the passenger is told first, while driver5 is not asked yet (the reassign delay);
+  // then driver5 is asked and the passenger keeps waiting, told why.
+  await expect(passenger.getByRole('heading', { name: '駕駛無法載你' })).toBeVisible()
+  await expect(driver5.getByRole('heading', { name: '有乘客要搭車' })).toBeHidden()
   await expect(driver5.getByRole('heading', { name: '有乘客要搭車' })).toBeVisible()
   await expect(passenger.getByRole('heading', { name: '正在等駕駛確認' })).toBeVisible()
   await expect(passenger.getByText('上一位駕駛無法載你，已改配下一台車。')).toBeVisible()

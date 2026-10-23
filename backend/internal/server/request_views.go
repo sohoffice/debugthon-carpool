@@ -71,6 +71,8 @@ func (s *Server) listDriverRequests(c *gin.Context) {
 		  JOIN pickup_points p ON p.id = q.pickup_point_id
 		  LEFT JOIN bus_stops b ON b.id = q.dropoff_bus_stop_id
 		 WHERE q.trip_id = $1 AND q.status IN ('waiting_driver', 'confirmed', 'boarded')
+		   -- A reassigned request is shown once the reassign delay is over (REQ-050).
+		   AND (q.status <> 'waiting_driver' OR q.offered_at IS NULL OR q.offered_at <= now())
 		 ORDER BY q.id`, tripID)
 	if err != nil {
 		s.internalError(c, err)

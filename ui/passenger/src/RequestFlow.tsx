@@ -12,7 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BoardedScreen } from './BoardedScreen'
 import { CompletedScreen, rideMinutesOf } from './CompletedScreen'
-import { api, POLL_INTERVAL_MS } from './config'
+import { api, POLL_INTERVAL_MS, REASSIGN_HOLD_MS } from './config'
 import { ConfirmedScreen } from './ConfirmedScreen'
 import { MatchNotification } from './MatchNotification'
 import { NoMatchScreen } from './NoMatchScreen'
@@ -73,6 +73,22 @@ export function RequestFlow({ initial, fresh, position, pickupPoints, busStops, 
     }
   }, [trip, boardedTripId])
 
+  // A driver declined or timed out while we watched: hold on 駕駛無法載你 for a moment so the step
+  // is seen, even though the backend has already moved the request to the next car (REQ-050).
+  // A request just sent counts from 0: the first driver can decline before the first status read.
+  const reassignedSeen = useRef(fresh ? 0 : initial.reassigned_count)
+  const [declined, setDeclined] = useState(false)
+  useEffect(() => {
+    if (request.reassigned_count <= reassignedSeen.current) return
+    reassignedSeen.current = request.reassigned_count
+    setDeclined(true)
+  }, [request])
+  useEffect(() => {
+    if (!declined) return
+    const timer = setTimeout(() => setDeclined(false), REASSIGN_HOLD_MS)
+    return () => clearTimeout(timer)
+  }, [declined])
+
   // The moment a car is matched: simulated notification and the one choreographed transition (UD-10, UD-12).
   useEffect(() => {
     if (request.status === 'confirmed' && previous.current === 'waiting_driver' && request.vehicle && request.pickup_point) {
@@ -105,7 +121,7 @@ export function RequestFlow({ initial, fresh, position, pickupPoints, busStops, 
 
   let screen
   if (request.status === 'waiting_driver') {
-    screen = <WaitingScreen pickupName={pickupName} reassigned={request.reassigned_count > 0} />
+    screen = <WaitingScreen pickupName={pickupName} reassigned={request.reassigned_count > 0} declined={declined} />
   } else if (request.status === 'confirmed' && request.pickup_point && request.vehicle && request.trip) {
     screen = (
       <ConfirmedScreen

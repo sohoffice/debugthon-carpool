@@ -84,7 +84,7 @@ func currentRank(ctx context.Context, db DB, id, tripID int64) (int, error) {
 // reassign gives up the current assignment of a waiting request (outcome is declined,
 // timed_out or trip_ended) and moves it to the next candidate whose seat can be held, or to no_match when
 // none is left (REQ-050, DD-12). The new assignment waits for the driver like the first one (DD-13,
-// DD-33).
+// DD-33), but is offered to that driver only after the reassign delay.
 // s.db must be the transaction that holds the request lock.
 func (s *Server) reassign(ctx context.Context, q lockedRequest, outcome string) error {
 	rank, err := currentRank(ctx, s.db, q.ID, *q.TripID)
@@ -99,6 +99,10 @@ func (s *Server) reassign(ctx context.Context, q lockedRequest, outcome string) 
 		return err
 	}
 	timeout, err := settings.New(s.db).Get(ctx, "driver_confirm_timeout")
+	if err != nil {
+		return err
+	}
+	delay, err := settings.New(s.db).Get(ctx, "reassign_delay")
 	if err != nil {
 		return err
 	}
@@ -142,9 +146,13 @@ func (s *Server) reassign(ctx context.Context, q lockedRequest, outcome string) 
 		if err != nil {
 			return err
 		}
+		// Offered after the delay, so the passenger hears of the reassignment before the next
+		// driver is asked; the time limit runs from the offer.
 		if err := transition(ctx, s.db, q.ID, reqWaitingDriver, reqWaitingDriver,
-			`trip_id = $4, dropoff_bus_stop_id = $5, relaxed = $6, response_deadline_at = now() + make_interval(secs => $7)`,
-			n.tripID, n.stopID, relaxed, timeout); err != nil {
+			`trip_id = $4, dropoff_bus_stop_id = $5, relaxed = $6,
+			 offered_at = now() + make_interval(secs => $8),
+			 response_deadline_at = now() + make_interval(secs => $8 + $7)`,
+			n.tripID, n.stopID, relaxed, timeout, delay); err != nil {
 			return err
 		}
 		return nil
