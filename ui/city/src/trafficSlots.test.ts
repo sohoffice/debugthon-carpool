@@ -21,12 +21,12 @@ describe('traffic slot picker (ui-oi-22, SC-C1)', () => {
     expect(changeDate({ date: '2026-10-23', time: '08:00' }, TODAY, TODAY, '08:00')).toEqual({ date: TODAY, time: '08:00' })
   })
 
-  it('puts today first, then the past days newest first, with the weekday', () => {
+  it("puts today first, then the past days newest first, with the weekday and the day's traffic source (UD-28)", () => {
     const days = [
-      { date: '2026-10-23', weekday: 5, rides: 0, weather: null, simulated: true },
-      { date: '2026-10-22', weekday: 4, rides: 0, weather: null, simulated: true },
+      { date: '2026-10-23', weekday: 5, rides: 0, weather: null, simulated: true, traffic_simulated: true },
+      { date: '2026-10-22', weekday: 4, rides: 0, weather: null, simulated: true, traffic_simulated: false },
     ]
-    expect(dateOptions(TODAY, days).map((o) => o.label)).toEqual(['10/26 週一（今天）', '10/23 週五', '10/22 週四'])
+    expect(dateOptions(TODAY, days).map((o) => o.label)).toEqual(['10/26 週一（今天 · 模擬）', '10/23 週五 · 模擬', '10/22 週四 · 實測'])
   })
 
   it('asks for the slot by its Taipei start time and reads it back the same way', () => {

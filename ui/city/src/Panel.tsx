@@ -8,6 +8,8 @@ interface PanelProps {
   kicker: string
   /** Data marks after the kicker (REQ-063): 模擬, 含模擬, 估算. */
   marks?: (string | false | undefined)[]
+  /** Anything else after the kicker, e.g. the TDX 實測 source mark (UD-28). */
+  kickerExtra?: ReactNode
   /** One line that states the conclusion (UD-27); absent until data arrives. */
   title?: string
   /** Shown above the content when this area's last poll failed; the last data stays (SC-C1). */
@@ -17,7 +19,7 @@ interface PanelProps {
 }
 
 /** A white war-room panel: kicker with data marks, then a headline that says the conclusion (UD-27). */
-export function Panel({ name, kicker, marks = [], title, error, className = '', children }: PanelProps) {
+export function Panel({ name, kicker, marks = [], kickerExtra, title, error, className = '', children }: PanelProps) {
   return (
     <section aria-label={name} className={`flex min-h-0 min-w-0 flex-col rounded-[8px] border border-rule bg-white px-4 pt-3 pb-3.5 ${className}`}>
       <p className="flex items-center gap-2 text-[13px] font-semibold text-ink-soft">
@@ -25,6 +27,7 @@ export function Panel({ name, kicker, marks = [], title, error, className = '', 
         {marks.filter((m): m is string => !!m).map((m) => (
           <SimulatedBadge key={m} label={m} />
         ))}
+        {kickerExtra}
       </p>
       {title && <h2 className="mt-0.5 mb-2 text-lg/snug font-semibold text-ink">{title}</h2>}
       {error && <ErrorNote>{error}</ErrorNote>}

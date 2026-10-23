@@ -300,7 +300,8 @@ export function createCity(lookups: Lookups, commute: ReturnType<typeof createCo
       const rides = pickups.reduce((n, p) => n + statsOf(p.id, date).reduce((m, s) => m + s.rides, 0), 0)
       // The day's weather is its rainiest slot (DD-38), the same copy as /api/commute/traffic.
       const weather = commute.weatherCells(date).map((c) => c.weather).reduce((a, b) => (b.precipitation > a.precipitation ? b : a))
-      return { date, weekday: weekdayOf(date), rides, weather, simulated: true }
+      // Every day's traffic is simulated in the mock, so the date menu shows 模擬 (REQ-063).
+      return { date, weekday: weekdayOf(date), rides, weather, simulated: true, traffic_simulated: true }
     })
     const perDay = (n: number) => Math.round((n / daysBack.length) * 10) / 10
     return {

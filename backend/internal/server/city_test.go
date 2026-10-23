@@ -145,11 +145,12 @@ func (r cityTodayResp) completedAt(pickupID int64) int {
 type cityHistoryResp struct {
 	cityClockResp
 	Days []struct {
-		Date      string          `json:"date"`
-		Weekday   int             `json:"weekday"`
-		Rides     int             `json:"rides"`
-		Weather   *commuteWeather `json:"weather"`
-		Simulated bool            `json:"simulated"`
+		Date             string          `json:"date"`
+		Weekday          int             `json:"weekday"`
+		Rides            int             `json:"rides"`
+		Weather          *commuteWeather `json:"weather"`
+		Simulated        bool            `json:"simulated"`
+		TrafficSimulated bool            `json:"traffic_simulated"`
 	} `json:"days"`
 	PickupPoints []struct {
 		cityPlaceResp

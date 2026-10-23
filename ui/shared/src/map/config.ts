@@ -13,3 +13,10 @@ export const DEFAULT_ZOOM = 13
 
 /** Map drawing colours, the same as the brand tokens in theme.css (8.1); the Maps API needs literal values. */
 export const MAP_COLORS = { brand: '#00707c', white: '#ffffff', ink: '#132126' }
+
+/** The city war room's road lines (8.1, UD-28): congestion-1..4, vs-usual-1..4 and no-data, as literal values. */
+export const ROAD_COLORS = {
+  congestion: ['#3b82c4', '#e3a51c', '#e2632c', '#b42232'],
+  vsUsual: ['#3b82c4', '#a3adb1', '#e2632c', '#b42232'],
+  noData: '#a9b7ba',
+} as const

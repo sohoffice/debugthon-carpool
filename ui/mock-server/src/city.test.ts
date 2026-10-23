@@ -120,6 +120,8 @@ describe('mock /api/city/* (DD-39, DD-40, DD-41)', () => {
     const h = get<CityHistory>('/api/city/history')
     expect(h.days.map((d) => d.date)).toEqual(pastWorkdays('2026-10-26'))
     expect(h.days.every((d) => d.weather !== null && d.rides > 0)).toBe(true)
+    // traffic_simulated is the day's ?date= simulated: every day is simulated in the mock (REQ-063)
+    for (const d of h.days) expect(d.traffic_simulated).toBe(get<CityTrafficDay>(`/api/city/traffic?date=${d.date}`).simulated)
     expect(h.pickup_points).toHaveLength(3)
     for (const p of h.pickup_points) expect(p.rides_per_day).toBeLessThanOrEqual(p.passengers_per_day)
   })

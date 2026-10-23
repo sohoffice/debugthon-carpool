@@ -62,7 +62,7 @@ ui/
 
 ### 4. 地圖
 
-- 使用 Google Maps（`@vis.gl/react-google-maps`），**一律包在 `shared/src/map/` 裡**。各 app 從 `@carpool/shared` import `RouteMap`、`VehicleMarker`、`MapView`、`PlaceMarker`、`RoutePolyline`、`CarDot`、`HeatSpot`（市府管理介面的車點與車流熱區），不直接 import `@vis.gl/*`。日後換地圖服務只需改一個地方。
+- 使用 Google Maps（`@vis.gl/react-google-maps`），**一律包在 `shared/src/map/` 裡**。各 app 從 `@carpool/shared` import `RouteMap`、`VehicleMarker`、`MapView`、`PlaceMarker`、`RoutePolyline`、`CarDot`（市府管理介面的車點）、`RoadSegment`（市府管理介面入口的路段線，UD-28；畫線的範圍由 `pathAround`、`pathAlongBearing` 算出），不直接 import `@vis.gl/*`。日後換地圖服務只需改一個地方。
 - `RoutePolyline` 接受 `path`（座標陣列）或 Google 的 `encodedPath`（Routes API 回傳的 polyline 可直接傳入）。
 - 需要新的地圖功能時：通用的才加到 `shared/src/map/`；否則在 app 內以 shared 的元件組合出來。
 

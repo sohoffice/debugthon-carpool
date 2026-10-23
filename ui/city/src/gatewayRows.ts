@@ -15,6 +15,8 @@ export interface GridCell {
   speed: number | null
   /** Tooltip and accessible name. */
   label: string
+  /** The gateway in this slot, for the line, the tooltip and 比平常. */
+  at: CityGateway
 }
 
 export interface GridRow {
@@ -34,11 +36,11 @@ function cellOf(g: CityGateway, time: string, notYet: boolean): GridCell {
   if (notYet) {
     const speed = g.past_avg_speed_kmh
     const level = speed === null ? null : gatewayLevel({ avg_speed_kmh: speed, reference_speed_kmh: g.reference_speed_kmh })
-    return { time, kind: 'not-yet', level, speed, label: `${name} 還沒到${speed === null ? '' : `，平常 ${Math.round(speed)} km/h`}` }
+    return { time, kind: 'not-yet', level, speed, label: `${name} 還沒到${speed === null ? '' : `，平常 ${Math.round(speed)} km/h`}`, at: g }
   }
   const level = gatewayLevel(g)
-  if (level === null || g.avg_speed_kmh === null) return { time, kind: 'none', level: null, speed: null, label: `${name} 沒有資料` }
-  return { time, kind: 'data', level, speed: g.avg_speed_kmh, label: `${name} ${LEVEL_NAMES[level]} ${Math.round(g.avg_speed_kmh)} km/h` }
+  if (level === null || g.avg_speed_kmh === null) return { time, kind: 'none', level: null, speed: null, label: `${name} 沒有資料`, at: g }
+  return { time, kind: 'data', level, speed: g.avg_speed_kmh, label: `${name} ${LEVEL_NAMES[level]} ${Math.round(g.avg_speed_kmh)} km/h`, at: g }
 }
 
 /** One row per gateway in the API's sort_order (UD-28), one cell per slot (REQ-079, SC-C1). */

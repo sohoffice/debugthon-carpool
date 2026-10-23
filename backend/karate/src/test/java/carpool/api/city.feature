@@ -196,7 +196,7 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
     * match response contains clockShape
     * match response.simulated == true
     * match response.days == '#[10]'
-    * match each response.days == { date: '#string', weekday: '#? _ >= 1 && _ <= 5', rides: '#number? _ >= 0', weather: '#(weatherShape)', simulated: '#boolean' }
+    * match each response.days == { date: '#string', weekday: '#? _ >= 1 && _ <= 5', rides: '#number? _ >= 0', weather: '#(weatherShape)', simulated: '#boolean', traffic_simulated: '#boolean' }
     * match response.pickup_points == '#[3]'
     * match each response.pickup_points == karate.merge(placeShape, { drivers_per_day: '#number? _ >= 0', passengers_per_day: '#number? _ >= 0', rides_per_day: '#number? _ >= 0' })
     # one decimal (REQ-080)
@@ -204,6 +204,24 @@ Feature: city dashboard (REQ-063, REQ-078 to REQ-084, DD-36, DD-39, DD-40, DD-41
     * def commute = karate.call('classpath:carpool/api/act-get.feature', { token: 'passenger:passenger1', path: 'api/commute/traffic' }).response
     * match karate.map(response.days, function(d) { return d.date }) == karate.map(commute.days, function(d) { return d.date })
     * match noIdentity(response) == []
+
+  Scenario: each history day's traffic source is that day's traffic simulated flag (REQ-063, DD-36)
+    * path 'api', 'city', 'history'
+    * header Authorization = 'Bearer city:city1'
+    * method get
+    * status 200
+    * def days = response.days
+    * def check =
+      """
+      function(d) {
+        var day = karate.call('classpath:carpool/api/act-get.feature', { token: 'city:city1', path: 'api/city/traffic', query: { date: d.date } }).response
+        return { date: d.date, traffic_simulated: d.traffic_simulated, day_simulated: day.simulated }
+      }
+      """
+    * def pairs = karate.map(days, check)
+    * match each pairs == '#? _.traffic_simulated == _.day_simulated'
+    # the seeded TDX days are measured; at least one past workday is (DD-36)
+    * match pairs[*].traffic_simulated contains false
 
   Scenario Outline: a driver or passenger token is refused - <resource> as <token>
     * path 'api', 'city', '<resource>'

@@ -1,4 +1,4 @@
-import type { CityGateway, CityHistory, CityLive, CityToday, CityTraffic, CityTrafficDay } from '@carpool/shared'
+import type { CityGateway, CityHistory, CityLive, CityToday, CityTrafficDay } from '@carpool/shared'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -38,8 +38,8 @@ const WEATHER = { station_id: 'C0A9F0', station_name: '內湖', obs_time: '', we
 const HISTORY: CityHistory = {
   ...CLOCK,
   days: [
-    { date: '2026-10-23', weekday: 5, rides: 60, weather: WEATHER, simulated: true },
-    { date: '2026-10-22', weekday: 4, rides: 40, weather: { ...WEATHER, weather: '晴', precipitation: 0 }, simulated: true },
+    { date: '2026-10-23', weekday: 5, rides: 60, weather: WEATHER, simulated: true, traffic_simulated: true },
+    { date: '2026-10-22', weekday: 4, rides: 40, weather: { ...WEATHER, weather: '晴', precipitation: 0 }, simulated: true, traffic_simulated: false },
   ],
   pickup_points: [
     { ...SONGSHAN, drivers_per_day: 31, passengers_per_day: 38.4, rides_per_day: 29.2 },
@@ -73,36 +73,32 @@ function gateway(vd_id: string, name: string, speed: number, past: number): City
     simulated: true,
   }
 }
-function traffic(slot: string): CityTraffic {
-  return {
-    ...CLOCK,
-    slot_start: slot,
-    // 22 vs 31: more than 20% slower, red. 40 vs 45: not.
-    detectors: [gateway('V1', '堤頂大道', 22, 31), gateway('V2', '環東大道', 40, 45)],
-    weather: null,
-    simulated: true,
-    weather_simulated: true,
-  }
-}
 const SLOT_TIMES = ['07:00', '07:15', '07:30', '07:45', '08:00', '08:15', '08:30', '08:45', '09:00', '09:15', '09:30', '09:45']
-/** Today at 08:15: 07:00-08:00 have traffic, the rest only the past speeds (4.18). 堤頂大道 22/60 = 37%: 壅塞. */
-function trafficDay(): CityTrafficDay {
+/**
+ * A day's 12 slots: today at 08:15 has traffic 07:00-08:00 and only the past speeds after (4.18);
+ * 10/22 is TDX measured all morning (simulated false), 10/23 simulated. 堤頂大道 22/60 = 37%: 壅塞.
+ */
+function trafficDay(date = CLOCK.today): CityTrafficDay {
+  const isToday = date === CLOCK.today
+  const simulated = date !== '2026-10-22'
   return {
     ...CLOCK,
-    date: CLOCK.today,
+    date,
     slots: SLOT_TIMES.map((t, s) => {
-      const over = s <= 4
+      const over = !isToday || s <= 4
       const notYet = (g: CityGateway): CityGateway => ({ ...g, volume: null, avg_speed_kmh: null, occupancy_pct: null, coverage_pct: null, simulated: false })
-      const detectors = [gateway('V1', '堤頂大道', 22, 31), gateway('V2', '環東大道', 50, 45)]
+      // On 10/22 環東大道 is the slower one at 08:30 (20/60 = 33%).
+      const slow = date === '2026-10-22' && t === '08:30'
+      const detectors = [gateway('V1', '堤頂大道', slow ? 40 : 22, 31), gateway('V2', '環東大道', slow ? 20 : 50, 45)].map((g) => ({ ...g, simulated: over && simulated }))
       return {
-        slot_start: `2026-10-26T${t}:00+08:00`,
+        slot_start: `${date}T${t}:00+08:00`,
         detectors: over ? detectors : detectors.map(notYet),
-        weather: null,
-        simulated: over,
+        weather: over ? WEATHER : null,
+        simulated: over && simulated,
         weather_simulated: over,
       }
     }),
-    simulated: true,
+    simulated,
     weather_simulated: true,
   }
 }
@@ -115,11 +111,8 @@ const ok: Responder = (path) => {
   if (path === '/api/city/live') return { status: 200, body: LIVE }
   if (path === '/api/city/today') return { status: 200, body: TODAY }
   if (path === '/api/city/history') return { status: 200, body: HISTORY }
-  if (path === '/api/city/traffic?date=2026-10-26') return { status: 200, body: trafficDay() }
-  if (path.startsWith('/api/city/traffic')) {
-    const slot = new URLSearchParams(path.split('?')[1]).get('slot')
-    return { status: 200, body: traffic(slot ?? '2026-10-26T08:00:00+08:00') }
-  }
+  const date = path.match(/^\/api\/city\/traffic\?date=(\d{4}-\d{2}-\d{2})$/)?.[1]
+  if (date) return { status: 200, body: trafficDay(date) }
   return { status: 403, body: { error: { code: 'forbidden', message: '此角色不能使用這個 API' } } }
 }
 
@@ -144,6 +137,9 @@ async function renderApp() {
 }
 
 const tab = (name: string) => fireEvent.click(screen.getByRole('tab', { name }))
+const dateMenu = () => screen.getByRole('combobox', { name: '日期' }) as HTMLSelectElement
+const slotButton = (name: string) => within(screen.getByRole('group', { name: '時段' })).getByRole('button', { name })
+const selectedName = () => within(screen.getByRole('region', { name: '選取的入口' })).getByRole('heading')
 
 describe('city war room (SC-C1, UD-27)', () => {
   it('opens on 總覽 with the full product name, the Demo clock and /api/city/* only', async () => {
@@ -208,20 +204,24 @@ describe('city war room (SC-C1, UD-27)', () => {
     expect(within(grid).getByRole('heading')).toHaveTextContent('堤頂大道 07:00–08:15 最慢')
   })
 
-  it('clicking a past cell opens 車流熱力 at that slot; a not-yet cell opens the latest slot', async () => {
+  it('clicking a past cell opens 車流熱力 at that gateway and slot; a not-yet cell opens the latest slot', async () => {
     await renderApp()
     const cells = () => within(screen.getByRole('region', { name: '入口 × 15 分鐘' })).getAllByRole('gridcell')
-    fireEvent.click(cells()[2]) // 07:30
+    fireEvent.click(cells()[12 + 4]) // 環東大道 08:00
     await act(() => vi.advanceTimersByTimeAsync(0))
     expect(screen.getByRole('tab', { name: '車流熱力' })).toHaveAttribute('aria-selected', 'true')
-    const [date, time] = screen.getAllByRole('combobox') as HTMLSelectElement[]
-    expect([date.value, time.value]).toEqual(['2026-10-26', '07:30'])
-    expect(calls.at(-1)).toBe(`/api/city/traffic?slot=${encodeURIComponent('2026-10-26T07:30:00+08:00')}`)
+    expect(slotButton('08:00–08:15')).toHaveAttribute('aria-pressed', 'true')
+    expect(selectedName()).toHaveTextContent('2. 環東大道')
 
     tab('總覽')
-    fireEvent.click(cells()[9]) // 09:15, not yet
-    await act(() => vi.advanceTimersByTimeAsync(0))
-    expect((screen.getAllByRole('combobox')[1] as HTMLSelectElement).value).toBe('08:00')
+    fireEvent.click(cells()[2]) // 堤頂大道 07:30
+    expect(slotButton('07:30–07:45')).toHaveAttribute('aria-pressed', 'true')
+    expect(selectedName()).toHaveTextContent('1. 堤頂大道')
+
+    tab('總覽')
+    fireEvent.click(cells()[12 + 9]) // 環東大道 09:15, not yet
+    expect(slotButton('08:00–08:15')).toHaveAttribute('aria-pressed', 'true')
+    expect(selectedName()).toHaveTextContent('2. 環東大道')
   })
 
   it("today's requests match /api/city/today and /api/city/live", async () => {
@@ -290,17 +290,105 @@ describe('city war room (SC-C1, UD-27)', () => {
     expect(within(box).getByText('含模擬')).toBeInTheDocument()
   })
 
-  it('車流熱力 keeps T41: date then slot; picking a past slot asks for it', async () => {
+  it('車流熱力 opens on today, the latest slot, 路況, the slowest gateway selected; marked 模擬 (SC-C1)', async () => {
     await renderApp()
     tab('車流熱力')
-    const [date, time] = screen.getAllByRole('combobox') as HTMLSelectElement[]
-    expect(date.value).toBe('2026-10-26')
-    expect(time.value).toBe('08:00')
-    expect(within(time).getAllByRole('option')).toHaveLength(5)
-    fireEvent.change(date, { target: { value: '2026-10-23' } })
+    expect(dateMenu().value).toBe('2026-10-26')
+    expect(slotButton('08:00–08:15')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '路況' })).toHaveAttribute('aria-pressed', 'true')
+    expect(selectedName()).toHaveTextContent('1. 堤頂大道') // 22/60 = 37%, the lowest ratio
+    expect(screen.getByTestId('map-slot')).toHaveTextContent('10/26 週一 08:00–08:15模擬')
+    // 08:15 on today are not over yet: they cannot be picked (DD-41)
+    expect(slotButton('08:15–08:30')).toBeDisabled()
+    expect(slotButton('07:00–07:15')).toBeEnabled()
+    // no blob heat map and no main-road speed table any more
+    expect(screen.queryByText(/主要道路車速/)).not.toBeInTheDocument()
+  })
+
+  it('the date menu says where each day comes from; 10/22 is TDX 實測, all 12 slots open (UD-28)', async () => {
+    await renderApp()
+    tab('車流熱力')
+    expect(within(dateMenu()).getAllByRole('option').map((o) => o.textContent)).toEqual(['10/26 週一（今天 · 模擬）', '10/23 週五 · 模擬', '10/22 週四 · 實測'])
+    fireEvent.change(dateMenu(), { target: { value: '2026-10-22' } })
     await act(() => vi.advanceTimersByTimeAsync(0))
-    expect(calls.at(-1)).toBe(`/api/city/traffic?slot=${encodeURIComponent('2026-10-23T08:00:00+08:00')}`)
-    expect(screen.getByText(/主要道路車速 10\/23/)).toBeInTheDocument()
-    expect(screen.getByText('堤頂大道').closest('tr')).toHaveClass('text-danger')
+    expect(calls).toContain('/api/city/traffic?date=2026-10-22')
+    expect(screen.getByTestId('map-slot')).toHaveTextContent('10/22 週四 08:00–08:15TDX 實測')
+    expect(screen.getAllByRole('button', { name: /^\d\d:\d\d–/ }).every((b) => !(b as HTMLButtonElement).disabled)).toBe(true)
+    fireEvent.change(dateMenu(), { target: { value: '2026-10-23' } })
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(screen.getByTestId('map-slot')).toHaveTextContent('10/23 週五 08:00–08:15模擬')
+  })
+
+  it('the slowest three by speed ratio, coloured as the grid column; a cell changes gateway and slot, a row name only the gateway', async () => {
+    await renderApp()
+    tab('車流熱力')
+    fireEvent.change(dateMenu(), { target: { value: '2026-10-22' } })
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    const slowest = () => within(screen.getByRole('region', { name: '最慢的 3 個入口' })).getAllByRole('listitem')
+    expect(slowest().map((li) => li.textContent)).toEqual([expect.stringContaining('1. 堤頂大道'), expect.stringContaining('2. 環東大道')])
+    const grid = () => screen.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })
+    fireEvent.click(within(grid()).getAllByRole('gridcell')[12 + 6]) // 環東大道 08:30
+    expect(slotButton('08:30–08:45')).toHaveAttribute('aria-pressed', 'true')
+    expect(selectedName()).toHaveTextContent('2. 環東大道')
+    expect(slowest()[0]).toHaveTextContent('2. 環東大道') // 20/60 at 08:30
+    expect(within(slowest()[0]).getByText('壅塞 · 參考 33% · 平常 45')).toBeInTheDocument()
+    // the same level as the grid's 08:30 column
+    expect(within(grid()).getAllByRole('gridcell')[12 + 6]).toHaveAttribute('data-level', '3')
+    fireEvent.click(within(grid()).getAllByRole('rowheader')[0])
+    expect(selectedName()).toHaveTextContent('1. 堤頂大道')
+    expect(slotButton('08:30–08:45')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('on 車流熱力 a cell without data still selects its gateway, the slot stays', async () => {
+    respond = (path) => {
+      const r = ok(path)
+      if (!path.includes('date=')) return r
+      const day = r.body as CityTrafficDay
+      const gap = (g: CityGateway, t: string) => (g.vd_id === 'V2' && t.includes('T07:30') ? { ...g, avg_speed_kmh: null, volume: null } : g)
+      return { ...r, body: { ...day, slots: day.slots.map((sl) => ({ ...sl, detectors: sl.detectors.map((g) => gap(g, sl.slot_start)) })) } }
+    }
+    await renderApp()
+    tab('車流熱力')
+    expect(selectedName()).toHaveTextContent('1. 堤頂大道')
+    const cell = within(screen.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })).getAllByRole('gridcell')[12 + 2]
+    expect(cell).toHaveAttribute('data-kind', 'none')
+    fireEvent.click(cell)
+    expect(selectedName()).toHaveTextContent('2. 環東大道')
+    expect(slotButton('08:00–08:15')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('比平常 colours by the other days at the same time; 還沒到 is 差不多 (DD-44)', async () => {
+    await renderApp()
+    tab('車流熱力')
+    fireEvent.click(screen.getByRole('button', { name: '比平常' }))
+    const cells = within(screen.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })).getAllByRole('gridcell')
+    // 堤頂大道 22 vs 31: 29% slower; 環東大道 50 vs 45: 11% faster
+    expect(cells[0]).toHaveAttribute('data-level', '4')
+    expect(cells[12]).toHaveAttribute('data-level', '1')
+    expect(cells[8]).toHaveAttribute('data-level', '2') // 09:00, not yet
+    expect(screen.getByLabelText('圖例')).toHaveTextContent('慢 25% 以上')
+  })
+
+  it('a proxy gateway has * and its detector place in the right column', async () => {
+    respond = (path) => {
+      const r = ok(path)
+      if (!path.includes('date=')) return r
+      const day = r.body as CityTrafficDay
+      const proxy = (g: CityGateway) => (g.vd_id === 'V1' ? { ...g, gateway: '成美橋', proxy: true, proxy_note: '橋北端的新明路' } : g)
+      return { ...r, body: { ...day, slots: day.slots.map((sl) => ({ ...sl, detectors: sl.detectors.map(proxy) })) } }
+    }
+    await renderApp()
+    tab('車流熱力')
+    expect(selectedName()).toHaveTextContent('1. 成美橋 *')
+    expect(screen.getByRole('region', { name: '選取的入口' })).toHaveTextContent('代理值：偵測器在橋北端的新明路')
+  })
+
+  it('即時地圖 has 疊上車流, off by default', async () => {
+    await renderApp()
+    tab('即時地圖')
+    const box = screen.getByRole('checkbox', { name: '疊上車流' })
+    expect(box).not.toBeChecked()
+    fireEvent.click(box)
+    expect(box).toBeChecked()
   })
 })

@@ -14,7 +14,7 @@ interface OverviewTabProps {
   historyError: boolean
   trafficDay: CityTrafficDay | undefined
   trafficDayError: boolean
-  onCell: (time: string) => void
+  onCell: (vdId: string, time: string) => void
 }
 
 /**

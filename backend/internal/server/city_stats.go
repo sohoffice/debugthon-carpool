@@ -142,7 +142,10 @@ type historyDay struct {
 	// The day's weather: the slot with the most rain, as on the commute heatmaps (DD-38), from the
 	// traffic table (DD-36); null for a day without observations.
 	Weather   json.RawMessage `json:"weather"`
-	Simulated bool            `json:"simulated"`
+	Simulated bool            `json:"simulated"` // the rides (REQ-063)
+	// The day's commute traffic is simulated, not TDX measured: the day's ?date= simulated, for the
+	// war room's date menu (REQ-063, DD-36).
+	TrafficSimulated bool `json:"traffic_simulated"`
 }
 
 type historyPickup struct {
@@ -185,7 +188,8 @@ func (s *Server) getCityHistory(c *gin.Context) {
 
 func (s *Server) historyDays(ctx context.Context, m commuteMoment) ([]historyDay, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT d.day, extract(isodow FROM d.day)::int, COALESCE(st.rides, 0), w.weather, COALESCE(st.simulated, false)
+		SELECT d.day, extract(isodow FROM d.day)::int, COALESCE(st.rides, 0), w.weather, COALESCE(st.simulated, false),
+		       COALESCE(tr.simulated, false)
 		  FROM commute_past_workdays($1::date, $2) d (day)
 		  LEFT JOIN LATERAL (
 		        SELECT sum(ride_count)::int AS rides, bool_or(simulated) AS simulated FROM supply_demand_stats
@@ -198,7 +202,11 @@ func (s *Server) historyDays(ctx context.Context, m commuteMoment) ([]historyDay
 		           AND o.slot_start < ((d.day + 1)::timestamp AT TIME ZONE 'Asia/Taipei')
 		         ORDER BY (o.weather->>'precipitation')::numeric DESC, o.slot_start, o.vd_id
 		         LIMIT 1) w ON true
-		 ORDER BY d.day DESC`, m.Today.Format(dateLayout), commutePastWorkdays)
+		  LEFT JOIN LATERAL (
+		        SELECT bool_or(o.simulated) AS simulated FROM traffic_observations o
+		         WHERE o.slot_start >= (d.day::timestamp AT TIME ZONE 'Asia/Taipei') + make_interval(mins => $3)
+		           AND o.slot_start < (d.day::timestamp AT TIME ZONE 'Asia/Taipei') + make_interval(mins => $4)) tr ON true
+		 ORDER BY d.day DESC`, m.Today.Format(dateLayout), commutePastWorkdays, commuteWindowStart, commuteWindowEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +216,7 @@ func (s *Server) historyDays(ctx context.Context, m commuteMoment) ([]historyDay
 		var day time.Time
 		var d historyDay
 		var weather []byte
-		if err := rows.Scan(&day, &d.Weekday, &d.Rides, &weather, &d.Simulated); err != nil {
+		if err := rows.Scan(&day, &d.Weekday, &d.Rides, &weather, &d.Simulated, &d.TrafficSimulated); err != nil {
 			return nil, err
 		}
 		d.Date = day.Format(dateLayout)
