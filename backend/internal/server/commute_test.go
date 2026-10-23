@@ -71,21 +71,24 @@ type trafficResp struct {
 		Date    string `json:"date"`
 		Weekday int    `json:"weekday"`
 		Slots   []struct {
-			SlotStart   time.Time      `json:"slot_start"`
-			Volume      int64          `json:"volume"`
-			AvgSpeedKmh *float64       `json:"avg_speed_kmh"`
-			Weather     commuteWeather `json:"weather"`
-			Simulated   bool           `json:"simulated"`
+			SlotStart        time.Time      `json:"slot_start"`
+			Volume           int64          `json:"volume"`
+			AvgSpeedKmh      *float64       `json:"avg_speed_kmh"`
+			Weather          commuteWeather `json:"weather"`
+			Simulated        bool           `json:"simulated"`
+			WeatherSimulated bool           `json:"weather_simulated"`
 		} `json:"slots"`
 	} `json:"days"`
-	Simulated bool `json:"simulated"`
+	Simulated        bool `json:"simulated"`
+	WeatherSimulated bool `json:"weather_simulated"`
 }
 
 type weatherResp struct {
-	Now       time.Time       `json:"now"`
-	Today     string          `json:"today"`
-	Weather   *commuteWeather `json:"weather"`
-	Simulated bool            `json:"simulated"`
+	Now              time.Time       `json:"now"`
+	Today            string          `json:"today"`
+	Weather          *commuteWeather `json:"weather"`
+	Simulated        bool            `json:"simulated"`
+	WeatherSimulated bool            `json:"weather_simulated"`
 }
 
 func getTraffic(t *testing.T, tx pgx.Tx, realNow time.Time) trafficResp {
@@ -200,7 +203,9 @@ func TestCommutePastWorkdays(t *testing.T) {
 }
 
 // REQ-077, REQ-084: on Saturday 10/24 with demo_clock 08:15, today is Monday 10/26; the API returns
-// 10/12-10/23, 12 commute slots a day with the weekday, and today holds only 07:00-08:00.
+// 10/12-10/23, 12 commute slots a day with the weekday, and today holds only 07:00-08:00. 10/23 has
+// no measurements, so its slots are simulated; the others are TDX (DD-36). Weather is always
+// simulated.
 func TestCommuteTrafficOnDemoSaturday(t *testing.T) {
 	tx := testTx(t)
 	setDemoClock(t, tx, 495)
@@ -216,8 +221,8 @@ func TestCommuteTrafficOnDemoSaturday(t *testing.T) {
 	if got := dates(r); !reflect.DeepEqual(got, wantDates) {
 		t.Fatalf("dates = %v, want %v", got, wantDates)
 	}
-	if !r.Simulated {
-		t.Error("simulated = false, want true (REQ-063)")
+	if !r.Simulated || !r.WeatherSimulated {
+		t.Errorf("simulated %v, weather simulated %v; want both true: 10/23 is simulated (REQ-063)", r.Simulated, r.WeatherSimulated)
 	}
 	for _, d := range r.Days {
 		day, _ := time.ParseInLocation(dateLayout, d.Date, taipei)
@@ -232,8 +237,8 @@ func TestCommuteTrafficOnDemoSaturday(t *testing.T) {
 			if !s.SlotStart.Equal(want) {
 				t.Errorf("%s slot %d starts %v, want %v", d.Date, i, s.SlotStart, want)
 			}
-			if s.Volume <= 0 || s.AvgSpeedKmh == nil || *s.AvgSpeedKmh <= 0 || !s.Simulated {
-				t.Errorf("%s %v: volume %d, speed %v, simulated %v", d.Date, s.SlotStart, s.Volume, s.AvgSpeedKmh, s.Simulated)
+			if s.Volume <= 0 || s.AvgSpeedKmh == nil || *s.AvgSpeedKmh <= 0 || s.Simulated != (d.Date == "2026-10-23") || !s.WeatherSimulated {
+				t.Errorf("%s %v: volume %d, speed %v, simulated %v, weather simulated %v", d.Date, s.SlotStart, s.Volume, s.AvgSpeedKmh, s.Simulated, s.WeatherSimulated)
 			}
 		}
 	}
@@ -246,7 +251,7 @@ func TestCommuteTrafficOnDemoSaturday(t *testing.T) {
 func TestCommuteSimulationOnlyCommuteWindow(t *testing.T) {
 	tx := testTx(t)
 	removeDemoClock(t, tx)
-	regenerateAt(t, tx, taipeiTime(t, "2026-10-22 18:00"))
+	regenerateAt(t, tx, taipeiTime(t, "2026-10-28 18:00"))
 	outside := queryInt(t, tx, `
 		SELECT count(*) FROM traffic_observations
 		 WHERE (slot_start AT TIME ZONE 'Asia/Taipei')::time NOT BETWEEN '07:00' AND '09:45'
@@ -254,19 +259,19 @@ func TestCommuteSimulationOnlyCommuteWindow(t *testing.T) {
 	if outside != 0 {
 		t.Errorf("%d rows outside the commute slots", outside)
 	}
-	if got := todaySlots(t, tx, "2026-10-22"); len(got) != 12 {
+	if got := todaySlots(t, tx, "2026-10-28"); len(got) != 12 {
 		t.Errorf("today after 10:00 has %d slots, want all 12", len(got))
 	}
 }
 
 // REQ-084, DD-41: with demo_clock 08:15, today has the 5 slots 07:00-08:15 whatever the real time.
 func TestCommuteTodayFollowsDemoClock(t *testing.T) {
-	for _, real := range []string{"2026-10-22 06:00", "2026-10-22 08:20", "2026-10-22 17:45"} {
+	for _, real := range []string{"2026-10-29 06:00", "2026-10-29 08:20", "2026-10-29 17:45"} {
 		t.Run(real, func(t *testing.T) {
 			tx := testTx(t)
 			setDemoClock(t, tx, 495)
 			regenerateAt(t, tx, taipeiTime(t, real))
-			if got := todaySlots(t, tx, "2026-10-22"); len(got) != 5 || got[4] != "08:00" {
+			if got := todaySlots(t, tx, "2026-10-29"); len(got) != 5 || got[4] != "08:00" {
 				t.Errorf("today's slots = %v, want 07:00-08:00", got)
 			}
 		})
@@ -277,18 +282,18 @@ func TestCommuteTodayFollowsDemoClock(t *testing.T) {
 func TestCommuteWithoutDemoClockUsesRealTime(t *testing.T) {
 	tx := testTx(t)
 	removeDemoClock(t, tx)
-	real := taipeiTime(t, "2026-10-21 08:40") // a Wednesday
+	real := taipeiTime(t, "2026-10-28 08:40") // a Wednesday without measurements
 	regenerateAt(t, tx, real)
 
-	if got, want := todaySlots(t, tx, "2026-10-21"), []string{"07:00", "07:15", "07:30", "07:45", "08:00", "08:15"}; !reflect.DeepEqual(got, want) {
+	if got, want := todaySlots(t, tx, "2026-10-28"), []string{"07:00", "07:15", "07:30", "07:45", "08:00", "08:15"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("today's slots = %v, want %v", got, want)
 	}
 	r := getTraffic(t, tx, real)
-	if r.Today != "2026-10-21" || !r.Now.Equal(real) || r.Days[0].Date != "2026-10-20" || r.Days[9].Date != "2026-10-07" {
+	if r.Today != "2026-10-28" || !r.Now.Equal(real) || r.Days[0].Date != "2026-10-27" || r.Days[9].Date != "2026-10-14" {
 		t.Errorf("today %s, now %v, days %v", r.Today, r.Now, dates(r))
 	}
 	wr := getWeather(t, tx, real)
-	if wr.Weather == nil || wr.Weather.ObsTime != "2026-10-21T08:25:00+08:00" {
+	if wr.Weather == nil || wr.Weather.ObsTime != "2026-10-28T08:25:00+08:00" {
 		t.Errorf("weather = %+v, want the 08:15 slot observed at 08:25", wr.Weather)
 	}
 
@@ -348,115 +353,55 @@ func TestCommuteRegenerateOnNewDay(t *testing.T) {
 			t.Errorf("%s has %d slots, want 12", d.Date, len(d.Slots))
 		}
 	}
-	if old := queryInt(t, tx, `SELECT count(*) FROM traffic_observations WHERE slot_start < '2026-10-15T00:00+08:00'`); old != 0 {
-		t.Errorf("%d rows left from before the new window", old)
+	// Simulated rows from before the new window are gone; the TDX measurements stay (DD-36).
+	if old := queryInt(t, tx, `SELECT count(*) FROM traffic_observations WHERE slot_start < '2026-10-15T00:00+08:00' AND simulated`); old != 0 {
+		t.Errorf("%d simulated rows left from before the new window", old)
 	}
 }
 
-// slotStat is one slot's totals across detectors.
-type slotStat struct {
-	day     string
-	weekday int
-	slot    string
-	volume  float64
-	speed   float64
-	rain    float64
-}
-
-func slotStats(t *testing.T, tx pgx.Tx) []slotStat {
-	t.Helper()
-	rows, err := tx.Query(context.Background(), `
-		SELECT (slot_start AT TIME ZONE 'Asia/Taipei')::date::text, extract(isodow FROM slot_start AT TIME ZONE 'Asia/Taipei')::int,
-		       to_char(slot_start AT TIME ZONE 'Asia/Taipei', 'HH24:MI'), sum(volume)::float8,
-		       (sum(volume * avg_speed_kmh) / sum(volume))::float8, max((weather->>'precipitation')::float8)
-		  FROM traffic_observations GROUP BY slot_start ORDER BY slot_start`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var out []slotStat
-	for rows.Next() {
-		var s slotStat
-		if err := rows.Scan(&s.day, &s.weekday, &s.slot, &s.volume, &s.speed, &s.rain); err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, s)
-	}
-	return out
-}
-
-// REQ-076, REQ-083, DD-40: across many days, every slot has one weather for all detectors; 2-3 of
-// the past 10 workdays rain; a rainy slot is slower than the same weekday's dry slot at that time;
-// Friday carries more traffic than the other weekdays on average.
+// REQ-076, REQ-083, DD-40: across many days, every slot in the past 10 workdays and today has one
+// weather for all 16 gateways; 2-3 of the past 10 workdays rain. The traffic does not follow the
+// simulated weather (DD-40 step 2): every day in the window has all 16 gateways in every slot,
+// measured or simulated, and only days without measurements are simulated.
 func TestCommuteSimulationIsConsistent(t *testing.T) {
 	tx := testTx(t)
 	setDemoClock(t, tx, 495)
 	ctx := context.Background()
-	start := taipeiTime(t, "2026-10-01 12:00")
-	comparisons := 0
+	start := taipeiTime(t, "2026-10-14 12:00")
 	for i := 0; i < 20; i++ {
 		day := start.AddDate(0, 0, i)
 		regenerateAt(t, tx, day)
 		label := day.Format(dateLayout)
-
-		if n := queryInt(t, tx, `SELECT count(*) FROM (SELECT slot_start FROM traffic_observations
-		                          GROUP BY slot_start HAVING count(DISTINCT weather) > 1) x`); n != 0 {
-			t.Errorf("%s: %d slots with more than one weather", label, n)
-		}
 		m, err := commuteNow(ctx, tx, day)
 		if err != nil {
 			t.Fatal(err)
 		}
+		today := m.Today.Format(dateLayout)
+
+		if n := queryInt(t, tx, `SELECT count(*) FROM (SELECT slot_start FROM traffic_observations WHERE weather IS NOT NULL
+		                          GROUP BY slot_start HAVING count(DISTINCT weather) > 1 OR count(*) <> 16) x`); n != 0 {
+			t.Errorf("%s: %d slots with more than one weather or not all 16 gateways", label, n)
+		}
 		rainy := queryInt(t, tx, `
 			SELECT count(DISTINCT (slot_start AT TIME ZONE 'Asia/Taipei')::date) FROM traffic_observations
-			 WHERE (weather->>'precipitation')::numeric > 0 AND slot_start < $1::date::timestamp AT TIME ZONE 'Asia/Taipei'`,
-			m.Today.Format(dateLayout))
+			 WHERE (weather->>'precipitation')::numeric > 0 AND slot_start < $1::date::timestamp AT TIME ZONE 'Asia/Taipei'`, today)
 		if rainy < 2 || rainy > 3 {
 			t.Errorf("%s: %d rainy days in the past 10, want 2-3", label, rainy)
 		}
-
-		stats := slotStats(t, tx)
-		dry := map[[2]any][]slotStat{}
-		dayVolume := map[string]float64{}
-		dayWeekday := map[string]int{}
-		for _, s := range stats {
-			if s.day == m.Today.Format(dateLayout) {
-				continue
-			}
-			dayVolume[s.day] += s.volume
-			dayWeekday[s.day] = s.weekday
-			if s.rain == 0 {
-				dry[[2]any{s.weekday, s.slot}] = append(dry[[2]any{s.weekday, s.slot}], s)
-			}
+		// Every past workday has its 12 slots with weather.
+		if n := queryInt(t, tx, `
+			SELECT count(*) FROM commute_past_workdays($1::date, 10) d
+			 WHERE (SELECT count(DISTINCT o.slot_start) FROM traffic_observations o
+			         WHERE o.weather IS NOT NULL AND (o.slot_start AT TIME ZONE 'Asia/Taipei')::date = d) <> 12`, today); n != 0 {
+			t.Errorf("%s: %d past workdays without 12 slots", label, n)
 		}
-		for _, s := range stats {
-			if s.rain == 0 {
-				continue
-			}
-			for _, d := range dry[[2]any{s.weekday, s.slot}] {
-				comparisons++
-				if s.speed >= d.speed {
-					t.Errorf("%s: rainy %s %s at %.1f km/h is not slower than dry %s at %.1f", label, s.day, s.slot, s.speed, d.day, d.speed)
-				}
-			}
+		// A day is simulated exactly when it has no measurement.
+		if n := queryInt(t, tx, `
+			SELECT count(*) FROM (
+			    SELECT (slot_start AT TIME ZONE 'Asia/Taipei')::date FROM traffic_observations
+			     GROUP BY 1 HAVING bool_or(simulated) AND bool_or(NOT simulated)) x`); n != 0 {
+			t.Errorf("%s: %d days mixing measured and simulated rows", label, n)
 		}
-
-		var friday, others, fridays, otherDays float64
-		for d, v := range dayVolume {
-			if dayWeekday[d] == 5 {
-				friday += v
-				fridays++
-			} else {
-				others += v
-				otherDays++
-			}
-		}
-		if friday/fridays <= others/otherDays {
-			t.Errorf("%s: Friday %.0f vehicles a day, not above the other weekdays' %.0f", label, friday/fridays, others/otherDays)
-		}
-	}
-	if comparisons == 0 {
-		t.Fatal("no rainy slot had a dry slot to compare with")
 	}
 }
 
@@ -510,18 +455,19 @@ func TestCommuteAPIsAuth(t *testing.T) {
 	}
 }
 
-// DD-29: the Demo reset regenerates the simulated traffic for today.
+// DD-29: the Demo reset regenerates the simulated traffic for today and the weather of the 10 days.
 func TestDemoResetRegeneratesCommute(t *testing.T) {
 	tx := testTx(t)
 	setDemoClock(t, tx, 495)
-	mustExec(t, tx, `DELETE FROM traffic_observations`)
+	mustExec(t, tx, `DELETE FROM traffic_observations WHERE simulated`)
 	if err := resetDemoData(context.Background(), tx, taipeiTime(t, "2026-10-24 10:00")); err != nil {
 		t.Fatal(err)
 	}
 	if got := todaySlots(t, tx, "2026-10-26"); len(got) != 5 {
 		t.Errorf("after the reset today has %d slots, want 5", len(got))
 	}
-	if n := queryInt(t, tx, `SELECT count(DISTINCT (slot_start AT TIME ZONE 'Asia/Taipei')::date) FROM traffic_observations`); n != 11 {
+	if n := queryInt(t, tx, `SELECT count(DISTINCT (slot_start AT TIME ZONE 'Asia/Taipei')::date) FROM traffic_observations
+	                          WHERE weather IS NOT NULL`); n != 11 {
 		t.Errorf("after the reset %d days of data, want 10 past workdays and today", n)
 	}
 }

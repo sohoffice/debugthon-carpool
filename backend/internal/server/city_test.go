@@ -160,26 +160,6 @@ type cityHistoryResp struct {
 	Simulated bool `json:"simulated"`
 }
 
-type cityTrafficResp struct {
-	cityClockResp
-	SlotStart time.Time `json:"slot_start"`
-	Detectors []struct {
-		VDID        string   `json:"vd_id"`
-		RoadName    string   `json:"road_name"`
-		Lat         float64  `json:"lat"`
-		Lng         float64  `json:"lng"`
-		Volume      int      `json:"volume"`
-		AvgSpeedKmh *float64 `json:"avg_speed_kmh"`
-		Simulated   bool     `json:"simulated"`
-	} `json:"detectors"`
-	Roads []struct {
-		RoadName        string   `json:"road_name"`
-		AvgSpeedKmh     *float64 `json:"avg_speed_kmh"`
-		PastAvgSpeedKmh *float64 `json:"past_avg_speed_kmh"`
-	} `json:"roads"`
-	Simulated bool `json:"simulated"`
-}
-
 var cityPaths = []string{"/api/city/live", "/api/city/traffic", "/api/city/today", "/api/city/history"}
 
 // DD-18, DD-39: city1 is seeded with only the city admin role; the role check is now "at least one

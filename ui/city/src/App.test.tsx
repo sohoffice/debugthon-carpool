@@ -1,4 +1,4 @@
-import type { CityHistory, CityLive, CityToday, CityTraffic } from '@carpool/shared'
+import type { CityGateway, CityHistory, CityLive, CityToday, CityTraffic } from '@carpool/shared'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -47,17 +47,37 @@ const HISTORY: CityHistory = {
   ],
   simulated: true,
 }
+function gateway(vd_id: string, name: string, speed: number, past: number): CityGateway {
+  return {
+    vd_id,
+    source: 'city',
+    gateway: name,
+    road_name: name,
+    road_direction: 'N',
+    bearing: 'N',
+    lat: 25.07,
+    lng: 121.57,
+    shape: null,
+    proxy: false,
+    proxy_note: null,
+    reference_speed_kmh: 60,
+    volume: 500,
+    avg_speed_kmh: speed,
+    occupancy_pct: 10,
+    coverage_pct: 100,
+    past_avg_speed_kmh: past,
+    simulated: true,
+  }
+}
 function traffic(slot: string): CityTraffic {
   return {
     ...CLOCK,
     slot_start: slot,
-    detectors: [{ vd_id: 'V1', road_name: '堤頂大道', road_direction: 'N', lat: 25.07, lng: 121.57, volume: 500, avg_speed_kmh: 22, simulated: true }],
-    roads: [
-      // 22 vs 31: more than 20% slower, red. 40 vs 45: not.
-      { road_name: '堤頂大道', avg_speed_kmh: 22, past_avg_speed_kmh: 31 },
-      { road_name: '環東大道', avg_speed_kmh: 40, past_avg_speed_kmh: 45 },
-    ],
+    // 22 vs 31: more than 20% slower, red. 40 vs 45: not.
+    detectors: [gateway('V1', '堤頂大道', 22, 31), gateway('V2', '環東大道', 40, 45)],
+    weather: null,
     simulated: true,
+    weather_simulated: true,
   }
 }
 

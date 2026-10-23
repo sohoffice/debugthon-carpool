@@ -19,25 +19,48 @@ Feature: commute traffic and weather (REQ-063, REQ-076, REQ-077, REQ-084, DD-36,
     * header Authorization = 'Bearer <token>'
     * method get
     * status 200
-    * match response contains { now: '#string', today: '#string', simulated: true }
+    # traffic is TDX on measured days and simulated otherwise; the weather is always simulated (DD-36)
+    * match response contains { now: '#string', today: '#string', simulated: '#boolean', weather_simulated: true }
     * match response.days == '#[10]'
     # workdays only, newest first, each with its weekday
     * match each response.days contains { date: '#string', weekday: '#? _ >= 1 && _ <= 5', slots: '#[12]' }
     * def ds = karate.map(response.days, function(d) { return d.date })
     * match ds == karate.sort(ds, function(x) { return x }).reverse()
-    * match each response.days[0].slots == { slot_start: '#string', volume: '#number? _ > 0', avg_speed_kmh: '#number? _ > 0', weather: '#(weatherShape)', simulated: true }
+    * match each response.days[0].slots == { slot_start: '#string', volume: '#number? _ > 0', avg_speed_kmh: '#number? _ > 0', weather: '#(weatherShape)', simulated: '#boolean', weather_simulated: true }
+    # the top-level flag is true when any slot is simulated (REQ-063)
+    * def anySimulated = karate.filter(karate.jsonPath(response, '$.days[*].slots[*].simulated'), function(x) { return x }).length > 0
+    * match response.simulated == anySimulated
 
     Examples:
       | token                |
       | driver:driver1       |
       | passenger:passenger1 |
 
+  Scenario: the slots' volume is the 16 gateways added up, measured days marked not simulated
+    * path 'api', 'commute', 'traffic'
+    * header Authorization = 'Bearer passenger:passenger1'
+    * method get
+    * status 200
+    * def day = response.days[0]
+    * def slot = day.slots[4]
+    * def sum = Db.queryLong('SELECT sum(volume) FROM traffic_observations WHERE slot_start = ?::timestamptz', slot.slot_start)
+    * def simulated = Db.queryLong('SELECT bool_or(simulated)::int FROM traffic_observations WHERE slot_start = ?::timestamptz', slot.slot_start) == 1
+    * match slot.volume == sum
+    * match slot.simulated == simulated
+    * match Db.queryLong('SELECT count(*) FROM traffic_detectors') == 16
+    # 10/12-10/22 are TDX measurements (DD-36)
+    * def measured = karate.filter(response.days, function(d) { return d.date >= '2026-10-12' && d.date <= '2026-10-22' })
+    * def measuredFlags = karate.jsonPath(measured, '$[*].slots[*].simulated')
+    * match measuredFlags == '#[_ > 0]'
+    * match each measuredFlags == false
+
   Scenario Outline: today's weather before now - <token>
     * path 'api', 'commute', 'weather'
     * header Authorization = 'Bearer <token>'
     * method get
     * status 200
-    * match response == { now: '#string', today: '#string', weather: '##(weatherShape)', simulated: '#boolean' }
+    * match response == { now: '#string', today: '#string', weather: '##(weatherShape)', simulated: '#boolean', weather_simulated: '#boolean' }
+    * match response.weather_simulated == response.simulated
     # the observation is no later than now (DD-41)
     * if (response.weather) karate.match(new Date(response.weather.obs_time).getTime() <= new Date(response.now).getTime(), true)
 

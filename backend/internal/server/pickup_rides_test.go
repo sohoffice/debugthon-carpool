@@ -165,7 +165,8 @@ func TestPickupRidesWeatherMatchesTraffic(t *testing.T) {
 }
 
 // REQ-083, DD-37, DD-40: across many days, every cell's rides stay within its passengers and the
-// drivers' seats; every simulated traffic slot has a cell at every pickup point and no other.
+// drivers' seats; every traffic slot with weather (the past 10 workdays and today, measured or
+// simulated) has a cell at every pickup point and no other.
 func TestPickupStatsRidesWithinPassengersAndSeats(t *testing.T) {
 	tx := testTx(t)
 	setDemoClock(t, tx, 495)
@@ -183,10 +184,11 @@ func TestPickupStatsRidesWithinPassengersAndSeats(t *testing.T) {
 		if n := queryInt(t, tx, `SELECT count(*) FROM supply_demand_stats WHERE NOT simulated`); n != 0 {
 			t.Errorf("%s: %d cells not simulated", label, n)
 		}
-		want := queryInt(t, tx, `SELECT count(DISTINCT slot_start) * (SELECT count(*) FROM pickup_points) FROM traffic_observations`)
+		want := queryInt(t, tx, `SELECT count(DISTINCT slot_start) * (SELECT count(*) FROM pickup_points) FROM traffic_observations
+		                         WHERE weather IS NOT NULL`)
 		same := queryInt(t, tx, `
 			SELECT count(*) FROM supply_demand_stats st
-			 WHERE EXISTS (SELECT 1 FROM traffic_observations o WHERE o.slot_start = st.slot_start)`)
+			 WHERE EXISTS (SELECT 1 FROM traffic_observations o WHERE o.slot_start = st.slot_start AND o.weather IS NOT NULL)`)
 		if all := queryInt(t, tx, `SELECT count(*) FROM supply_demand_stats`); all != want || same != want {
 			t.Errorf("%s: %d cells, %d on traffic slots, want %d", label, all, same, want)
 		}

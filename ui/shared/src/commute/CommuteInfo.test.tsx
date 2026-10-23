@@ -59,9 +59,11 @@ const TRAFFIC: CommuteTraffic = {
       avg_speed_kmh: date === '2026-10-12' && s === 11 ? null : 40 - s * 1.4,
       weather: weatherAt(date, s),
       simulated: true,
+      weather_simulated: true,
     })),
   })),
   simulated: true,
+  weather_simulated: true,
 }
 TRAFFIC.days[1].slots[5] = { ...TRAFFIC.days[1].slots[5], volume: 1284, avg_speed_kmh: 22.6 }
 
@@ -70,6 +72,7 @@ const WEATHER: CommuteWeather = {
   today: '2026-10-26',
   weather: { station_id: 'C0A9F0', station_name: '內湖', obs_time: '2026-10-26T08:10:00+08:00', weather: '陰有雨', air_temperature: 18.2, precipitation: 0.8 },
   simulated: true,
+  weather_simulated: true,
 }
 
 interface FakeOptions {
