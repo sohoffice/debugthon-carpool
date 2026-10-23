@@ -77,8 +77,9 @@
 | `just ui driver` | 啟動駕駛介面開發伺服器，網址 `http://localhost:5173` |
 | `just ui passenger` | 啟動乘客介面開發伺服器，網址 `http://localhost:5174` |
 | `just ui showcase` | 啟動展示頁（UD-18），網址 `http://localhost:5170`，並排嵌入駕駛與乘客介面 |
-| `just ui dev-mock` | 啟動示範後端（`:8081`）、兩個介面與展示頁，全部連到示範後端（開發期間用） |
-| `just ui dev` | 啟動兩個介面與展示頁，連到 Go 後端 `:8080`（後端先用 `just backend up` 啟動） |
+| `just ui city` | 啟動市府管理介面（DD-39，桌機版面），網址 `http://localhost:5175/?account=city1` |
+| `just ui dev-mock` | 啟動示範後端（`:8081`）、兩個介面、展示頁與市府管理介面，全部連到示範後端（開發期間用） |
+| `just ui dev` | 啟動兩個介面、展示頁與市府管理介面，連到 Go 後端 `:8080`（後端先用 `just backend up` 啟動） |
 | `just ui mock` | 只啟動示範後端 `:8081` |
 | `just ui mock-scenario <情境>` | 切換示範情境並重設：`normal`、`reassign`、`no_cars` |
 | `just ui mock-advance <秒數>` | 把示範後端的時鐘往前撥，例如讓車開到目的地 |
@@ -103,6 +104,7 @@
 - 開發時 `/api` 會轉送到後端，預設 `http://localhost:8080`，可用 `API_PROXY_TARGET` 覆寫；`just ui dev-mock`／`just ui dev` 會自動設定。
 - 示範後端（`ui/mock-server/`）是只用 Node 內建模組的小程式，狀態放在記憶體裡，重啟就回到初始狀態。帳號、上車點、公車站、標籤與模擬行程直接讀 `backend/migrations/` 的種子 SQL，和 Go 後端一致。做法見 `docs/ui-design.md` 10.2。
 - 以網址參數切換 Demo 帳號，例如 `http://localhost:5173/?account=driver2`。
+- 市府管理介面（`ui/city`）以 `?account=city1` 開啟（token `city:city1`），只呼叫 `/api/city/*`；以駕駛或乘客帳號開啟時只顯示無權限的訊息。以 1440 × 900 的桌機畫面設計，不支援手機寬度。示範後端的市府 API 一律以「今天 08:15」為現在（如同設定了 `demo_clock`），數字是另外產生的假資料，和 Go 後端不同。
 - 除錯模式（Demo 工具）加上 `?debug=1`，畫面左緣會出現「除錯」標籤（`docs/ui-design.md` 8.8）：
   - 駕駛：`http://localhost:5173/?debug=1` 可切換帳號，並執行模擬器（DD-14）：按「開始模擬」後，有進行中行程的駕駛沿預先定義的路徑回報位置。接 Go 後端時，車輛位置全靠它。Demo 時由 `just demo-offstage` 在背景開一個這樣的頁面，不要再自己另開（見〈Demo〉）。
   - 乘客：`http://localhost:5174/?debug=1` 可設定乘客的目前位置（DD-26），例如「離松山車站 420 公尺」來展示請求被拒絕。同一帳號的其他分頁會跟著改。
@@ -118,7 +120,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 
 | 指令 | 說明 |
 | --- | --- |
-| `just demo-check` | 檢查 `just demo` 需要、但不會替你準備的東西：Docker 有在執行、Node 能直接執行 TypeScript、根目錄有 `.env`、`:5170`／`:5173`／`:5174` 沒被占用；`MAP_API_KEY` 或 `VITE_GOOGLE_MAPS_API_KEY` 是空的只警告（Demo 會改用模擬路線或不顯示地圖） |
+| `just demo-check` | 檢查 `just demo` 需要、但不會替你準備的東西：Docker 有在執行、Node 能直接執行 TypeScript、根目錄有 `.env`、`:5170`／`:5173`／`:5174`／`:5175` 沒被占用；`MAP_API_KEY` 或 `VITE_GOOGLE_MAPS_API_KEY` 是空的只警告（Demo 會改用模擬路線或不顯示地圖） |
 | `just demo` | 一個指令啟動全部元件：先執行 `just demo-check`，再啟動 PostgreSQL（`just infra up`）、套用遷移、重新啟動後端（開啟 Demo 重設）、兩個介面與展示頁（`just ui dev`）。`ui/package-lock.json` 比上次安裝新（例如 pull 之後）或從沒安裝過時，先執行 `just ui install`。按 Ctrl-C 停止介面，後端繼續在背景執行（`just backend down` 停止） |
 | `just demo-reset` | 一個指令把 Demo 重設回初始狀態（呼叫 `POST /api/demo/reset`）；展示頁的「重設」按鈕呼叫同一個 API |
 

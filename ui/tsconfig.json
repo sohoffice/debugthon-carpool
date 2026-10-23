@@ -5,6 +5,7 @@
     "driver/src",
     "passenger/src",
     "showcase/src",
+    "city/src",
     "mock-server/src",
     "e2e",
     "scripts",

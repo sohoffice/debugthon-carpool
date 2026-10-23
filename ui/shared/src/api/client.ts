@@ -1,4 +1,4 @@
-export type Role = 'driver' | 'passenger'
+export type Role = 'driver' | 'passenger' | 'city'
 
 export class ApiError extends Error {
   readonly status: number

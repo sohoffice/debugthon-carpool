@@ -48,7 +48,7 @@ export function commuteMoment(realNowMs: number): Moment {
 }
 
 /** The 10 workdays before today, newest first (no public holidays, like the backend). */
-function pastWorkdays(today: string): string[] {
+export function pastWorkdays(today: string): string[] {
   const days: string[] = []
   for (let d = addDays(today, -1); days.length < PAST_WORKDAYS; d = addDays(d, -1)) if (isoWeekday(d) <= 5) days.push(d)
   return days
@@ -64,7 +64,7 @@ function random(today: string, key: string): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
 
-interface Cell {
+export interface Cell {
   slot: number
   weather: WeatherObservation
   raining: boolean
@@ -131,20 +131,36 @@ export function createCommute(realNow: () => number) {
     return { now: m.now, today: m.today, weather: latest, simulated: latest !== null }
   }
 
+  /** One pickup point's simulated drivers, passengers and rides per observed slot of a day (DD-37, DD-40 step 3). */
+  function slotStats(pickupPointId: number, date: string) {
+    const { m, cells } = world()
+    return cells(date).map(({ slot, weather, raining }) => {
+      const dow = isoWeekday(date) === 5 ? 1.3 : isoWeekday(date) === 1 ? 1.05 : 1
+      const key = `${pickupPointId}/${date}/${slot}`
+      const shape = peak(slot, 0.45, 6) * dow
+      const passengers = Math.round((4 + random(m.today, `passengers/${pickupPointId}`) * 4) * shape * (raining ? 1.3 : 1) * (0.85 + random(m.today, `p/${key}`) * 0.3))
+      const drivers = Math.round((2 + random(m.today, `drivers/${pickupPointId}`) * 2) * shape * (raining ? 1.1 : 1) * (0.85 + random(m.today, `d/${key}`) * 0.3))
+      const rides = Math.min(passengers, drivers * AVG_SEATS, Math.round(passengers * (0.65 + random(m.today, `match/${key}`) * 0.3)))
+      return { slot, weather, raining, passengers, drivers, rides }
+    })
+  }
+
+  /** Every observed slot's weather of a day, the same copy the traffic and rides use (REQ-083). */
+  function weatherCells(date: string): Cell[] {
+    return world().cells(date)
+  }
+
   /** `realRides` is today's completed rides at the pickup point: all in the slot holding now (DD-41). */
   function pickupRides(pickupPointId: number, query: URLSearchParams, realRides: number): PickupRides {
     const window = slotWindow(query.get('from'), query.get('to'))
-    const { m, days, cells } = world()
+    const { m, days } = world()
     const ridesOf = (date: string): RideSlot[] =>
-      cells(date).map(({ slot, weather, raining }) => {
-        const dow = isoWeekday(date) === 5 ? 1.3 : isoWeekday(date) === 1 ? 1.05 : 1
-        const key = `${pickupPointId}/${date}/${slot}`
-        const shape = peak(slot, 0.45, 6) * dow
-        const passengers = Math.round((4 + random(m.today, `passengers/${pickupPointId}`) * 4) * shape * (raining ? 1.3 : 1) * (0.85 + random(m.today, `p/${key}`) * 0.3))
-        const drivers = Math.round((2 + random(m.today, `drivers/${pickupPointId}`) * 2) * shape * (raining ? 1.1 : 1) * (0.85 + random(m.today, `d/${key}`) * 0.3))
-        const rides = Math.min(passengers, drivers * AVG_SEATS, Math.round(passengers * (0.65 + random(m.today, `match/${key}`) * 0.3)))
-        return { slot_start: at(date, WINDOW_START + slot * SLOT_MIN), ride_count: rides, weather, simulated: true }
-      })
+      slotStats(pickupPointId, date).map(({ slot, rides, weather }) => ({
+        slot_start: at(date, WINDOW_START + slot * SLOT_MIN),
+        ride_count: rides,
+        weather,
+        simulated: true,
+      }))
     const past: RideDay[] = days.map((date) => ({ date, weekday: isoWeekday(date), slots: ridesOf(date) }))
     const nowSlot: RideSlot = { slot_start: at(m.today, WINDOW_START + m.nowSlot * SLOT_MIN), ride_count: realRides, weather: null, simulated: false }
     const today: RideDay = { date: m.today, weekday: isoWeekday(m.today), slots: [...ridesOf(m.today), nowSlot] }
@@ -158,7 +174,7 @@ export function createCommute(realNow: () => number) {
     }
   }
 
-  return { traffic, weather, pickupRides }
+  return { traffic, weather, pickupRides, slotStats, weatherCells }
 }
 
 function slotMinutes(s: string | null): number | null {

@@ -6,18 +6,20 @@
     "shared",
     "driver",
     "passenger",
-    "showcase"
+    "showcase",
+    "city"
   ],
   "scripts": {
     "dev:driver": "npm run dev -w driver",
     "dev:passenger": "npm run dev -w passenger",
-    "build": "npm run build -w driver -w passenger -w showcase",
+    "build": "npm run build -w driver -w passenger -w showcase -w city",
     "typecheck": "tsc -p .",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
     "mock": "node mock-server/src/main.ts",
-    "dev:showcase": "npm run dev -w showcase"
+    "dev:showcase": "npm run dev -w showcase",
+    "dev:city": "npm run dev -w city"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

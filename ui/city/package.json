@@ -1,0 +1,16 @@
+{
+  "name": "city",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p . && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@carpool/shared": "*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

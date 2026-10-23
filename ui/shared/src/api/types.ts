@@ -376,6 +376,121 @@ export interface RoutePreview {
   route: Route
 }
 
+// ---------------------------------------------------------------- City dashboard (Phase 2, DD-39)
+
+// Every /api/city/* call needs a `city:<account>` token; a city token gets 403 anywhere else.
+
+/** Every /api/city/* response carries the commute clock, so the UI never computes now itself (DD-41). */
+export interface CityClock {
+  /** Today at demo_clock (08:15 in the Demo), or the real time when demo_clock is not set. RFC 3339, +08:00. */
+  now: string
+  /** YYYY-MM-DD; a weekend becomes the next Monday (DD-41). */
+  today: string
+  demo_clock: boolean
+}
+
+export interface CityPlace {
+  id: number
+  name: string
+  lat: number
+  lng: number
+}
+
+/** A car on a trip, with no trip, driver or plate (REQ-081). */
+export interface CityVehicle {
+  lat: number
+  lng: number
+  heading_deg: number | null
+  on_board: number
+  simulated: boolean
+}
+
+export interface CityLiveCounts {
+  /** Cars on a trip. */
+  vehicles: number
+  /** Passengers in a car. */
+  on_board: number
+  /** Passengers waiting to be matched. */
+  waiting: number
+  /** Matched, not on board yet. */
+  matched: number
+}
+
+/** GET /api/city/live (REQ-078): real trips and requests merged with the live simulation round (DD-40 step 5). */
+export interface CityLive extends CityClock {
+  vehicles: CityVehicle[]
+  counts: CityLiveCounts
+  /** The simulated part of `counts` (REQ-063). */
+  simulated_counts: CityLiveCounts
+  pickup_points: (CityPlace & { waiting: number; simulated_waiting: number })[]
+  simulated: boolean
+}
+
+export interface CityDetector {
+  vd_id: string
+  road_name: string
+  road_direction: string
+  lat: number
+  lng: number
+  volume: number
+  avg_speed_kmh: number | null
+  simulated: boolean
+}
+
+export interface CityRoad {
+  road_name: string
+  /** In the slot, weighted by volume; null when no vehicle passed. */
+  avg_speed_kmh: number | null
+  /** The same time of day over the past 10 workdays, not counting the slot's own day; null without data. */
+  past_avg_speed_kmh: number | null
+}
+
+/**
+ * GET /api/city/traffic[?slot=<RFC 3339 slot start>] (REQ-079). Without slot: the latest complete
+ * 15-minute slot before now (08:00 in the Demo). A slot without data is 404; off a boundary, 400.
+ */
+export interface CityTraffic extends CityClock {
+  slot_start: string
+  detectors: CityDetector[]
+  roads: CityRoad[]
+  simulated: boolean
+}
+
+/** GET /api/city/today (REQ-080). */
+export interface CityToday extends CityClock {
+  completed: number
+  requests: number
+  matched: number
+  /** matched / requests, 0..1; null without requests. */
+  match_rate: number | null
+  no_match: number
+  trips_saved: number
+  /** Always true: trips_saved is an estimate (REQ-063). */
+  trips_saved_estimate: boolean
+  pickup_points: (CityPlace & { completed: number })[]
+  simulated: boolean
+}
+
+export interface CityHistoryDay {
+  /** YYYY-MM-DD */
+  date: string
+  /** ISO: 1 Monday .. 5 Friday. */
+  weekday: number
+  /** The pickup points' rides added up (REQ-083). */
+  rides: number
+  /** The slot with the most rain that day (DD-38); null without observations. */
+  weather: WeatherObservation | null
+  simulated: boolean
+}
+
+/** GET /api/city/history (REQ-080, REQ-082): the past 10 workdays before today, newest first. */
+export interface CityHistory extends CityClock {
+  days: CityHistoryDay[]
+  /** Per day over the past 10 workdays: the sum over 10, to one decimal. */
+  pickup_points: (CityPlace & { drivers_per_day: number; passengers_per_day: number; rides_per_day: number })[]
+  simulated: boolean
+}
+
 // ---------------------------------------------------------------- Commute info (Phase 2, DD-38, DD-41)
 
 /** A CWA automatic station observation (O-A0001-001), one copy per 15-minute slot (DD-36). */

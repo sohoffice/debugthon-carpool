@@ -15,7 +15,7 @@ ui/
   passenger/    乘客介面   :5174
   showcase/     展示頁     :5170 — Demo 時並排嵌入兩個介面與「重設」（../docs/ui-design.md UD-18）
   mock-server/  示範後端   :8081 — 只用 Node 內建模組，不是 workspace（../docs/ui-design.md 10.2）
-  dashboard/    （未來）   :5175 — 新增為一個 workspace，共用 shared
+  city/         市府管理介面 :5175 — 桌機版面的唯讀儀表板（../docs/design.md 4.20、DD-39）
 ```
 
 使用 npm workspaces。`shared` 沒有建置步驟：各 app 直接 import 它的 TypeScript 原始碼。
@@ -25,7 +25,7 @@ ui/
 在專案根目錄也可以用 `just ui <指令>`，見 `../DEV.md` 的「前端」小節。
 
 - `npm install`
-- `npm run dev:driver`／`npm run dev:passenger`／`npm run dev:showcase`
+- `npm run dev:driver`／`npm run dev:passenger`／`npm run dev:showcase`／`npm run dev:city`
 - `npm run mock` — 示範後端；要讓介面連到它，用 `just ui dev-mock`
 - `npm test` — Vitest，跑所有 workspace
 - `npm run typecheck`
@@ -62,13 +62,13 @@ ui/
 
 ### 4. 地圖
 
-- 使用 Google Maps（`@vis.gl/react-google-maps`），**一律包在 `shared/src/map/` 裡**。各 app 從 `@carpool/shared` import `RouteMap`、`VehicleMarker`、`MapView`、`PlaceMarker`、`RoutePolyline`，不直接 import `@vis.gl/*`。日後換地圖服務只需改一個地方。
+- 使用 Google Maps（`@vis.gl/react-google-maps`），**一律包在 `shared/src/map/` 裡**。各 app 從 `@carpool/shared` import `RouteMap`、`VehicleMarker`、`MapView`、`PlaceMarker`、`RoutePolyline`、`CarDot`、`HeatSpot`（市府管理介面的車點與車流熱區），不直接 import `@vis.gl/*`。日後換地圖服務只需改一個地方。
 - `RoutePolyline` 接受 `path`（座標陣列）或 Google 的 `encodedPath`（Routes API 回傳的 polyline 可直接傳入）。
 - 需要新的地圖功能時：通用的才加到 `shared/src/map/`；否則在 app 內以 shared 的元件組合出來。
 
 ### 5. 版面與樣式
 
-- 行動裝置優先（Demo 時用手機）。以 390px 寬度測試。未來的儀表板是桌面版，所以 `shared` 不放只適用手機的版面。
+- 行動裝置優先（Demo 時用手機）。以 390px 寬度測試。市府管理介面（`city/`）是桌機版面，以 1440px 寬度測試，所以 `shared` 不放只適用手機的版面。
 - 只用 Tailwind。顏色用 `shared/src/theme.css` 的 token（色彩定義與用途見 `../docs/ui-design.md` 8.1），不要在 app 裡直接寫新的色碼。
 - 全螢幕版面用 `h-dvh`。
 
@@ -87,9 +87,3 @@ ui/
 - mock `fetch` 或 `api` 物件，不要 mock React 內部。測試環境沒有 Maps 金鑰，所以地圖會顯示提示文字。
 - 每個 app 保留一個 smoke test（`App.test.tsx`），確認整體接線正常。
 - 端對端測試用 Playwright，放在 `e2e/*.spec.ts`，以 `just ui e2e` 執行。只測跨駕駛與乘客兩個介面的完整流程（快樂路徑、無車可配），以及工作單明文要求的 e2e 情境（例如 #55 的園區外目的地）；其他畫面細節留給 Vitest 測。
-
-## 日後新增儀表板
-
-1. 複製 `passenger/` 為 `dashboard/`，在 `vite.config.ts` 把 port 改成 5175。
-2. 在 `ui/package.json` 的 `workspaces` 與 `ui/tsconfig.json` 的 `include` 加上 `"dashboard"`。
-3. 如果後端為儀表板提供獨立角色，在 `shared/src/api/client.ts` 的 `Role` 加上該角色。
