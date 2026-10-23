@@ -1236,7 +1236,7 @@ flowchart LR
 | 行程抵達目的地時自動結束 | UD-16 | REQ-070、DD-30，[#31 T21](https://github.com/sohoffice/debugthon-carpool/issues/31) 已合併 |
 | 目的地搜尋（Google Places）與園區範圍檢查、出發前的路線預覽 | 7.1、6.1；10.1 | DD-32 與修改後的 DD-21，實作在 [#30 T20](https://github.com/sohoffice/debugthon-carpool/issues/30)；Go 後端還沒有 |
 | Demo 種子直接寫入常用資料 | 10.2〈Demo 種子補充〉 | 已決定為 DD-19 的 Demo 例外：由 [#3 T03](https://github.com/sohoffice/debugthon-carpool/issues/3) 在 Go 後端的種子實作 `passenger1` 的常用資料與 `driver4` 的上一趟行程，內容同示範後端；Go 後端還沒有 |
-| 市府戰情室的車流（UD-27、UD-28）和 design.md、requirement.md 現有的內容不一致：<br>・DD-39：「熱力圖以每個偵測器為一點、以車流量為權重」→ 改成沿路段畫線，顏色是速度 ÷ 全天 p85，四級門檻 75／50／30%<br>・DD-36、DD-40：「第一版只有模擬資料」、由同一個產生函式產生 → 過去的上班日改用 TDX 的 16 個入口實測資料，沒有實測資料的上班日（例如 10/23）與今天才模擬<br>・DD-36 的偵測器 → 由 `traffic_detectors` 的 12 支換成 16 個入口<br>・REQ-079：「以熱力圖顯示…車流」→ 措辭改成路段路況<br>・REQ-083：天氣要和車流、載客次數一致 → 實測車流配模擬天氣，天氣另標模擬<br>・REQ-084：過去 10 個上班日是 10/12～10/23，實測只到 10/22 → 10/23 用模擬並標示<br>・4.18、4.20 的 `/api/city/traffic`：每個入口加上佔有率、參考速度、其他天同時段的平均、線形或偵測方向、是否為代理值、資料完整度，並能一次取回一天的 12 個時段 | UD-27、UD-28；SC-C1 | 由 [PR #163](https://github.com/sohoffice/debugthon-carpool/pull/163) 修改：DD-36、DD-39、DD-40、4.18、4.20、REQ-076、REQ-079、REQ-083，參考速度與分級寫成新的 DD-44；REQ-084 不改，10/23 由 DD-36、DD-40 的通則涵蓋。實作的工作單待建立 |
+| 市府戰情室：三個分頁，車流改成每個入口沿路段畫線、依路況上色 | UD-27、UD-28；SC-C1 | 已決定為 DD-44（路況以速度 ÷ 全天 p85 分四級，另有「比平常」模式），並由 [PR #163](https://github.com/sohoffice/debugthon-carpool/pull/163) 修改 DD-36、DD-39、DD-40、4.18、4.20、REQ-076、REQ-079、REQ-083：16 個入口、過去用 TDX 實測、今天與沒有實測的上班日用模擬、天氣另標模擬、`/api/city/traffic` 新增的欄位與 `date`；實作在 T54～T56 |
 
 ## 13. 待討論議題
 
@@ -1269,7 +1269,7 @@ flowchart LR
 
 ## 14. Phase 2 畫面
 
-PoC 之後才交付的三個畫面。內容依 design.md 的 DD-35、DD-38、DD-39 與 4.20；這裡只決定怎麼呈現。例外：14.3 的戰情室改版（UD-27、UD-28）也改變了車流的資料來源與熱力圖的畫法，在 design.md 修改之前和它不一致，對照見 [12 節](#12-與-designmd-的差異)最後一列。模型圖（示意資料，Demo 時間 10/26 星期一 08:15）在 `tmp/ui-redesign/phase2/phase2.html`，不進版本控制。
+PoC 之後才交付的三個畫面。內容依 design.md 的 DD-35、DD-38、DD-39 與 4.20；這裡只決定怎麼呈現。14.3 的戰情室另依 DD-44 與修改後的 DD-36、DD-39。模型圖（示意資料，Demo 時間 10/26 星期一 08:15）在 `tmp/ui-redesign/phase2/phase2.html`，不進版本控制。
 
 ### 14.1 駕駛資訊抽屜
 
