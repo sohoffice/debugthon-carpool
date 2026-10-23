@@ -129,7 +129,7 @@ export function createCommute(realNow: () => number) {
   function weather(): CommuteWeather {
     const { m, cells } = world()
     const latest = cells(m.today).at(-1)?.weather ?? null
-    return { now: m.now, today: m.today, weather: latest, simulated: latest !== null, weather_simulated: latest !== null }
+    return { now: m.now, today: m.today, weather: latest, weather_simulated: latest !== null }
   }
 
   /** One pickup point's simulated drivers, passengers and rides per observed slot of a day (DD-37, DD-40 step 3). */
