@@ -1,5 +1,5 @@
 import { ApiError, usePolling, type CityHistory, type CityLive, type CityToday, type CityTraffic } from '@carpool/shared'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api, HISTORY_POLL_MS, LIVE_POLL_MS, TODAY_POLL_MS, TRAFFIC_POLL_MS } from './config'
 import { HistoryBars } from './HistoryBars'
 import { MapPanel, type MapTab } from './MapPanel'
@@ -25,12 +25,14 @@ export function App() {
   const today = usePolling(() => api.get<CityToday>('/city/today'), TODAY_POLL_MS)
   const history = usePolling(() => api.get<CityHistory>('/city/history'), HISTORY_POLL_MS)
   const trafficPath = choice ? `/city/traffic?slot=${encodeURIComponent(slotParam(choice))}` : '/city/traffic'
-  const traffic = usePolling(() => api.get<CityTraffic>(trafficPath), TRAFFIC_POLL_MS, true, trafficPath)
-
-  const latestData = choice === null ? traffic.data : undefined
-  useEffect(() => {
-    if (latestData) setLatestTime(slotTime(latestData.slot_start))
-  }, [latestData])
+  // The latest slot comes only from a response asked without a slot: after going back to the
+  // latest slot, the past slot's response stays on screen until the new one arrives.
+  const fetchTraffic = async () => {
+    const data = await api.get<CityTraffic>(trafficPath)
+    if (choice === null) setLatestTime(slotTime(data.slot_start))
+    return data
+  }
+  const traffic = usePolling(fetchTraffic, TRAFFIC_POLL_MS, true, trafficPath)
 
   if ([live, today, history, traffic].some((p) => noAccess(p.error))) {
     return (

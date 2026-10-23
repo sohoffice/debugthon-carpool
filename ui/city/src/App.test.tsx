@@ -185,4 +185,25 @@ describe('city dashboard (SC-C1)', () => {
     expect(within(screen.getAllByRole('combobox')[1]).getAllByRole('option')).toHaveLength(12)
     expect(screen.getByText(/主要道路車速 10\/23/)).toBeInTheDocument()
   })
+
+  it('traffic: back to the latest slot, the past slot still on screen does not move the latest slot', async () => {
+    await renderApp()
+    fireEvent.click(screen.getByRole('tab', { name: '車流' }))
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2026-10-23' } })
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '09:30' } })
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(screen.getByText(/主要道路車速 10\/23/)).toBeInTheDocument()
+
+    // The latest slot's response has not come back yet; 10/23 09:30 is still the shown data.
+    const held = respond
+    respond = (path) => (path === '/api/city/traffic' ? { status: 503, body: { error: { code: 'unavailable', message: '' } } } : held(path))
+    // 09:30 is not a slot of today, so the time falls back to the latest slot, 08:00.
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2026-10-26' } })
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    const [date, time] = screen.getAllByRole('combobox') as HTMLSelectElement[]
+    expect(date.value).toBe('2026-10-26')
+    expect(time.value).toBe('08:00')
+    expect(within(time).getAllByRole('option')).toHaveLength(5)
+  })
 })
