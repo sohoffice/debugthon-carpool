@@ -28,7 +28,7 @@
   header .badge-sim { color: var(--sim-light); background: transparent; }
   .legend { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #d7e0e2; white-space: nowrap; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .legend .ramp { width: 70px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgb(245,215,110), rgb(236,128,46), rgb(192,54,44)); }
+  .legend .ramp { width: 70px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgb(245,215,110), rgb(244,190,72) 45%, rgb(238,140,40) 68%, rgb(234,118,40) 78%, rgb(204,48,40) 88%, rgb(190,36,38)); }
   .legend .line { width: 16px; height: 4px; border-radius: 2px; }
 
   main { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #edf1ef; }
@@ -702,7 +702,7 @@ const pins = PICKUPS.map((p, i) => {
 })
 // The office buildings everyone works in; a carpool only joins people going to the same one.
 // The bottlenecks the hackathon brief names, always labelled; 堤頂大道 is a road, so it only gets a label.
-const bottleneckLabels = [...BOTTLENECK_BRIDGES.map((b) => ({ name: b.name, at: b.at })), { name: '堤頂大道', at: [25.0625, 121.5726] }].map((b) => {
+const bottleneckLabels = [...BOTTLENECK_BRIDGES.map((b) => ({ name: b.name, at: b.at })), { name: '堤頂大道', at: [25.0795, 121.5638] }].map((b) => {
   const el = document.createElement('div')
   el.className = 'bneck'
   el.innerHTML = `<span>${b.name}</span>`
@@ -719,10 +719,12 @@ const bridgeHeat = BOTTLENECK_BRIDGES.map((b) => {
     return { el, at: way[Math.min(way.length - 1, Math.round(f * (way.length - 1)))] }
   })
 })
+// 光寶總部 and 內科服務大樓 stand about 400 m apart, closer than their labels are wide.
+const LABEL_SHIFT_PX = { 內科服務大樓: 30 }
 const buildings = DATA.dests.map((d) => {
   const el = document.createElement('div')
   el.className = 'bldg'
-  el.innerHTML = `<span>${d.name}</span>`
+  el.innerHTML = `<span style="margin-left:${LABEL_SHIFT_PX[d.name] ?? 0}px">${d.name}</span>`
   layer.append(el)
   return { el, at: d.at }
 })
@@ -829,8 +831,9 @@ function renderScene2(s, t) {
   setPerson(s, c.home, p.state === 'home' ? show : 0, app && p.state === 'home')
 }
 
-// Yellow → orange → red as a road slows down.
-const HEAT_STOPS = [[0, [245, 215, 110]], [0.4, [242, 179, 61]], [0.6, [236, 128, 46]], [0.8, [218, 82, 44]], [1, [192, 54, 44]]]
+// Yellow → orange → red as a road slows down. Red is kept for the worst jams (scene 1's bottlenecks reach 85–100,
+// most of scene 2 settles around 40–75), so the two scenes read as red against orange and yellow.
+const HEAT_STOPS = [[0, [245, 215, 110]], [0.45, [244, 190, 72]], [0.68, [238, 140, 40]], [0.78, [234, 118, 40]], [0.88, [204, 48, 40]], [1, [190, 36, 38]]]
 function heatRgb(w) {
   for (let i = 1; i < HEAT_STOPS.length; i++) {
     const [w1, c1] = HEAT_STOPS[i]
