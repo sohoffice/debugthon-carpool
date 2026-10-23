@@ -49,8 +49,26 @@
    - `DEMO_RESET is on`
 
    沒有 just 時，照 `justfile` 裡 `demo` 的步驟逐一執行。
-3. 開好分頁：只要一個，展示頁 `http://localhost:5170`，投影出去的就是這一頁。另外留一個終端機視窗給 `just demo-offstage`，講者看得到、觀眾看不到。
-4. 用新的瀏覽器設定檔或無痕視窗開展示頁。乘客的篩選條件會記在瀏覽器裡（7.1），Demo 的重設清不掉。
+3. 清掉今天 Karate 留下的請求：Karate 和 Demo 共用 `carpool` 資料庫，表示過參與的 `karate-` 帳號刪不掉（見 DEV.md〈API 整合測試（Karate）〉），它們今天送出的請求會被市府戰情室算成今天的真實請求，媒合率看起來很低。Demo 的重設不會清這些資料。Demo 當天不要跑 Karate，開演前在根目錄執行一次：
+   ```sh
+   lsof -iTCP:18080 -sTCP:LISTEN   # no output means no Karate backend is running
+   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U carpool -d carpool <<'SQL'
+   BEGIN;
+   CREATE TEMP TABLE karate_requests ON COMMIT DROP AS
+     SELECT q.id FROM ride_requests q JOIN users u ON u.id = q.passenger_id
+      WHERE u.username LIKE 'karate-%'
+        AND (q.created_at AT TIME ZONE 'Asia/Taipei')::date = (now() AT TIME ZONE 'Asia/Taipei')::date;
+   -- The ledger and service record foreign keys block deleting the requests first.
+   DELETE FROM driver_point_ledger
+    WHERE service_record_id IN (SELECT id FROM service_records WHERE request_id IN (SELECT id FROM karate_requests));
+   DELETE FROM service_records WHERE request_id IN (SELECT id FROM karate_requests);
+   DELETE FROM ride_requests WHERE id IN (SELECT id FROM karate_requests);
+   COMMIT;
+   SQL
+   ```
+   `lsof` 有輸出代表 Karate 還在跑，等它結束再清。每一行 `DELETE` 後面的數字是刪掉的筆數，都是 0 代表今天沒有 Karate 的請求。清完後戰情室的「今天」應該只剩模擬的數字（08:15 時約 73 筆請求、50 趟完成）。
+4. 開好分頁：只要一個，展示頁 `http://localhost:5170`，投影出去的就是這一頁。另外留一個終端機視窗給 `just demo-offstage`，講者看得到、觀眾看不到。
+5. 用新的瀏覽器設定檔或無痕視窗開展示頁。乘客的篩選條件會記在瀏覽器裡（7.1），Demo 的重設清不掉。
 
 ## 開演前 3 分鐘
 
