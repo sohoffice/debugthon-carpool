@@ -1,7 +1,9 @@
 import { SimulatedBadge, type DriverRequestItem } from '@carpool/shared'
 import { ConnectionNote } from './ConnectionNote'
+import { RequestMap } from './RequestMap'
 
 interface TripRequestScreenProps {
+  tripId: number
   /** Already confirmed, to say where else the car stops. */
   passengers: DriverRequestItem[]
   request: DriverRequestItem
@@ -15,7 +17,7 @@ interface TripRequestScreenProps {
  * 6.3: the whole screen turns road-marking yellow, no animation or popup (UD-04). Confirm is the
  * biggest target, at the bottom where the thumb is; decline is smaller, below it (UD-05).
  */
-export function TripRequestScreen({ passengers, request, busy, offline, onAccept, onDecline }: TripRequestScreenProps) {
+export function TripRequestScreen({ tripId, passengers, request, busy, offline, onAccept, onDecline }: TripRequestScreenProps) {
   const others = passengers.map((p) => p.dropoff.name)
   return (
     <main className="flex h-full flex-col bg-signal px-6 pt-(--safe-top) pb-(--safe-bottom) text-ink">
@@ -43,7 +45,12 @@ export function TripRequestScreen({ passengers, request, busy, offline, onAccept
       {others.length > 0 && <p className="mt-8 text-xl font-semibold">其他乘客在 {others.join('、')} 下車</p>}
       {offline && <ConnectionNote />}
 
-      <div className="mt-auto flex flex-col gap-5 pb-4">
+      {/* Takes the space above the buttons, so they stay put with or without the map (UD-05). */}
+      <div className="my-6 min-h-0 flex-1 overflow-hidden rounded-control">
+        <RequestMap tripId={tripId} request={request} />
+      </div>
+
+      <div className="flex flex-col gap-5 pb-4">
         <button
           type="button"
           disabled={busy}

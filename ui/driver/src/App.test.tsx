@@ -6,9 +6,17 @@ import { App } from './App'
 import { POLL_INTERVAL_MS } from './config'
 
 // A stand-in for Google Maps with a key set, so the test can see which markers and lines are drawn.
+// `maps` switches the key off or fails the script load for one test.
+const maps = vi.hoisted(() => ({ key: 'test-key', status: 'LOADED' }))
 vi.mock('@vis.gl/react-google-maps', () => ({
   APIProvider: ({ children }: { children: ReactNode }) => children,
-  Map: ({ children }: { children: ReactNode }) => <div data-testid="map">{children}</div>,
+  Map: ({ gestureHandling, children }: { gestureHandling?: string; children: ReactNode }) => (
+    <div data-testid="map" data-gesture-handling={gestureHandling}>
+      {children}
+    </div>
+  ),
+  APILoadingStatus: { FAILED: 'FAILED', AUTH_FAILURE: 'AUTH_FAILURE' },
+  useApiLoadingStatus: () => maps.status,
   AdvancedMarker: ({ title, children }: { title?: string; children: ReactNode }) => (
     <div role="img" aria-label={title}>
       {children}
@@ -17,7 +25,12 @@ vi.mock('@vis.gl/react-google-maps', () => ({
   Polyline: () => <div data-testid="route-line" />,
   useMap: () => null,
 }))
-vi.mock('../../shared/src/map/config', async (importOriginal) => ({ ...(await importOriginal<object>()), MAPS_API_KEY: 'test-key' }))
+vi.mock('../../shared/src/map/config', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  get MAPS_API_KEY() {
+    return maps.key
+  },
+}))
 // Google Places is never called in tests (DD-32): a fake that finds one place in the park and one
 // outside, or nothing at all when Places is down.
 const places = vi.hoisted(() => {
@@ -189,6 +202,8 @@ describe('driver App', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     places.available = true
+    maps.key = 'test-key'
+    maps.status = 'LOADED'
   })
 
   it('prefills the last trip, so one tap departs with the same settings (REQ-016, REQ-017)', async () => {
@@ -405,6 +420,61 @@ describe('driver App', () => {
     expect(calls.map((c) => c.path)).toEqual(expect.arrayContaining(['/driver/requests/7/accept', '/driver/requests/7/board']))
   })
 
+  describe('drop-off map on the request screen (DD-04 exception, REQ-066)', () => {
+    it('shows pickup, route, the passenger\'s drop-off and the destination, no other stops, not draggable', async () => {
+      const calls = fakeBackend([{ trip_id: 5, pending: [request({})], passengers: [] }])
+      render(<App />)
+
+      const map = await screen.findByTestId('map')
+      expect(calls.some((c) => c.path === '/trips/5')).toBe(true)
+      expect(map).toHaveAttribute('data-gesture-handling', 'none')
+      expect(within(map).getAllByTestId('route-line').length).toBeGreaterThan(0)
+      expect(within(map).getByRole('img', { name: '松山車站' })).toBeInTheDocument()
+      expect(within(map).getByRole('img', { name: '瑞光路' })).toBeInTheDocument()
+      expect(within(map).getByRole('img', { name: '瑞光路 513 巷' })).toBeInTheDocument()
+      // 陽光街 is on the route but is not this passenger's stop.
+      expect(within(map).queryByRole('img', { name: '陽光街' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '確認' })).toBeEnabled()
+    })
+
+    it('marks the destination when the passenger gets off there', async () => {
+      const atDestination = request({ dropoff: { bus_stop_id: null, ...DESTINATION } })
+      fakeBackend([{ trip_id: 5, pending: [atDestination], passengers: [] }])
+      render(<App />)
+
+      const map = await screen.findByTestId('map')
+      expect(within(map).getAllByRole('img', { name: '瑞光路 513 巷' })).toHaveLength(1)
+      expect(within(map).queryByRole('img', { name: '陽光街' })).not.toBeInTheDocument()
+    })
+
+    it.each([
+      ['no Maps key', () => (maps.key = '')],
+      ['the Maps script failed to load', () => (maps.status = 'FAILED')],
+    ])('with %s the map block is left out, with no notice, and the buttons still work', async (_, breakMaps) => {
+      breakMaps()
+      const calls = fakeBackend([{ trip_id: 5, pending: [request({})], passengers: [] }])
+      render(<App />)
+
+      expect(await screen.findByRole('heading', { name: '有乘客要搭車' })).toBeInTheDocument()
+      await nextPoll()
+      expect(screen.queryByTestId('map')).not.toBeInTheDocument()
+      expect(screen.queryByText(/地圖/)).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '確認' }))
+      await screen.findByRole('region', { name: '乘客' })
+      expect(calls.map((c) => c.path)).toContain('/driver/requests/7/accept')
+    })
+
+    it('goes away once the driver answers', async () => {
+      fakeBackend([{ trip_id: 5, pending: [request({})], passengers: [] }])
+      render(<App />)
+
+      await screen.findByTestId('map')
+      fireEvent.click(screen.getByRole('button', { name: '確認' }))
+      await screen.findByRole('region', { name: '乘客' })
+      expect(screen.queryByTestId('map')).not.toBeInTheDocument()
+    })
+  })
+
   it('a request answered elsewhere (409 not_waiting) just shows the current state', async () => {
     fakeBackend([{ trip_id: 5, pending: [request({ id: 8 })], passengers: [] }, DRIVING])
     render(<App />)
@@ -523,12 +593,13 @@ describe('driver App', () => {
     expect(screen.queryByRole('heading', { name: '已到達目的地' })).not.toBeInTheDocument()
   })
 
-  it('has no map, settings entry or end-trip button anywhere while driving (DD-04, DD-30, REQ-019)', async () => {
+  it('has no map besides the request one, no settings entry or end-trip button while driving (DD-04, DD-30, REQ-019)', async () => {
     const onBoard = request({ id: 9, status: 'boarded', boarded: true })
     fakeBackend([{ trip_id: 5, pending: [request({})], passengers: [onBoard] }, { trip_id: 5, pending: [], passengers: [onBoard] }, DRIVING])
     render(<App />)
-    const inTrip = () => {
-      expect(screen.queryByTestId('map')).not.toBeInTheDocument()
+    const inTrip = (map = false) => {
+      // The request screen's drop-off map is the one exception (DD-04).
+      if (!map) expect(screen.queryByTestId('map')).not.toBeInTheDocument()
       expect(screen.queryByText(/地圖未設定/)).not.toBeInTheDocument()
       expect(screen.queryByText(/設定|只載|可載人數|關於我和車|自動接受|結束行程/)).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: '除錯' })).not.toBeInTheDocument()
@@ -540,7 +611,8 @@ describe('driver App', () => {
     }
     // A request, with a passenger already on board.
     await screen.findByRole('heading', { name: '有乘客要搭車' })
-    inTrip()
+    await screen.findByTestId('map')
+    inTrip(true)
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['確認', '婉拒'])
     // The passenger on board, no request.
     await nextPoll()
@@ -594,8 +666,8 @@ describe('driver App', () => {
     await screen.findByRole('heading', { name: '有乘客要搭車' })
     const line = screen.getByText('同企業乘客')
     expect(line).toHaveTextContent('模擬')
-    expect(screen.getByText('松山車站')).toBeInTheDocument()
-    expect(screen.getByText('瑞光路')).toBeInTheDocument()
+    expect(screen.getByText('松山車站', { selector: 'dd' })).toBeInTheDocument()
+    expect(screen.getByText('瑞光路', { selector: 'dd' })).toBeInTheDocument()
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['確認', '婉拒'])
   })
 
