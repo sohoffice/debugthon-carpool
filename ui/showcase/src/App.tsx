@@ -11,12 +11,15 @@ const MARGIN = 24
 const LINE = 14
 const LINE_OVERHANG = 2000
 
-/** The page title: ink lettering behind the line's white-bar mark, quieter than the two role signs (UD-23). */
+/**
+ * The page title: ink lettering behind the line's white-bar mark, quieter than the two role signs (UD-23).
+ * Main name only: the full name wraps to two lines in the column left of the driver sign (UD-23).
+ */
 function Title() {
   return (
     <h1 className="m-0 flex h-16 items-center text-[30px] font-semibold text-ink">
       <span aria-hidden className="mr-4 w-3.5 self-stretch bg-brand" />
-      內科順路共乘
+      內科上班順起來
     </h1>
   )
 }
