@@ -434,6 +434,8 @@ describe('driver App', () => {
       expect(within(map).getByRole('img', { name: '瑞光路 513 巷' })).toBeInTheDocument()
       // 陽光街 is on the route but is not this passenger's stop.
       expect(within(map).queryByRole('img', { name: '陽光街' })).not.toBeInTheDocument()
+      // The text uses the map's symbol for a stop, not the destination's square.
+      expect(document.querySelector('[data-symbol]')).toHaveAttribute('data-symbol', 'stop')
       expect(screen.getByRole('button', { name: '確認' })).toBeEnabled()
     })
 
@@ -445,6 +447,7 @@ describe('driver App', () => {
       const map = await screen.findByTestId('map')
       expect(within(map).getAllByRole('img', { name: '瑞光路 513 巷' })).toHaveLength(1)
       expect(within(map).queryByRole('img', { name: '陽光街' })).not.toBeInTheDocument()
+      expect(document.querySelector('[data-symbol]')).toHaveAttribute('data-symbol', 'destination')
     })
 
     it.each([

@@ -19,6 +19,7 @@ interface TripRequestScreenProps {
  */
 export function TripRequestScreen({ tripId, passengers, request, busy, offline, onAccept, onDecline }: TripRequestScreenProps) {
   const others = passengers.map((p) => p.dropoff.name)
+  const atStop = request.dropoff.bus_stop_id !== null
   return (
     <main className="flex h-full flex-col bg-signal px-6 pt-(--safe-top) pb-(--safe-bottom) text-ink">
       <h1 className="mt-6 text-[32px]/tight font-bold">有乘客要搭車</h1>
@@ -32,7 +33,12 @@ export function TripRequestScreen({ tripId, passengers, request, busy, offline, 
         </div>
         <div className="relative pl-10">
           <span aria-hidden className="absolute top-0 left-[10px] h-[9px] w-[4px] bg-ink" />
-          <span aria-hidden className="absolute top-[8px] left-[1px] size-[22px] rounded-[3px] bg-ink" />
+          {/* The route strip's symbols, like the map: a stop is a filled circle, the destination a square (UD-29). */}
+          <span
+            aria-hidden
+            data-symbol={atStop ? 'stop' : 'destination'}
+            className={`absolute top-[8px] left-[1px] size-[22px] bg-ink ${atStop ? 'rounded-full' : 'rounded-[3px]'}`}
+          />
           <dt className="text-lg font-semibold">下車</dt>
           <dd className="text-drive font-bold break-words">{request.dropoff.name}</dd>
         </div>
