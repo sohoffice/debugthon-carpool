@@ -6,12 +6,14 @@ interface MapViewProps {
   center?: LatLng
   zoom?: number
   className?: string
+  /** False: a picture only, no dragging, zooming or tapping places. */
+  interactive?: boolean
   /** Markers and polylines from this module. */
   children?: ReactNode
 }
 
 /** The only map component apps should use. Must be inside <MapProvider>. */
-export function MapView({ center = DEFAULT_CENTER, zoom = DEFAULT_ZOOM, className = 'h-full w-full', children }: MapViewProps) {
+export function MapView({ center = DEFAULT_CENTER, zoom = DEFAULT_ZOOM, className = 'h-full w-full', interactive = true, children }: MapViewProps) {
   if (!MAPS_API_KEY) {
     return (
       <div className={`${className} flex items-center justify-center bg-brand-soft p-4 text-center text-sm text-ink-soft`}>
@@ -25,7 +27,9 @@ export function MapView({ center = DEFAULT_CENTER, zoom = DEFAULT_ZOOM, classNam
         mapId={MAPS_MAP_ID}
         defaultCenter={center}
         defaultZoom={zoom}
-        gestureHandling="greedy"
+        gestureHandling={interactive ? 'greedy' : 'none'}
+        keyboardShortcuts={interactive}
+        clickableIcons={interactive}
         disableDefaultUI
       >
         {children}
