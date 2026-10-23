@@ -58,6 +58,17 @@
   --color-road-dark-6: #e2e8e9;
 
   /*
+   * City war room congestion levels (Phase 2, UD-28, DD-44): 順暢, 車多, 壅塞, 嚴重. Blue to dark red
+   * stays readable for red-green colour blindness; every use also carries words or a legend.
+   * no-data is the fog grey and always comes with a dashed line or hatching.
+   */
+  --color-congestion-1: #3b82c4;
+  --color-congestion-2: #e3a51c;
+  --color-congestion-3: #e2632c;
+  --color-congestion-4: #b42232;
+  --color-no-data: #a9b7ba;
+
+  /*
    * Role colours that shared components draw with. Light values here; `ground-asphalt` below swaps
    * them for asphalt and the arrival board, so one component reads right on either ground.
    */

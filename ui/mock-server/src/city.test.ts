@@ -97,7 +97,18 @@ describe('mock /api/city/* (DD-39, DD-40, DD-41)', () => {
     expect(day.slots.every((s) => s.detectors.length === 16)).toBe(true)
     // The day's 08:30 is the same as asking for that slot.
     expect(day.slots[6]).toEqual((({ now, today, demo_clock, ...slot }) => slot)(get<CityTraffic>(`/api/city/traffic?slot=${encodeURIComponent('2026-10-22T08:30:00+08:00')}`)))
-    expect(get<CityTrafficDay>('/api/city/traffic?date=2026-10-26').slots.map((s) => s.slot_start.slice(11, 16))).toEqual(['07:00', '07:15', '07:30', '07:45', '08:00'])
+    // Today has all 12 slots; after the latest slot (08:00) only the past speeds (4.18).
+    const today = get<CityTrafficDay>('/api/city/traffic?date=2026-10-26')
+    expect(today.slots).toHaveLength(12)
+    for (const s of today.slots) {
+      const over = s.slot_start.slice(11, 16) <= '08:00'
+      expect([s.simulated, s.weather_simulated, s.weather !== null]).toEqual([over, over, over])
+      for (const g of s.detectors) {
+        expect([g.volume, g.avg_speed_kmh, g.occupancy_pct, g.coverage_pct].every((v) => v !== null)).toBe(over)
+        expect(g.simulated).toBe(over)
+        expect(g.past_avg_speed_kmh).not.toBeNull()
+      }
+    }
     expect(call('/api/city/traffic?date=2026/10/22').status).toBe(400)
     expect(call('/api/city/traffic?date=2026-10-32').status).toBe(400)
     expect(call(`/api/city/traffic?date=2026-10-22&slot=${encodeURIComponent('2026-10-22T08:00:00+08:00')}`).status).toBe(400)

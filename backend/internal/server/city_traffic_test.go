@@ -198,7 +198,45 @@ func TestCityTrafficPastRangeLeavesTheDayOut(t *testing.T) {
 	}
 }
 
-// REQ-079, DD-39: date gives the day's 12 slots × 16 gateways; today only through the latest slot.
+// REQ-079, DD-39, 4.18: today by date gives all 12 slots; after the latest slot (08:00 at 08:15)
+// there is no traffic or weather yet, only the past speeds, which draw 還沒到 on the grid.
+func TestCityTrafficTodayNotYetSlots(t *testing.T) {
+	a := demoMonday(t)
+	today := cityGet[cityTrafficDayResp](a, slotQuery("/api/city/traffic", "date", "2026-10-26"))
+	if len(today.Slots) != 12 || !today.Simulated || !today.WeatherSimulated {
+		t.Fatalf("today: %d slots, simulated %v, weather simulated %v; want 12, true, true", len(today.Slots), today.Simulated, today.WeatherSimulated)
+	}
+	for i, s := range today.Slots {
+		at := taipeiTime(t, "2026-10-26 07:00").Add(time.Duration(i) * 15 * time.Minute)
+		if !s.SlotStart.Equal(at) || len(s.Detectors) != 16 {
+			t.Fatalf("slot %d: %v with %d gateways", i, s.SlotStart, len(s.Detectors))
+		}
+		checkGatewayOrder(t, s.Detectors)
+		over := !at.After(taipeiTime(t, "2026-10-26 08:00"))
+		if over != (s.Weather != nil) || over != s.Simulated || over != s.WeatherSimulated {
+			t.Errorf("%v: weather %v, simulated %v, weather simulated %v; want present %v", at, s.Weather, s.Simulated, s.WeatherSimulated, over)
+		}
+		for _, g := range s.Detectors {
+			has := g.Volume != nil && g.AvgSpeedKmh != nil && g.OccupancyPct != nil && g.CoveragePct != nil && g.Simulated
+			none := g.Volume == nil && g.AvgSpeedKmh == nil && g.OccupancyPct == nil && g.CoveragePct == nil && !g.Simulated
+			if (over && !has) || (!over && !none) {
+				t.Errorf("%v %s: volume %v, speed %v, occupancy %v, coverage %v, simulated %v", at, g.VDID, g.Volume, g.AvgSpeedKmh, g.OccupancyPct, g.CoveragePct, g.Simulated)
+			}
+			if g.PastAvgSpeedKmh == nil || g.PastMinSpeedKmh == nil || g.PastMaxSpeedKmh == nil {
+				t.Errorf("%v %s: past speeds %v/%v/%v, want all present", at, g.VDID, g.PastAvgSpeedKmh, g.PastMinSpeedKmh, g.PastMaxSpeedKmh)
+			}
+		}
+	}
+	// The not-yet slots stay null even when a row is already there (e.g. data written ahead).
+	mustExec(t, a.tx, `INSERT INTO traffic_observations (vd_id, slot_start, volume, avg_speed_kmh, occupancy_pct, coverage_pct, simulated, weather_simulated)
+		SELECT vd_id, '2026-10-26 08:15+08', 1, 1, 1, 100, true, true FROM traffic_detectors ON CONFLICT DO NOTHING`)
+	again := cityGet[cityTrafficDayResp](a, slotQuery("/api/city/traffic", "date", "2026-10-26"))
+	if g := again.Slots[5].Detectors[0]; g.Volume != nil || g.Simulated || again.Slots[5].Simulated {
+		t.Errorf("08:15 with a row ahead of now: volume %v, simulated %v", g.Volume, g.Simulated)
+	}
+}
+
+// REQ-079, DD-39: date gives the day's 12 slots × 16 gateways.
 func TestCityTrafficDate(t *testing.T) {
 	a := demoMonday(t)
 	day := cityGet[cityTrafficDayResp](a, slotQuery("/api/city/traffic", "date", "2026-10-22"))
@@ -217,10 +255,6 @@ func TestCityTrafficDate(t *testing.T) {
 		t.Error("the 08:30 slot of the day differs from ?slot=08:30")
 	}
 
-	today := cityGet[cityTrafficDayResp](a, slotQuery("/api/city/traffic", "date", "2026-10-26"))
-	if len(today.Slots) != 5 || !today.Slots[4].SlotStart.Equal(taipeiTime(t, "2026-10-26 08:00")) || !today.Simulated {
-		t.Errorf("today: %d slots, simulated %v; want 07:00-08:00 simulated", len(today.Slots), today.Simulated)
-	}
 	if sim := cityGet[cityTrafficDayResp](a, slotQuery("/api/city/traffic", "date", "2026-10-23")); len(sim.Slots) != 12 || !sim.Simulated {
 		t.Errorf("10/23: %d slots, simulated %v; want 12 simulated", len(sim.Slots), sim.Simulated)
 	}
@@ -245,6 +279,7 @@ func TestCityTrafficRefused(t *testing.T) {
 		slotQuery("/api/city/traffic", "date", "2026-10-27"),                // after today
 		slotQuery("/api/city/traffic", "slot", "2026-10-26T08:15:00+08:00"), // not over yet
 		slotQuery("/api/city/traffic", "slot", "2026-10-22T06:00:00+08:00"), // outside the window
+		slotQuery("/api/city/traffic", "slot", "2026-10-26T06:00:00+08:00"), // today, outside the window
 		slotQuery("/api/city/traffic", "slot", "2026-09-01T08:00:00+08:00"),
 	} {
 		wantStatus(t, a.do(http.MethodGet, q, cityToken), http.StatusNotFound, "not_found")

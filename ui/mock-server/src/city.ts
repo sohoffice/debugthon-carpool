@@ -213,6 +213,15 @@ export function createCity(lookups: Lookups, commute: ReturnType<typeof createCo
     return { slot_start: taipeiIso(date, min), detectors, weather, simulated: true, weather_simulated: true }
   }
 
+  /** A slot of today not over yet: no traffic or weather, only the past speeds (4.18). */
+  const notYet = (slot: CityTrafficSlot): CityTrafficSlot => ({
+    ...slot,
+    detectors: slot.detectors.map((g) => ({ ...g, volume: null, avg_speed_kmh: null, occupancy_pct: null, coverage_pct: null, simulated: false })),
+    weather: null,
+    simulated: false,
+    weather_simulated: false,
+  })
+
   function traffic(nowMs: number, rawSlot: string | null): CityTraffic {
     const clock = clockOf(nowMs)
     let date = clock.today
@@ -230,16 +239,18 @@ export function createCity(lookups: Lookups, commute: ReturnType<typeof createCo
     return { ...clock, ...slotOf(clock.today, date, min) }
   }
 
-  /** ?date=: the day's 12 slots, today's through the latest slot (DD-39). */
+  /** ?date=: the day's 12 slots (DD-39); today's after the latest slot have only the past speeds (4.18). */
   function trafficDay(nowMs: number, rawDate: string): CityTrafficDay {
     const clock = clockOf(nowMs)
     const parsed = new Date(`${rawDate}T00:00:00Z`)
     const valid = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === rawDate
     if (!valid) throw new MockError(400, 'invalid_request', 'date 須為日期（YYYY-MM-DD，例如 2026-10-22）')
     if (!knownDay(clock.today, rawDate)) throw new MockError(404, 'not_found', '這一天沒有車流資料')
-    const last = rawDate === clock.today ? LATEST_SLOT_MIN : LAST_SLOT_MIN
     const slots: CityTrafficSlot[] = []
-    for (let min = FIRST_SLOT_MIN; min <= last; min += SLOT_MIN) slots.push(slotOf(clock.today, rawDate, min))
+    for (let min = FIRST_SLOT_MIN; min <= LAST_SLOT_MIN; min += SLOT_MIN) {
+      const slot = slotOf(clock.today, rawDate, min)
+      slots.push(rawDate === clock.today && min > LATEST_SLOT_MIN ? notYet(slot) : slot)
+    }
     return { ...clock, date: rawDate, slots, simulated: true, weather_simulated: true }
   }
 

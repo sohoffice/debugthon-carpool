@@ -1,7 +1,7 @@
-import { ErrorNote, type CityHistory, type CityLive, type CityToday } from '@carpool/shared'
+import type { CityHistory, CityLive, CityToday } from '@carpool/shared'
 import { oneDecimal } from './format'
 import { pickupRows } from './pickupRows'
-import { SectionTitle } from './SectionTitle'
+import { Panel } from './Panel'
 
 interface PickupTableProps {
   history: CityHistory | undefined
@@ -10,14 +10,20 @@ interface PickupTableProps {
   error: boolean
 }
 
-/** Bottom right: now and today per pickup point, then the past 10 workdays' averages per day (REQ-078, REQ-080). */
+/** Now and today per pickup point, then the past 10 workdays' averages per day (REQ-078, REQ-080). */
 export function PickupTable({ history, live, today, error }: PickupTableProps) {
   const mixed = history?.simulated || live?.simulated || today?.simulated
   const th = 'px-2 py-1 text-right font-medium'
+  const rows = history ? pickupRows(history, live, today) : []
+  const worst = rows.find((r) => r.worst)
   return (
-    <section aria-label="各上車點" className="flex min-h-0 min-w-0 flex-col gap-2 border-l border-rule bg-white p-5">
-      <SectionTitle mark={mixed && '含模擬'}>各上車點</SectionTitle>
-      {error && <ErrorNote>上車點資料讀取失敗，顯示上一次的資料</ErrorNote>}
+    <Panel
+      name="各上車點"
+      kicker="各上車點"
+      marks={[mixed && '含模擬']}
+      title={history && (worst ? `${worst.name}沒搭到最多：駕駛不夠` : '各上車點都載得到人')}
+      error={error && '上車點資料讀取失敗，顯示上一次的資料'}
+    >
       {history && (
         <table className="w-full text-base">
           <thead>
@@ -35,7 +41,7 @@ export function PickupTable({ history, live, today, error }: PickupTableProps) {
             </tr>
           </thead>
           <tbody>
-            {pickupRows(history, live, today).map((r) => (
+            {rows.map((r) => (
               <tr key={r.id} className={`border-t border-rule tabular-nums ${r.worst ? 'font-bold text-danger' : ''}`}>
                 <td className="px-2 py-1.5 font-bold">{r.name}</td>
                 <td className="px-2 py-1.5 text-right">{r.waiting ?? '—'}</td>
@@ -49,6 +55,6 @@ export function PickupTable({ history, live, today, error }: PickupTableProps) {
           </tbody>
         </table>
       )}
-    </section>
+    </Panel>
   )
 }
