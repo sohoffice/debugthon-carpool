@@ -74,9 +74,13 @@ e2e:
 e2e-go:
     cd "{{source_directory()}}" && npx playwright install chromium && npx playwright test -c playwright.go.config.ts
 
-# Build the static site (showcase at the root, apps in folders, mock backend in the browser) into static-site/dist
+# Build the static site (portal at the root, showcase.html beside it, apps in folders, mock backend in the browser) into static-site/dist
 static-build:
     cd "{{source_directory()}}" && node static-site/build.ts
+
+# Build the static site and run its end-to-end tests (Playwright) on it, served under the bucket's sub-path (T68)
+static-e2e: static-build
+    cd "{{source_directory()}}" && npx playwright install chromium && npx playwright test -c static-site/playwright.config.ts
 
 # Upload the static site to a public GCS bucket (created on first run) in the active gcloud project
 static-deploy bucket="carpool-neihu-static" location="asia-east1": static-build
@@ -89,5 +93,5 @@ static-deploy bucket="carpool-neihu-static" location="asia-east1": static-build
     fi
     gcloud storage rsync static-site/dist "gs://{{bucket}}" --recursive --delete-unmatched-destination-objects
     # Pages change on every deploy; hashed assets never do
-    gcloud storage objects update "gs://{{bucket}}/**index.html" --cache-control=no-cache
+    gcloud storage objects update "gs://{{bucket}}/**.html" --cache-control=no-cache
     echo "site: https://storage.googleapis.com/{{bucket}}/index.html"
