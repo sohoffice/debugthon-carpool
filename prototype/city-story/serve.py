@@ -1,4 +1,4 @@
-"""Serves the story-mode prototype on 127.0.0.1:5180.
+"""Serves the Neihu traffic congestion simulation (內湖交通壅塞程度模擬動畫) on 127.0.0.1:5180.
 
 config.js is generated per request from VITE_GOOGLE_MAPS_API_KEY in the repo-root .env, so the key
 never lands in this folder or in git.
@@ -24,7 +24,7 @@ def maps_key():
 
 
 class Handler(SimpleHTTPRequestHandler):
-    # The prototype changes often; never let the browser keep a stale copy of the page or data.js.
+    # The page changes often; never let the browser keep a stale copy of the page or data.js.
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
@@ -41,5 +41,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    print(f'story prototype on http://localhost:{PORT}')
+    print(f'congestion simulation on http://localhost:{PORT}')
     ThreadingHTTPServer(('127.0.0.1', PORT), partial(Handler, directory=str(HERE))).serve_forever()
