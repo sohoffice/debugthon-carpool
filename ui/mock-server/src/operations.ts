@@ -2,7 +2,7 @@ import type { DepartureSettings, LatLngBody, PassengerSearch } from '../../share
 import { HUMAN_START_ETA_S, REASSIGN_TIMEOUT_S } from './config.ts'
 import { mustGet, type Lookups } from './context.ts'
 import { MockError } from './errors.ts'
-import { distanceM } from './geo.ts'
+import { distanceM, projectAlong } from './geo.ts'
 import { matchTrips, tripOpen } from './matching.ts'
 import {
   activeTripOf,
@@ -268,15 +268,17 @@ export function declareActivity(world: World, userId: number, role: 'driver' | '
 /**
  * POST /api/location. Stored under the caller's latest activity, refused without one. A driver's
  * report updates the trip's passed_pickup like the Go backend (DD-06: entered the pickup area, then
- * beyond radius + leave margin). The mock's cars still move by time, so reports do not move them (10.2).
+ * beyond radius + leave margin). The mock's cars still move by time, so reports do not move them (10.2),
+ * unless `followReports` (the static site, where the showcase's simulator is the only thing driving).
  */
-export function reportLocation(world: World, lookups: Lookups, userId: number, position: LatLngBody, now: number): World {
+export function reportLocation(world: World, lookups: Lookups, userId: number, position: LatLngBody, now: number, followReports = false): World {
   const activity = latestActivityOf(world, userId)
   if (!activity) throw new MockError(409, 'no_activity', '請先表示今天要參與，再回報位置')
   const report = { id: world.nextReportId, lat: position.lat, lng: position.lng, atMs: now }
   const stored = { ...world, nextReportId: world.nextReportId + 1, lastReports: { ...world.lastReports, [activity.id]: report } }
   if (activity.role !== 'driver' || activity.tripId === null) return stored
-  return updateTrip(stored, activity.tripId, (t) => {
+  const followed = followReports ? updateTrip(stored, activity.tripId, (t) => ({ ...t, reportedAlong: projectAlong(t.path, position, t.reportedAlong ?? 0) })) : stored
+  return updateTrip(followed, activity.tripId, (t) => {
     if (t.reports.passedPickup) return t
     const pickup = mustGet(lookups.pickupById, t.pickupPointId, 'pickup point')
     const d = distanceM(pickup, position)

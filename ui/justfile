@@ -73,3 +73,21 @@ e2e:
 # Run the UI end-to-end tests on the Go backend with a database of its own (T18B; needs `just infra up`)
 e2e-go:
     cd "{{source_directory()}}" && npx playwright install chromium && npx playwright test -c playwright.go.config.ts
+
+# Build the static site (showcase at the root, apps in folders, mock backend in the browser) into static-site/dist
+static-build:
+    cd "{{source_directory()}}" && node static-site/build.ts
+
+# Upload the static site to a public GCS bucket (created on first run) in the active gcloud project
+static-deploy bucket="carpool-neihu-static" location="asia-east1": static-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{source_directory()}}"
+    if ! gcloud storage buckets describe "gs://{{bucket}}" >/dev/null 2>&1; then
+        gcloud storage buckets create "gs://{{bucket}}" --location={{location}} --uniform-bucket-level-access
+        gcloud storage buckets add-iam-policy-binding "gs://{{bucket}}" --member=allUsers --role=roles/storage.objectViewer
+    fi
+    gcloud storage rsync static-site/dist "gs://{{bucket}}" --recursive --delete-unmatched-destination-objects
+    # Pages change on every deploy; hashed assets never do
+    gcloud storage objects update "gs://{{bucket}}/**index.html" --cache-control=no-cache
+    echo "site: https://storage.googleapis.com/{{bucket}}/index.html"

@@ -197,6 +197,25 @@ describe('trips, activities and positions match the Go backend', () => {
   })
 })
 
+describe('followReports (static site)', () => {
+  it('moves the car to where the driver reports it, not by time', () => {
+    api = createMockApi(data, () => clock, { followReports: true })
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const id = submit().id
+    call('POST', `/api/driver/requests/${id}/accept`, DRIVER)
+    // Reported 300 m before the pickup: ten minutes later it is still there.
+    call('POST', '/api/location', DRIVER, near(-300))
+    advance(600)
+    expect(statusOf(id).passed_pickup).toBe(false)
+    // Into the pickup area, then beyond radius + margin along the route: passed, at once.
+    const trip = json<TripView>('GET', '/api/driver/trips/current', DRIVER)
+    call('POST', '/api/location', DRIVER, SONGSHAN)
+    const after = trip.route!.bus_stops.find((b) => b.lat > SONGSHAN.lat + 0.002)!
+    call('POST', '/api/location', DRIVER, { lat: after.lat, lng: after.lng })
+    expect(statusOf(id).passed_pickup).toBe(true)
+  })
+})
+
 describe('request flow matches the Go backend (T11-T13)', () => {
   it('normal: the driver on stage confirms; the passenger boards and ends the ride', () => {
     call('POST', '/api/driver/trips', DRIVER, DEPARTURE)

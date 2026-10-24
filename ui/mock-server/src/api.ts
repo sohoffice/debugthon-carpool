@@ -80,7 +80,12 @@ const errorBody = (code: string, message: string) => ({ error: { code, message }
  * The mock backend as a function from request to response, so it can be tested without HTTP.
  * Same paths, bodies, identity and error codes as the Go backend (UD-14).
  */
-export function createMockApi(data: StaticData, clock: () => number = Date.now) {
+/** `followReports`: drivers' location reports move their cars, instead of time (the static site). */
+export interface MockOptions {
+  followReports?: boolean
+}
+
+export function createMockApi(data: StaticData, clock: () => number = Date.now, { followReports = false }: MockOptions = {}) {
   const lookups = buildLookups(data)
   let world: World = initialWorld(lookups, 'normal', clock())
   // Saved route previews (T26, DD-21). Like the Go backend, a reset does not clear them.
@@ -219,7 +224,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now) 
       pattern: '/api/location',
       access: 'any',
       run: ({ user, body }) => {
-        world = reportLocation(world, lookups, user.id, locationBody(body), now())
+        world = reportLocation(world, lookups, user.id, locationBody(body), now(), followReports)
         const a = latestActivityOf(world, user.id)!
         const r = world.lastReports[a.id]
         const trip = a.role === 'driver' && a.tripId !== null ? findTrip(world, a.tripId) : undefined

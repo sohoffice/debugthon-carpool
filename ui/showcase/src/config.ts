@@ -10,12 +10,18 @@ const passenger = params.get('passenger') ?? 'passenger1'
 /** The stage car's fast-forwards (T64, DD-14); `?fast=0` keeps it at its set speed. Read once at load. */
 export const FAST_FORWARD = params.get('fast') !== '0'
 
-const appUrl = (port: number, query: string) => `${window.location.protocol}//${window.location.hostname}:${port}/?${query}`
+// The static site (ui/static-site) serves each app from a folder beside the showcase instead of a port.
+const STATIC_SITE = import.meta.env.VITE_STATIC_SITE === '1'
 
-export const DRIVER_URL = appUrl(DRIVER_PORT, `embed=1&account=${encodeURIComponent(driver)}`)
-export const PASSENGER_URL = appUrl(PASSENGER_PORT, `embed=1&account=${encodeURIComponent(passenger)}`)
+const appUrl = (port: number, folder: string, query: string) =>
+  STATIC_SITE
+    ? new URL(`${folder}/index.html?${query}`, window.location.href).href
+    : `${window.location.protocol}//${window.location.hostname}:${port}/?${query}`
+
+export const DRIVER_URL = appUrl(DRIVER_PORT, 'driver', `embed=1&account=${encodeURIComponent(driver)}`)
+export const PASSENGER_URL = appUrl(PASSENGER_PORT, 'passenger', `embed=1&account=${encodeURIComponent(passenger)}`)
 // The city war room, a desktop page: no phone frame, so no embed (UD-30 part 3).
-export const CITY_URL = appUrl(CITY_PORT, 'account=city1')
+export const CITY_URL = appUrl(CITY_PORT, 'city', 'account=city1')
 
 /** The simulator confirms the seeded trips' requests this often, like the driver UI's polling (DD-33). */
 export const POLL_INTERVAL_MS = 1000
