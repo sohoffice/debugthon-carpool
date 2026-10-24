@@ -26,7 +26,7 @@ export function RequestsPanel({ today, live, error }: RequestsPanelProps) {
             color="bg-brand-dark"
             note={live && `另 ${live.counts.on_board} 人在車上、${live.counts.matched} 人等上車`}
           />
-          <div className="flex items-center gap-4 border-t border-rule pt-3 text-[15px]">
+          <div className="flex items-center gap-4 border-t max-md:flex-wrap border-rule pt-3 text-[15px]">
             <dt className="text-ink-soft">沒配到：</dt>
             <dd className="flex items-center gap-1.5" data-testid="no-match">
               <i className="inline-block h-3.5 w-4 rounded-[3px] bg-danger" />

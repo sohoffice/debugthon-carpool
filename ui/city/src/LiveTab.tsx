@@ -15,15 +15,18 @@ interface LiveTabProps {
   trafficDay: CityTrafficDay | undefined
 }
 
-/** The live map, almost full width: unnamed cars (REQ-081); right column, the four live numbers and the pickup points (REQ-078). */
+/**
+ * The live map, almost full width: unnamed cars (REQ-081); right column, the four live numbers and the
+ * pickup points (REQ-078). Below 768px the map is on top and the column under it (T71).
+ */
 export function LiveTab({ live, liveError, today, history, trafficDay }: LiveTabProps) {
   const [overlay, setOverlay] = useState(false)
   const at = trafficDay ? latestIndex(trafficDay) : -1
   // 疊上車流: the latest slot's gateway lines, 80% opaque, under the cars (SC-C1).
   const lines = overlay && trafficDay && at >= 0 ? gridRows(trafficDay).map((r) => r.cells[at]) : []
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px]">
-      <section aria-label="即時地圖" className="relative min-h-0 min-w-0">
+    <div className="flex flex-col md:grid md:min-h-0 md:flex-1 md:grid-cols-[minmax(0,1fr)_360px]">
+      <section aria-label="即時地圖" className="relative min-h-0 min-w-0 max-md:h-[55dvh]">
         <MapView>
           {lines.length > 0 && <GatewayLines cells={lines} mode="level" overlay />}
           {live?.vehicles.map((v, i) => <CarDot key={i} position={v} />)}
@@ -39,7 +42,7 @@ export function LiveTab({ live, liveError, today, history, trafficDay }: LiveTab
           </div>
         )}
       </section>
-      <aside className="flex min-h-0 flex-col gap-3.5 overflow-hidden border-l border-rule bg-paper p-4">
+      <aside className="flex flex-col gap-3.5 border-rule bg-paper p-4 max-md:border-t md:min-h-0 md:overflow-hidden md:border-l">
         <LiveCountsCard live={live} error={liveError} />
         <Panel name="上車點" kicker="上車點" marks={[(live?.simulated || today?.simulated) && '含模擬']}>
           <ul className="mt-1">
