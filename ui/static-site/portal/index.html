@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#eef2f3" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" />
+    <link rel="stylesheet" href="./portal.css" />
+    <title>內科上班順起來: 內科順路共乘</title>
+  </head>
+  <body>
+    <!-- DD-46: the static site's entry, one role at a time. Plain links: picking a role loads the page afresh, so its mock backend starts over. -->
+    <main class="mx-auto flex min-h-dvh max-w-5xl flex-col gap-6 px-4 py-8 md:gap-8 md:px-8 md:py-16">
+      <header class="flex flex-col gap-3">
+        <h1 class="flex items-stretch gap-3 text-2xl/tight font-extrabold text-ink md:text-4xl/tight">
+          <span class="w-2 shrink-0 bg-brand" aria-hidden="true"></span>
+          內科上班順起來: 內科順路共乘
+        </h1>
+        <p class="text-base text-ink-soft md:text-lg">選一個身分，約 1 分鐘走完一趟。</p>
+      </header>
+
+      <nav aria-label="選一個身分" class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <!-- Driver: the road sign, asphalt with a white inset border, as on the showcase (UD-21). -->
+        <a
+          href="./driver/index.html"
+          class="flex min-h-36 flex-col gap-2 rounded-sign bg-asphalt-plate p-6 text-white outline-[3px] -outline-offset-[8px] outline-white"
+        >
+          <b class="text-xl font-bold lettering-sign">我是駕駛</b>
+          <span class="text-[15px]/relaxed text-asphalt-soft">開車上班順路載人。系統會自動派一位乘客給你。</span>
+          <em class="mt-auto text-sm font-bold not-italic">開始體驗 →</em>
+        </a>
+        <!-- Passenger: the station sign, teal with the line's white bar on its left, as on the showcase (UD-21). -->
+        <a href="./passenger/index.html" class="flex min-h-36 bg-brand text-white">
+          <span aria-hidden="true" class="ml-6 w-2 shrink-0 bg-white"></span>
+          <span class="flex flex-1 flex-col gap-2 p-5">
+            <b class="text-xl font-bold">我是乘客</b>
+            <span class="text-[15px]/relaxed text-brand-soft">在站牌等順路的車，系統幫你配車，不用選車。</span>
+            <em class="mt-auto text-sm font-bold not-italic">開始體驗 →</em>
+          </span>
+        </a>
+        <!-- City war room: white, like the dashboard's panels. -->
+        <a href="./city/index.html" class="flex min-h-36 flex-col gap-2 rounded-plate border border-rule bg-white p-6 text-ink">
+          <b class="text-xl font-bold">市府儀表板</b>
+          <span class="text-[15px]/relaxed text-ink-soft">園區入口的車流、今天的共乘請求與減少的車次。</span>
+          <em class="mt-auto text-sm font-bold text-brand not-italic">打開儀表板 →</em>
+        </a>
+      </nav>
+
+      <!-- REQ-063: everything on this site is simulated. -->
+      <p class="flex items-center gap-2 text-sm text-ink-soft md:text-base">
+        <span class="rounded-plate border border-dashed border-simulated px-1.5 text-xs font-semibold text-simulated">模擬</span>
+        所有資料都是模擬的，可放心亂按。
+      </p>
+    </main>
+  </body>
+</html>
