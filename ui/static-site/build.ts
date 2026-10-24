@@ -27,7 +27,7 @@ const SHOWCASE_PAGE = 'showcase.html'
 
 /** Each role's tour and coach bar (DD-46), imported right after the mock in that app's entry. */
 const TOURS: Record<string, string> = {
-  driver: `${SITE_DIR}driverTour.ts`,
+  passenger: `${SITE_DIR}passengerTour.ts`,
 }
 
 /**
