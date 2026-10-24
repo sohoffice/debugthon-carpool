@@ -51,6 +51,28 @@ export function pointAlong(path: Path, along: number): { position: LatLng; headi
   }
 }
 
+/**
+ * Metres along `path` of the point on it nearest `p`, looking only at or after `fromAlong`, so a
+ * path that doubles back is not read as the car going backwards. Flat-earth maths, fine at city scale.
+ */
+export function projectAlong(path: Path, p: LatLng, fromAlong: number): number {
+  const kx = Math.cos(rad(p.lat))
+  let best = { along: Math.min(Math.max(fromAlong, 0), path.length), d: Number.POSITIVE_INFINITY }
+  for (let i = 1; i < path.points.length; i++) {
+    if (path.cumulative[i] < fromAlong) continue
+    const a = path.points[i - 1]
+    const b = path.points[i]
+    const [bx, by] = [(b.lng - a.lng) * kx, b.lat - a.lat]
+    const [px, py] = [(p.lng - a.lng) * kx, p.lat - a.lat]
+    const len2 = bx * bx + by * by
+    const t = len2 === 0 ? 0 : Math.min(Math.max((px * bx + py * by) / len2, 0), 1)
+    const d = (px - bx * t) ** 2 + (py - by * t) ** 2
+    const along = Math.max(path.cumulative[i - 1] + t * (path.cumulative[i] - path.cumulative[i - 1]), fromAlong)
+    if (d < best.d) best = { along, d }
+  }
+  return best.along
+}
+
 /** Google encoded polyline format, so the UI handles the mock like the Routes API output. */
 export function encodePolyline(points: LatLng[]): string {
   let lastLat = 0
