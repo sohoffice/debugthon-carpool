@@ -43,13 +43,13 @@ export function SpeedLine({ day, vdId, slot, over }: SpeedLineProps) {
       {grid.map((v) => (
         <g key={v}>
           <line x1={PAD.l} x2={W - PAD.r} y1={y(v)} y2={y(v)} stroke="var(--color-rule)" strokeOpacity={v ? 0.5 : 1} />
-          <text x={PAD.l - 5} y={y(v) + 4} textAnchor="end" className="text-[13px] md:text-[10px]" fill="var(--color-ink-soft)">
+          <text x={PAD.l - 5} y={y(v) + 4} textAnchor="end" className="text-[13px] lg:text-[10px]" fill="var(--color-ink-soft)">
             {v}
           </text>
         </g>
       ))}
       {[0, 4, 8].map((s) => (
-        <text key={s} x={x(s)} y={H - 5} textAnchor="middle" className="text-[13px] md:text-[10px]" fill="var(--color-ink-soft)">
+        <text key={s} x={x(s)} y={H - 5} textAnchor="middle" className="text-[13px] lg:text-[10px]" fill="var(--color-ink-soft)">
           {DAY_SLOTS[s]}
         </text>
       ))}

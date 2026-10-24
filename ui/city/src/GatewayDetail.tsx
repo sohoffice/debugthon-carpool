@@ -36,7 +36,7 @@ export function GatewayDetail({ day, vdId, slot, over, isToday }: GatewayDetailP
       ]
     : []
   return (
-    <Panel name="選取的入口" kicker="選取的入口" title={g ? gatewayName(g) : undefined} className="md:min-h-0 md:flex-1 md:overflow-hidden">
+    <Panel name="選取的入口" kicker="選取的入口" title={g ? gatewayName(g) : undefined} className="lg:min-h-0 lg:flex-1 lg:overflow-hidden">
       {day && g && (
         <>
           <SpeedLine day={day} vdId={g.vd_id} slot={slot} over={over} />

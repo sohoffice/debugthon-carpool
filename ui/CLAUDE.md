@@ -70,7 +70,7 @@ ui/
 
 ### 5. 版面與樣式
 
-- 行動裝置優先（Demo 時用手機）。以 390px 寬度測試。市府管理介面（`city/`）是桌機版面，在 768px 以下重排成單欄（T71），以 1440px 與 390px 兩種寬度測試（`e2e/city-narrow.spec.ts`）；`shared` 不放只適用手機的版面。
+- 行動裝置優先（Demo 時用手機）。以 390px 寬度測試。市府管理介面（`city/`）是桌機版面，在 1024px 以下重排成單欄（T71、T72），視窗太矮時總覽改成往下捲；以 1440px 與 390px 為主，並測 `e2e/city-narrow.spec.ts` 列出的其他尺寸；`shared` 不放只適用手機的版面。
 - 只用 Tailwind。顏色用 `shared/src/theme.css` 的 token（色彩定義與用途見 `../docs/ui-design.md` 8.1），不要在 app 裡直接寫新的色碼。
 - 全螢幕版面用 `h-dvh`。
 

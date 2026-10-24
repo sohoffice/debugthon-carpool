@@ -101,7 +101,8 @@ test('市府儀表板: has 「← 首頁」 top left, which returns to the porta
   await expect(page).toHaveURL(PORTAL)
 })
 
-for (const width of [360, 390]) {
+// 768 and 1023: single column up to 1024px since T72 (#219), the link moved with it.
+for (const width of [360, 390, 768, 1023]) {
   test(`${width}px 市府儀表板: 「← 首頁」 is clear of the name, and the name of the clock`, async ({ browser }) => {
     const page = await openAt(browser, width, 844, `${SITE_URL}city/index.html`)
     const home = page.getByRole('link', { name: HOME })
@@ -124,6 +125,11 @@ for (const width of [360, 390]) {
     const clockBox = (await clock.boundingBox())!
     const sameRow = clockBox.y < brandBar.y + brandBar.height && clockBox.y + clockBox.height > brandBar.y
     if (sameRow) expect(nameTextRight).toBeLessThanOrEqual(clockBox.x)
+
+    // The narrow link stays in the name's row, clear of the tabs below it, which keep their full width.
+    const firstTab = (await page.getByRole('tab').first().boundingBox())!
+    expect(box.y + box.height).toBeLessThanOrEqual(firstTab.y)
+    expect(firstTab.x).toBeLessThan(box.width)
   })
 }
 
