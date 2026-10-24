@@ -135,6 +135,8 @@ function fakeStageBackend() {
     trip: { driver4: 4, driver5: 5 } as Record<string, number>,
     pending: {} as Record<string, number[]>,
     passengers: {} as Record<string, number[]>,
+    /** Passengers on board, by request id. */
+    boarded: new Set<number>(),
     /** Runs while a trip lookup is out, before it answers. */
     duringTripCheck: null as ((account: string) => void) | null,
   }
@@ -148,7 +150,7 @@ function fakeStageBackend() {
         return reply({ id: world.trip[account], auto_accept: false })
       }
       if (url === '/api/driver/requests') {
-        const item = (id: number) => ({ id })
+        const item = (id: number) => ({ id, boarded: world.boarded.has(id) })
         return reply({ trip_id: world.trip[account], pending: (world.pending[account] ?? []).map(item), passengers: (world.passengers[account] ?? []).map(item) })
       }
       if (url === '/api/location' && init.method === 'POST') {
@@ -248,7 +250,7 @@ describe('stage drivers hold, then fast-forward (T63, DD-14, DD-45)', () => {
     expect(result.current.statuses.driver5).toMatchObject({ kind: 'moving' })
   })
 
-  it('driver4 passes the pickup about 10 s after its passenger is confirmed, reports at most 20 m apart, then drives at 25 km/h', async () => {
+  it('driver4 passes the pickup within about 3 s of its passenger being confirmed, reports at most 20 m apart, then drives at 25 km/h', async () => {
     const backend = fakeStageBackend()
     renderHook(() => useSimulator(STAGE, true))
     await advance(60 * TICK_MS)
@@ -257,14 +259,15 @@ describe('stage drivers hold, then fast-forward (T63, DD-14, DD-45)', () => {
     backend.world.pending.driver4 = []
     backend.world.passengers.driver4 = [9]
     const confirmedAt = Date.now()
-    await advance(11 * TICK_MS)
+    await advance(4 * TICK_MS)
 
     const passAt = toPickup('driver4') + PICKUP_RADIUS_M + PASS_MARGIN_M
     const reports = backend.reports.filter((r) => r.account === 'driver4')
     const path = makePath(SIMULATOR_ROUTES.driver4.path)
     const passed = reports.find((r) => alongPath(path, r) > passAt)
     expect(passed).toBeDefined()
-    expect(passed!.at - confirmedAt).toBeLessThanOrEqual(11_000)
+    // Up to a tick to see the confirm, one tick to drive: the passenger UI's own poll adds up to 1 s (about 4 s in all).
+    expect(passed!.at - confirmedAt).toBeLessThanOrEqual(3_000)
     const along = backend.along('driver4')
     const gaps = along.slice(1).map((d, i) => d - along[i])
     expect(Math.max(...gaps)).toBeLessThanOrEqual(REPORT_STEP_M + 1)
@@ -275,6 +278,61 @@ describe('stage drivers hold, then fast-forward (T63, DD-14, DD-45)', () => {
     const after = backend.along('driver4').at(-1)!
     expect(after - before).toBeGreaterThan(9 * (25 / 3.6))
     expect(after - before).toBeLessThan(11 * (25 / 3.6) + REPORT_STEP_M)
+  })
+
+  it('once its passenger is on board, driver4 fast-forwards to the path end in 20 m steps, in about 4-5 s (T64)', async () => {
+    const backend = fakeStageBackend()
+    const { result } = renderHook(() => useSimulator(STAGE, true))
+    await advance(5 * TICK_MS)
+    backend.world.passengers.driver4 = [9]
+    await advance(10 * TICK_MS)
+    const path = makePath(SIMULATOR_ROUTES.driver4.path)
+    expect(backend.along('driver4').at(-1)).toBeLessThan(path.length / 2)
+
+    backend.world.boarded.add(9)
+    const boardedAt = Date.now()
+    await advance(7 * TICK_MS)
+
+    const reports = backend.reports.filter((r) => r.account === 'driver4')
+    const last = reports.at(-1)!
+    const [lat, lng] = SIMULATOR_ROUTES.driver4.path.at(-1)!
+    expect(last).toMatchObject({ lat: expect.closeTo(lat, 6), lng: expect.closeTo(lng, 6) })
+    // Up to a tick to see the boarding, then about 4 s of driving.
+    expect(last.at - boardedAt).toBeGreaterThan(3_500)
+    expect(last.at - boardedAt).toBeLessThanOrEqual(6_000)
+    const along = backend.along('driver4')
+    const gaps = along.slice(1).map((d, i) => d - along[i])
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(REPORT_STEP_M + 1)
+    expect(result.current.statuses.driver4).toEqual({ kind: 'arrived' })
+  })
+
+  it('a ride completed without boarding also sends driver4 on to the end (T64)', async () => {
+    const backend = fakeStageBackend()
+    renderHook(() => useSimulator(STAGE, true))
+    backend.world.passengers.driver4 = [9]
+    await advance(10 * TICK_MS)
+    // 我已下車 straight from the confirmed screen: the passenger list empties, nobody was marked boarded.
+    backend.world.passengers.driver4 = []
+    await advance(5 * TICK_MS)
+
+    const path = makePath(SIMULATOR_ROUTES.driver4.path)
+    expect(backend.along('driver4').at(-1)).toBeGreaterThan(path.length - 1)
+  })
+
+  it('?fast=0 keeps driver4 at its set speed, after the confirm and after boarding (T64)', async () => {
+    const backend = fakeStageBackend()
+    renderHook(() => useSimulator(STAGE, true, false))
+    backend.world.passengers.driver4 = [9]
+    await advance(3 * TICK_MS)
+    backend.world.boarded.add(9)
+    await advance(10 * TICK_MS)
+
+    // 13 s at 25 km/h from the release, and still parked until the request: the hold stays.
+    expect(backend.along('driver4').at(-1)).toBeLessThan(14 * (25 / 3.6) + REPORT_STEP_M)
+    const parked = fakeStageBackend()
+    renderHook(() => useSimulator(STAGE, true, false))
+    await advance(30 * TICK_MS)
+    expect(parked.along('driver5')).toEqual([0])
   })
 
   it('a background tab that skipped ticks while parked catches up by elapsed time from the release, in 20 m steps', async () => {

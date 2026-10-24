@@ -24,29 +24,42 @@ export function distanceTravelled(speedKmh: number, startedAtMs: number, now: nu
   return Math.min(Math.max(now - startedAtMs, 0) / 1000 * (speedKmh / 3.6), length)
 }
 
+/** A fast-forward: from `at`, at `speedKmh` until `untilM` metres along the path (T63, T64). */
+export interface FastSegment {
+  at: number
+  speedKmh: number
+  untilM: number
+}
+
 /**
- * How a car moves along its path (DD-14, T63): parked at the start while `releasedAt` is null, then
- * at `speedKmh`; from `fast.at`, at `fast.speedKmh` until `fast.untilM` along the path, then at
- * `speedKmh` again.
+ * How a car moves along its path (DD-14, T63, T64): parked at the start while `releasedAt` is null,
+ * then at `speedKmh`, with each fast-forward in `fast` in order and `speedKmh` between them.
  */
 export interface Motion {
   releasedAt: number | null
   speedKmh: number
-  fast: { at: number; speedKmh: number; untilM: number } | null
+  fast: FastSegment[]
 }
 
 /** Metres along the path at `now`, piecewise by elapsed time, so a throttled tab still catches up (DD-14). */
 export function distanceAlong({ releasedAt, speedKmh, fast }: Motion, now: number, length: number): number {
   if (releasedAt === null) return 0
-  const normal = distanceTravelled(speedKmh, releasedAt, now, length)
-  if (!fast || now <= fast.at) return normal
-  const fastFrom = Math.max(fast.at, releasedAt)
-  const atFast = distanceTravelled(speedKmh, releasedAt, fastFrom, length)
-  // Already past the stretch when the passenger was confirmed: nothing to fast-forward.
-  if (atFast >= fast.untilM) return normal
-  const fastMs = ((fast.untilM - atFast) / (fast.speedKmh / 3.6)) * 1000
-  if (now - fastFrom <= fastMs) return Math.min(atFast + distanceTravelled(fast.speedKmh, fastFrom, now, length), length)
-  return Math.min(fast.untilM + distanceTravelled(speedKmh, fastFrom + fastMs, now, length), length)
+  let at = 0
+  let from = releasedAt
+  for (const segment of fast) {
+    if (now <= segment.at) break
+    // At the set speed up to the segment's start; a segment seen before the last one ended follows it.
+    const start = Math.max(segment.at, from)
+    at = Math.min(at + distanceTravelled(speedKmh, from, start, length), length)
+    from = start
+    // Already past the stretch when the segment came: nothing to fast-forward.
+    if (at >= segment.untilM) continue
+    const fastMs = ((segment.untilM - at) / (segment.speedKmh / 3.6)) * 1000
+    if (now - from <= fastMs) return Math.min(at + distanceTravelled(segment.speedKmh, from, now, length), length)
+    at = segment.untilM
+    from += fastMs
+  }
+  return Math.min(at + distanceTravelled(speedKmh, from, now, length), length)
 }
 
 export function pointAt(path: SimPath, along: number): LatLng {
