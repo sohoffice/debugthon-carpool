@@ -158,7 +158,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 
 ### 展示頁（UD-18、UD-30）
 
-已完成：`ui/showcase`（`http://localhost:5170`），並排嵌入駕駛（`driver4`）與乘客（`passenger1`）。[#191 T62](https://github.com/sohoffice/debugthon-carpool/issues/191) 後，右上角是「開始 Demo／重新開始」，展示頁自己執行模擬器與台下操作（`driver5` 跟著 `driver4` 出發、收到請求就婉拒，DD-45）；右下角是給講者的「手機｜市府戰情室」切換與收起來的「紀錄」（UD-30）。取代台下腳本 `just demo-offstage`（[#85 T18E](https://github.com/sohoffice/debugthon-carpool/issues/85)）。
+已完成：`ui/showcase`（`http://localhost:5170`），並排嵌入駕駛（`driver4`）與乘客（`passenger1`）。[#191 T62](https://github.com/sohoffice/debugthon-carpool/issues/191) 後，右上角是「開始 Demo／重新開始」，展示頁自己執行模擬器與台下操作（`driver5` 跟著 `driver4` 出發、收到請求就婉拒，DD-45）；右下角是給講者的「手機｜市府儀表板」切換與收起來的「紀錄」（UD-30）。取代台下腳本 `just demo-offstage`（[#85 T18E](https://github.com/sohoffice/debugthon-carpool/issues/85)）。
 
 ### UI 優化待修清單
 

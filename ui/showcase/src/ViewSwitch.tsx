@@ -4,10 +4,10 @@ export type View = 'phones' | 'city'
 
 const OPTIONS: { value: View; label: string }[] = [
   { value: 'phones', label: '手機' },
-  { value: 'city', label: '市府戰情室' },
+  { value: 'city', label: '市府儀表板' },
 ]
 
-/** UD-30 part 3: 手機｜市府戰情室, a two-way radio group; arrow keys switch, no transition. */
+/** UD-30 part 3: 手機｜市府儀表板, a two-way radio group; arrow keys switch, no transition. */
 export function ViewSwitch({ value, onChange }: { value: View; onChange: (view: View) => void }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([])
 

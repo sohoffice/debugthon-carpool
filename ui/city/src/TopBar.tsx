@@ -25,7 +25,7 @@ export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
       <h1 className="flex h-full shrink-0 items-center gap-2.5 text-[17px] font-semibold">
         <span className="h-full w-2 bg-brand" />
         內科上班順起來: 內科順路共乘
-        <span className="text-[15px] font-medium text-fog">市府戰情室</span>
+        <span className="text-[15px] font-medium text-fog">市府儀表板</span>
       </h1>
       <nav role="tablist" aria-label="分頁" className="flex h-full shrink-0">
         {TABS.map(([key, label]) => (
