@@ -134,6 +134,8 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 
 已完成：`http://localhost:5173/?debug=1` 的除錯模式。可切換主畫面的駕駛，模擬器替勾選的駕駛沿 `driver/src/simulatorRoutes.ts` 的路徑與速度，透過 `POST /api/location` 回報位置；只在 `GET /api/driver/trips/current` 有行程時回報，到終點就停止。位置依經過時間計算，每兩筆回報相距不超過 20 公尺。
 
+[#191 T62](https://github.com/sohoffice/debugthon-carpool/issues/191) 後，模擬器移到展示頁，由「開始 Demo」啟動、每秒查一次行程（DD-14、DD-45）；程式與測試在 `showcase/src/useSimulator.ts`、`showcase/src/simulatorRoutes.ts`、`showcase/src/simulatorPath.ts`。駕駛的除錯模式只剩切換帳號（SC-X2）。下面的檔名是 T08 當時的位置。
+
 驗收條件：
 
 - [x] 同時替 5 個駕駛帳號回報位置（測試：`driver/src/useSimulator.test.ts`）
@@ -154,9 +156,9 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 | 測試後不留資料 | ✅ 已完成（示範後端） | 每個測試前後重設示範後端 |
 | 接 Go 後端 | ✅ 已完成 | `e2e/go/happy-path.spec.ts`：快樂路徑與無車可配；Go 後端用獨立的資料庫 `carpool_e2e`，每個測試前後呼叫 Demo 重設（T17、DD-29） |
 
-### 展示頁（UD-18）
+### 展示頁（UD-18、UD-30）
 
-已完成：`ui/showcase`（`http://localhost:5170`），並排嵌入駕駛（`driver4`）與乘客（`passenger1`），「重設」按兩次才執行，執行後兩支手機一起重新載入。Go 後端的 `POST /api/demo/reset` 在 [#17 T17](https://github.com/sohoffice/debugthon-carpool/issues/17)（DD-29），還沒完成。
+已完成：`ui/showcase`（`http://localhost:5170`），並排嵌入駕駛（`driver4`）與乘客（`passenger1`）。[#191 T62](https://github.com/sohoffice/debugthon-carpool/issues/191) 後，右上角是「開始 Demo／重新開始」，展示頁自己執行模擬器與台下操作（`driver5` 跟著 `driver4` 出發、收到請求就婉拒，DD-45）；右下角是給講者的「手機｜市府戰情室」切換與收起來的「紀錄」（UD-30）。取代台下腳本 `just demo-offstage`（[#85 T18E](https://github.com/sohoffice/debugthon-carpool/issues/85)）。
 
 ### UI 優化待修清單
 
@@ -166,8 +168,7 @@ T20、T22 的後端已在 `main`，介面還在用前端提案的格式。完成
 - 模擬器的 `driver5` 路徑終點固定在瑞光路 513 巷：真人用 `driver5` 選別的目的地時，模擬器開不到那裡，行程不會自動結束。暫時的做法：Demo 用 `driver5` 時選瑞光路 513 巷，或不開模擬器替它回報。
 - 目的地搜尋的錯誤訊息不分原因：金鑰無效、超過配額、網路斷線，畫面都顯示「搜尋不到，請檢查網路再試一次。」，現場不容易判斷是哪一種（`shared/src/ui/PlaceSearch.tsx`）。可以依 Google 回傳的錯誤分成「地圖服務暫時無法使用」與「請檢查網路」。
 - 目的地搜尋的建議清單只能點選，不能用鍵盤上下鍵選擇，也沒有 `aria-activedescendant`。手機操作不受影響；桌面或輔助科技使用者較不方便。
-- 已確認畫面的「幾分鐘後到」來自 Google 的即時路況，但模擬器固定以時速 25 公里前進，兩者常差好幾分鐘（例如顯示 4 分鐘、約 1 分半就到）。只影響 Demo 的觀感，劇本已提醒講者；要改的話，是讓模擬器依路線的預估時間調整速度（`driver/src/simulatorRoutes.ts`）。
-- 台下腳本 `just demo-offstage`（[#85 T18E](https://github.com/sohoffice/debugthon-carpool/issues/85)）在 `driver5` 已經婉拒過之後，仍會在它經過上車點時印出「注意：driver5 已經過上車點…」。那時請求已經送完，講者可以忽略；要改的話，是只在還沒婉拒過時提示。
+- 已確認畫面的「幾分鐘後到」來自 Google 的即時路況，但模擬器固定以時速 25 公里前進，兩者常差好幾分鐘（例如顯示 4 分鐘、約 1 分半就到）。只影響 Demo 的觀感，劇本已提醒講者；要改的話，是讓模擬器依路線的預估時間調整速度（`showcase/src/simulatorRoutes.ts`）。
 - `docs/ui-design.md` 10.1 的「介面需要、但 `main` 的後端 API 還沒有的資料」只剩 T22 一項，而 T22 已合併；但其中仍有現在有效的規則（「車已到上車點」依 `passed_pickup` 判斷、沒有 ETA 時顯示「車子正在來」、模擬標示的欄位）。要整理時，把仍有效的規則搬到「Go 後端已有的 API」那一段，再刪掉這段。
 - 駕駛出發確認：上次的出發設定還在載入時，設定列已經可以點；載入完成時會重設展開的列（`driver/src/DepartureScreen.tsx` 的 `setOpen`），駕駛在這一瞬間展開的列會自己收起來。本機只有幾十毫秒，網路慢時比較容易碰到。要改的話，是只在駕駛還沒動過設定列時才套用預設的展開狀態（6.1、UD-02）。
 

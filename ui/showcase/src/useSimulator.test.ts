@@ -1,10 +1,9 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SIMULATOR_ROUTES } from './simulatorRoutes'
-import { SEEDED_TRIP_ACCOUNTS, SIMULATED_ACCOUNTS, useSimulator } from './useSimulator'
+import { SEEDED_TRIP_ACCOUNTS, SIMULATED_ACCOUNTS, TRIP_CHECK_MS, useSimulator } from './useSimulator'
 
 const TICK_MS = 1000
-const TRIP_CHECK_MS = 5000
 
 /**
  * A backend for five drivers. Every account but `late` has a running trip from the start; `late`
@@ -74,10 +73,11 @@ describe('simulator (T08, DD-14)', () => {
     expect(backend.reports.filter((r) => r.account === late)).toEqual([])
     expect(result.current[late]).toEqual({ kind: 'no_trip' })
 
-    // The driver departs from the UI: within one trip check the simulator picks the trip up,
+    // The driver departs from the UI: within a second the simulator picks the trip up (DD-45),
     // starting from the beginning of the account's path.
+    expect(TRIP_CHECK_MS).toBe(1000)
     backend.departLate()
-    await advance(TRIP_CHECK_MS + TICK_MS)
+    await advance(TICK_MS)
     const lateReports = backend.reports.filter((r) => r.account === late)
     expect(lateReports.length).toBeGreaterThan(0)
     const [lat, lng] = SIMULATOR_ROUTES[late].path[0]

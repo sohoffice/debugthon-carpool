@@ -1,4 +1,4 @@
-// Simulator paths per demo driver account (DD-14, T08): start position → 松山車站 → destination.
+// Simulator paths per demo driver account, run by the showcase (DD-14, T08): start position → 松山車站 → destination.
 // Points follow real streets (bus routes' stop order, the same corridors as the mock backend);
 // starts are spread so the cars reach the pickup point at different times.
 // Generated once from mock-server/src/tripPath.ts; edit by hand as needed.
@@ -106,7 +106,7 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
       [25.0763, 121.575],
     ],
   },
-  // 535 m before 松山車站, so the Demo's cue can come right after departure; then on to 瑞光路 513 巷.
+  // 535 m before 松山車站, so it can be matched right after departure; then on to 瑞光路 513 巷.
   driver4: {
     speedKmh: 25,
     path: [
@@ -129,11 +129,15 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
       [25.0765, 121.5742],
     ],
   },
-  // 535 m before 松山車站, so the Demo's cue can come right after departure; then on to 瑞光路 513 巷.
+  // 400 m before 松山車站, nearer than driver4, so departing together it reaches the pickup first and
+  // gets the request (DD-45). It counts as passed once 80 m + the 25 m pass margin beyond the pickup
+  // (DD-06): (400 + 105) m at 25 km/h is about 73 s after departure. docs/demo-script.md sends the
+  // request about 40 s after driver4 departs (the opening, then 0:00 to 0:15), leaving about 30 s.
+  // Then on to 瑞光路 513 巷.
   driver5: {
     speedKmh: 25,
     path: [
-      [25.045005, 121.577907],
+      [25.046223, 121.57791],
       [25.047269, 121.577913],
       [25.049806, 121.578206],
       [25.05082, 121.58108],

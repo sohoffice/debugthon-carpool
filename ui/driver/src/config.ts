@@ -14,5 +14,5 @@ export const CAPACITY_RANGE = { min: 1, max: 6, fallback: 3 }
 export const account = getAccountFromUrl(DEFAULT_ACCOUNT)
 export const api = createApiClient('driver', account)
 
-/** `?debug=1`: account switch and simulator (DD-14). */
+/** `?debug=1`: account switch (SC-X2). */
 export const DEBUG = isDebugMode()

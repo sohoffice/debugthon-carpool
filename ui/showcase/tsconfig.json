@@ -1,4 +1,6 @@
 {
   "extends": "../tsconfig.base.json",
-  "include": ["src", "../shared/src"]
+  "include": ["src", "../shared/src"],
+  // Tests import Node code from the mock backend; the root typecheck (ui/tsconfig.json) checks them.
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

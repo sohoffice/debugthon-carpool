@@ -5,8 +5,8 @@ import { distanceTravelled, makePath, pointAt, reportDistances, type SimPath } f
 import { SIMULATOR_ROUTES } from './simulatorRoutes'
 
 const TICK_MS = 1000
-/** How often each account's running trip is looked up. */
-const TRIP_CHECK_MS = 5000
+/** How often each account's running trip is looked up: within a second of driver4 departing it is reported, so it can be matched (DD-45). */
+export const TRIP_CHECK_MS = 1000
 
 export type SimulatorStatus =
   | { kind: 'waiting' }
@@ -52,11 +52,11 @@ async function confirmPending(api: ApiClient) {
 }
 
 /**
- * The simulator (DD-14, T08): while running, each selected driver with a running trip moves along
+ * The simulator (DD-14, T08), run by the showcase from 開始 Demo (DD-45): while running, each selected driver with a running trip moves along
  * its predefined path at its speed and reports positions through the public location API. Position
  * comes from elapsed time, so a throttled background tab catches up instead of falling behind.
  * For the seeded trips it also confirms requests when the trip auto-accepts (DD-33).
- * Nothing is saved: after a reload it starts again from the beginning of each path.
+ * Nothing is saved: reloading the showcase stops it (UD-30).
  */
 export function useSimulator(accounts: string[], running: boolean): Record<string, SimulatorStatus> {
   const drivers = useMemo(
