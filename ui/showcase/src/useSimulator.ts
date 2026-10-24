@@ -1,8 +1,8 @@
 import { ApiError, createApiClient, type ApiClient, type DriverRequests, type TripView } from '@carpool/shared'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { POLL_INTERVAL_MS } from './config'
-import { distanceTravelled, makePath, pointAt, reportDistances, type SimPath } from './simulatorPath'
-import { SIMULATOR_ROUTES } from './simulatorRoutes'
+import { distanceAlong, makePath, pointAt, reportDistances, type Motion, type SimPath } from './simulatorPath'
+import { SIMULATOR_ROUTES, type SimulatorRoute } from './simulatorRoutes'
 
 const TICK_MS = 1000
 /** How often each account's running trip is looked up: within a second of driver4 departing it is reported, so it can be matched (DD-45). */
@@ -11,6 +11,7 @@ export const TRIP_CHECK_MS = 1000
 export type SimulatorStatus =
   | { kind: 'waiting' }
   | { kind: 'no_trip' }
+  | { kind: 'held' }
   | { kind: 'moving'; progress: number }
   | { kind: 'arrived' }
   | { kind: 'error'; message: string }
@@ -18,17 +19,55 @@ export type SimulatorStatus =
 interface Track {
   tripId: number | null
   checkedAt: number
-  startedAt: number
+  /** When the car started moving; null while parked at the path start until a request (T63). */
+  releasedAt: number | null
+  /** When the first confirmed passenger was seen, for the fast-forward (T63). */
+  fastAt: number | null
   /** Metres along the path last reported; -1 before the first report. */
   reported: number
   autoAccept: boolean
   requestsCheckedAt: number
+  /** When the car's own requests were last read for the hold and the fast-forward (T63). */
+  stageCheckedAt: number
 }
 
 interface Driver {
   api: ApiClient
   path: SimPath
-  speedKmh: number
+  route: SimulatorRoute
+}
+
+const newTrack = (tripId: number | null, now: number, autoAccept: boolean, hold: boolean): Track => ({
+  tripId,
+  checkedAt: now,
+  releasedAt: hold ? null : now,
+  fastAt: null,
+  reported: -1,
+  autoAccept,
+  requestsCheckedAt: 0,
+  stageCheckedAt: 0,
+})
+
+/** A parked track with a release from outside (release()) starts moving from when it came. */
+const withRelease = (track: Track, releasedAt: number | undefined): Track =>
+  track.releasedAt === null && releasedAt !== undefined ? { ...track, releasedAt } : track
+
+const motionOf = (route: SimulatorRoute, track: Track): Motion => ({
+  releasedAt: track.releasedAt,
+  speedKmh: route.speedKmh,
+  fast: route.fastForward && track.fastAt !== null ? { at: track.fastAt, ...route.fastForward } : null,
+})
+
+/** Still has to read its own requests: parked, or waiting for a confirmed passenger to fast-forward (T63). */
+function watchesRequests(route: SimulatorRoute, track: Track): boolean {
+  if (track.releasedAt === null) return true
+  return !!route.fastForward && track.fastAt === null && track.reported < route.fastForward.untilM
+}
+
+/** The simulator's statuses, and `release` for a request seen elsewhere (the off-stage decline, DD-45). */
+export interface Simulator {
+  statuses: Record<string, SimulatorStatus>
+  release: (account: string, tripId: number) => void
 }
 
 export const SIMULATED_ACCOUNTS = Object.keys(SIMULATOR_ROUTES)
@@ -58,26 +97,38 @@ async function confirmPending(api: ApiClient) {
  * For the seeded trips it also confirms requests when the trip auto-accepts (DD-33).
  * Nothing is saved: reloading the showcase stops it (UD-30).
  */
-export function useSimulator(accounts: string[], running: boolean): Record<string, SimulatorStatus> {
+export function useSimulator(accounts: string[], running: boolean): Simulator {
   const drivers = useMemo(
     () =>
       Object.fromEntries(
         Object.entries(SIMULATOR_ROUTES).map(([name, route]): [string, Driver] => [
           name,
-          { api: createApiClient('driver', name), path: makePath(route.path), speedKmh: route.speedKmh },
+          { api: createApiClient('driver', name), path: makePath(route.path), route },
         ]),
       ),
     [],
   )
   const [statuses, setStatuses] = useState<Record<string, SimulatorStatus>>({})
   const tracks = useRef<Record<string, Track>>({})
+  /** Trips released from outside, by trip id: when the release came (T63). */
+  const releases = useRef<Record<number, number>>({})
   const busy = useRef<Set<string>>(new Set())
   const key = accounts.join(',')
+
+  // A request seen once releases the trip for good, even after it is declined or reassigned: the
+  // off-stage part declines driver5's within a second, maybe before this simulator reads it (T63).
+  // Only recorded here; step() applies it after its awaits, so a step that was reading the trip
+  // when it came cannot write the car back to parked.
+  const release = useCallback((_account: string, tripId: number) => {
+    if (releases.current[tripId] !== undefined) return
+    releases.current = { ...releases.current, [tripId]: Date.now() }
+  }, [])
 
   // Stopping forgets every track; the next start begins at each path's start again.
   useEffect(() => {
     if (running) return
     tracks.current = {}
+    releases.current = {}
     setStatuses({})
   }, [running])
 
@@ -94,26 +145,40 @@ export function useSimulator(accounts: string[], running: boolean): Record<strin
           if (err instanceof ApiError && err.status === 404) return null
           throw err
         })
+        const hold = !!driver.route.holdUntilRequest
         if (!trip) {
-          tracks.current[name] = { tripId: null, checkedAt: now, startedAt: now, reported: -1, autoAccept: false, requestsCheckedAt: 0 }
+          tracks.current[name] = newTrack(null, now, false, hold)
           return setStatus(name, { kind: 'no_trip' })
         }
-        // A new trip starts again from the beginning of the path.
+        // A new trip starts again from the beginning of the path, parked again if the route holds (T63).
         track =
           trip.id === track?.tripId
             ? { ...track, checkedAt: now, autoAccept: trip.auto_accept }
-            : { tripId: trip.id, checkedAt: now, startedAt: now, reported: -1, autoAccept: trip.auto_accept, requestsCheckedAt: 0 }
+            : newTrack(trip.id, now, trip.auto_accept, hold)
         tracks.current[name] = track
       }
       if (track.tripId === null) return
+      track = withRelease(track, releases.current[track.tripId])
+      tracks.current[name] = track
       if (track.autoAccept && SEEDED_TRIP_ACCOUNTS.includes(name) && now - track.requestsCheckedAt >= POLL_INTERVAL_MS) {
         track = { ...track, requestsCheckedAt: now }
         tracks.current[name] = track
         await confirmPending(driver.api)
       }
+      if (watchesRequests(driver.route, track) && now - track.stageCheckedAt >= TRIP_CHECK_MS) {
+        track = { ...track, stageCheckedAt: now }
+        tracks.current[name] = track
+        const { pending, passengers } = await driver.api.get<DriverRequests>('/driver/requests')
+        // Read again: release() may have run while the request was out.
+        track = withRelease(tracks.current[name], releases.current[track.tripId ?? -1])
+        const releasedAt = track.releasedAt ?? (pending.length > 0 || passengers.length > 0 ? now : null)
+        const fastAt = track.fastAt ?? (driver.route.fastForward && passengers.length > 0 ? now : null)
+        track = { ...track, releasedAt, fastAt }
+        tracks.current[name] = track
+      }
       if (track.reported >= driver.path.length) return setStatus(name, { kind: 'arrived' })
 
-      const along = distanceTravelled(driver.speedKmh, track.startedAt, now, driver.path.length)
+      const along = distanceAlong(motionOf(driver.route, track), now, driver.path.length)
       const steps = track.reported < 0 ? [0, ...reportDistances(0, along)] : reportDistances(track.reported, along)
       // One at a time and in order: the backend reads them as the car's track (DD-06).
       for (const d of steps) {
@@ -121,6 +186,7 @@ export function useSimulator(accounts: string[], running: boolean): Record<strin
         track = { ...track, reported: d }
         tracks.current[name] = track
       }
+      if (track.releasedAt === null) return setStatus(name, { kind: 'held' })
       setStatus(name, track.reported >= driver.path.length ? { kind: 'arrived' } : { kind: 'moving', progress: track.reported / driver.path.length })
     }
 
@@ -141,5 +207,5 @@ export function useSimulator(accounts: string[], running: boolean): Record<strin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, key, drivers])
 
-  return statuses
+  return { statuses, release }
 }

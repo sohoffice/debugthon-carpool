@@ -55,8 +55,13 @@ function fakeStage(init: Partial<World> = {}) {
     }
   }
   const logs: { text: string; error: boolean }[] = []
-  const tick = createOffstage({ driver4: client('driver4'), driver5: client('driver5') }, (text, error = false) => logs.push({ text, error }))
-  return { world, departs, declines, logs, tick, texts: () => logs.map((l) => l.text) }
+  const requests: [string, number][] = []
+  const tick = createOffstage(
+    { driver4: client('driver4'), driver5: client('driver5') },
+    (text, error = false) => logs.push({ text, error }),
+    (account, tripId) => requests.push([account, tripId]),
+  )
+  return { world, departs, declines, logs, requests, tick, texts: () => logs.map((l) => l.text) }
 }
 
 describe('off-stage part of the Demo (DD-45)', () => {
@@ -95,6 +100,17 @@ describe('off-stage part of the Demo (DD-45)', () => {
     expect(stage.declines).toEqual([9])
     expect(stage.texts()).toContain('driver5 婉拒了乘客 小美的請求')
     await stage.tick()
+    expect(stage.declines).toEqual([9])
+  })
+
+  it("tells the simulator about driver5's request before declining it, so the car is released (T63)", async () => {
+    const stage = fakeStage({ d4Trip: 40, d5Trip: 7 })
+    await stage.tick()
+    expect(stage.requests).toEqual([])
+
+    stage.world.pending = [{ id: 9, passenger_name: '乘客 小美' }]
+    await stage.tick()
+    expect(stage.requests).toEqual([['driver5', 7]])
     expect(stage.declines).toEqual([9])
   })
 
