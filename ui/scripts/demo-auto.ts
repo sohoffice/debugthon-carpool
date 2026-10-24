@@ -15,8 +15,10 @@ const SETTLE_MS = 1000
 /** A file path next to this script (`pathname` is URL-encoded). */
 const here = (relative: string) => decodeURIComponent(new URL(relative, import.meta.url).pathname)
 const SHOTS = here('../test-results/demo-auto/')
-/** The simulated car reaches the pickup about a minute and a half after it is confirmed; leave room. */
-const CAR_ARRIVES_MS = 180_000
+/** driver4 fast-forwards past the pickup about 4 s after it is confirmed (T64); leave room. */
+const CAR_ARRIVES_MS = 30_000
+/** After 我已上車 driver4 fast-forwards to the destination and the trip ends by itself, about 6 s (T64); leave room. */
+const TRIP_ENDS_MS = 30_000
 
 const t0 = Date.now()
 const say = (text: string) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0).padStart(4)} 秒] ${text}`)
@@ -99,16 +101,17 @@ async function main() {
     await driver.getByRole('button', { name: '確認', exact: true }).click()
     // Only the confirmed screen has 我已上車; 分鐘後到 is also the placeholder while reassigning
     await passenger.getByRole('button', { name: '我已上車' }).waitFor({ timeout: 15_000 })
-    await step('confirmed', '0:35 駕駛確認，乘客看到車牌與到達時間；車開往上車點（約 1 分半）。')
+    await step('confirmed', '0:35 駕駛確認，乘客看到車牌與到達時間；車快轉到上車點（約 4 秒）。')
 
     await passenger.getByRole('heading', { name: '車已到上車點' }).waitFor({ timeout: CAR_ARRIVES_MS })
-    await step('arrived', '1:30 車已到上車點。')
+    await step('arrived', '0:40 車已到上車點。')
+    // No 我已下車: driver4 fast-forwards to the destination and the trip ends by itself with the
+    // ride (T64, DD-30). No screenshot in between, so a visible run's pause cannot miss the end.
     await passenger.getByRole('button', { name: '我已上車' }).click()
-    await driver.getByText('在車上').waitFor({ timeout: 15_000 })
-    await step('boarded', '1:35 乘客上車。')
-    await passenger.getByRole('button', { name: '我已下車，結束共乘' }).click()
-    await passenger.getByRole('heading', { name: '共乘完成' }).waitFor({ timeout: 15_000 })
-    await step('completed', '1:45 共乘完成。')
+    say('0:41 乘客上車，車快轉到目的地。')
+    await passenger.getByRole('heading', { name: '共乘完成' }).waitFor({ timeout: TRIP_ENDS_MS })
+    await driver.getByText('這趟載了 1 位乘客').waitFor({ timeout: TRIP_ENDS_MS })
+    await step('completed', '0:47 共乘完成，行程自己結束：駕駛「行程結束／這趟載了 1 位乘客」。')
 
     say(`Demo 跑完了，截圖在 ${SHOTS}`)
     await sleep(LINGER_MS)
