@@ -5,7 +5,7 @@
 ## 執行
 
 ```sh
-python3 prototype/city-story/serve.py
+python3 simulation/neihu-congestion/serve.py
 ```
 
 打開 `http://localhost:5180`。`serve.py` 每次從根目錄 `.env` 讀 `VITE_GOOGLE_MAPS_API_KEY`，以 `config.js` 交給頁面，金鑰不會寫進檔案。沒有金鑰或金鑰被拒時改用 OpenStreetMap 底圖；網址加 `?base=osm` 可以直接指定。
@@ -35,4 +35,4 @@ python3 prototype/city-story/serve.py
 2. `fetch_peak.py .env $W 2026-10-22`：下載整天的 VD 歷史資料（約 1 GB），彙整內湖各路段晨峰每 15 分鐘的資料。
 3. `calibrate_vd.py $W 2026-10-22`：產生 `$W/tdx/detectors_2026-10-22.json`，即各偵測器的自由車速與容量。
 4. `build_routes.py $W/routes_v5.json $W/park.json`：產生住家、候選路線與經過的偵測器。需要 `$W/osm/bridges.json`（Overpass 抓的內湖周邊橋梁），請求結果快取在 `$W/route_cache.json`。
-5. `inject.py $W prototype/city-story/data.js routes_v5.json`：合併 `$W/stations.json`、`$W/mrt_lines.json`（Overpass 抓的捷運車站順序與軌道）與 `$W/park.json`，寫出 `data.js`。
+5. `inject.py $W simulation/neihu-congestion/data.js routes_v5.json`：合併 `$W/stations.json`、`$W/mrt_lines.json`（Overpass 抓的捷運車站順序與軌道）與 `$W/park.json`，寫出 `data.js`。

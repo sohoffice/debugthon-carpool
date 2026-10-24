@@ -1,4 +1,4 @@
-"""Homes and candidate road routes for the story prototype.
+"""Homes and candidate road routes for the Neihu congestion simulation.
 
 Each driver gets a few candidate routes (OSRM's fastest and alternatives, plus routes over the other bridges that
 are at most DETOUR slower); the page shares people out over the bridges in the volumes the detectors measured. Every candidate
@@ -100,7 +100,7 @@ def osrm(url):
     for attempt in range(8):
         try:
             # curl, not urllib: the system Python here has no CA bundle for HTTPS.
-            raw = subprocess.run(['curl', '-s', '--max-time', '40', '-A', 'carpool-story-prototype/0.1', url], capture_output=True, text=True, check=True).stdout
+            raw = subprocess.run(['curl', '-s', '--max-time', '40', '-A', 'carpool-congestion-sim/0.1', url], capture_output=True, text=True, check=True).stdout
             data = json.loads(raw)
             if data.get('code') == 'Ok':
                 CACHE[url] = data

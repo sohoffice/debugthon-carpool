@@ -1,4 +1,4 @@
-"""Write prototype/city-story/data.js from the data files in the work directory."""
+"""Write simulation/neihu-congestion/data.js from the data files in the work directory."""
 import json
 import sys
 from pathlib import Path
