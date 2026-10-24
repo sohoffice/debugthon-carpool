@@ -23,12 +23,16 @@ function fakeBackend() {
     pending: {} as Record<string, number[]>,
     passengers: {} as Record<string, number[]>,
     boarded: new Set<number>(),
+    /** Holds the answer to a call, after it is counted, until the returned promise settles. */
+    gate: null as ((url: string) => Promise<void> | undefined) | null,
   }
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init: RequestInit) => {
       const account = String((init.headers as Record<string, string>).Authorization).split(':')[1]
       const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+      if (url === '/api/location' && init.method === 'POST') reports.push({ account, ...JSON.parse(String(init.body)), at: Date.now() })
+      await world.gate?.(url)
       if (url === '/api/driver/trips/current') return reply({ id: world.trip[account], auto_accept: account === 'driver1' })
       if (url === '/api/driver/requests') {
         const item = (id: number) => ({ id, boarded: world.boarded.has(id) })
@@ -39,10 +43,7 @@ function fakeBackend() {
         accepts.push(account)
         return reply({ id: 101, status: 'confirmed' })
       }
-      if (url === '/api/location' && init.method === 'POST') {
-        reports.push({ account, ...JSON.parse(String(init.body)), at: Date.now() })
-        return reply({}, 201)
-      }
+      if (url === '/api/location' && init.method === 'POST') return reply({}, 201)
       return reply({ error: { code: 'not_found', message: '' } }, 404)
     }),
   )
@@ -75,10 +76,35 @@ const advance = (ms: number) => vi.advanceTimersByTimeAsync(ms)
 /** A started engine with its latest statuses; stopped after each test. */
 function started(accounts: string[], fastForward = true) {
   const statuses: Record<string, SimulatorStatus> = {}
-  const sim = createSimulator({ accounts, fastForward, confirmFor: SEEDED_TRIP_ACCOUNTS, onStatus: (name, s) => (statuses[name] = s) })
+  const calls = { status: 0 }
+  const sim = createSimulator({
+    accounts,
+    fastForward,
+    confirmFor: SEEDED_TRIP_ACCOUNTS,
+    onStatus: (name, s) => {
+      statuses[name] = s
+      calls.status++
+    },
+  })
   engines.push(sim)
   sim.start()
-  return { sim, statuses }
+  return { sim, statuses, calls }
+}
+
+/** A gate for one URL: held from the first call to it until `open()`. */
+function holdNext(url: string) {
+  let open = () => {}
+  let reached = false
+  const held = new Promise<void>((resolve) => (open = resolve))
+  return {
+    gate: (called: string) => {
+      if (called !== url || reached) return undefined
+      reached = true
+      return held
+    },
+    reached: () => reached,
+    open: () => open(),
+  }
 }
 let engines: ReturnType<typeof createSimulator>[] = []
 
@@ -227,5 +253,45 @@ describe('simulator without React (T67, DD-14, DD-46)', () => {
 
     expect(backend.reports).toHaveLength(count)
     expect(statuses.driver1).toBe(status)
+  })
+
+  it('stop() while the trip lookup is out: no confirm, no report and no status after it (StrictMode starts twice)', async () => {
+    const backend = fakeBackend()
+    const hold = holdNext('/api/driver/trips/current')
+    backend.world.gate = hold.gate
+    const { sim, calls } = started(['driver1'])
+    await advance(0)
+    expect(hold.reached()).toBe(true)
+
+    sim.stop()
+    const status = calls.status
+    hold.open()
+    await advance(5 * TICK_MS)
+
+    // driver1 auto-accepts: without the stop the step would confirm 101 and report the path start.
+    expect(backend.accepts).toEqual([])
+    expect(backend.reports).toEqual([])
+    expect(calls.status).toBe(status)
+  })
+
+  it('stop() while a report is out: the rest of that catch-up is not sent', async () => {
+    const backend = fakeBackend()
+    const { sim, calls } = started(['driver1'])
+    await advance(3 * TICK_MS)
+    // A minute with no tick: the next step has dozens of 20 m reports to send, one at a time.
+    const hold = holdNext('/api/location')
+    backend.world.gate = hold.gate
+    vi.setSystemTime(Date.now() + 60_000)
+    await advance(TICK_MS)
+    expect(hold.reached()).toBe(true)
+
+    sim.stop()
+    const sent = backend.reports.length
+    const status = calls.status
+    hold.open()
+    await advance(5 * TICK_MS)
+
+    expect(backend.reports).toHaveLength(sent)
+    expect(calls.status).toBe(status)
   })
 })
