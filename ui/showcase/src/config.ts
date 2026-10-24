@@ -23,7 +23,5 @@ export const PASSENGER_URL = appUrl(PASSENGER_PORT, 'passenger', `embed=1&accoun
 // The city war room, a desktop page: no phone frame, so no embed (UD-30 part 3).
 export const CITY_URL = appUrl(CITY_PORT, 'city', 'account=city1')
 
-/** The simulator confirms the seeded trips' requests this often, like the driver UI's polling (DD-33). */
-export const POLL_INTERVAL_MS = 1000
 /** The off-stage round: driver5 follows driver4 and declines; retried this often while the backend is down (DD-45). */
 export const OFFSTAGE_POLL_MS = 1000
