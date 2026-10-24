@@ -391,4 +391,48 @@ describe('city war room (SC-C1, UD-27)', () => {
     fireEvent.click(box)
     expect(box).toBeChecked()
   })
+  describe('below 768px (T71)', () => {
+    // jsdom has no layout: a 300px time-key row holding 12 keys of 56px, one every 57px.
+    function narrowKeys() {
+      const isRow = (el: HTMLElement) => el.getAttribute('aria-label') === '時段'
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return isRow(this) ? 300 : 0
+      })
+      vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return isRow(this) ? 12 * 57 : 0
+      })
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(56)
+      vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
+        return SLOT_TIMES.indexOf(this.textContent ?? '') * 57
+      })
+    }
+    afterEach(() => vi.restoreAllMocks())
+
+    it('the selected time key scrolls into the middle of its row, also after picking another slot', async () => {
+      narrowKeys()
+      await renderApp()
+      tab('車流熱力')
+      const keys = screen.getByRole('group', { name: '時段' })
+      // 08:00 is the 5th key: 4 × 57 − (300 − 56) / 2 = 106.
+      expect(keys.scrollLeft).toBe(106)
+      fireEvent.click(slotButton('07:00–07:15'))
+      expect(keys.scrollLeft).toBe(-122)
+    })
+
+    it('the time keys do not scroll when they all fit (desktop)', async () => {
+      await renderApp()
+      tab('車流熱力')
+      expect(screen.getByRole('group', { name: '時段' }).scrollLeft).toBe(0)
+    })
+
+    it('a grid cell opens 車流熱力 at the top of the page, not where 總覽 was scrolled to', async () => {
+      await renderApp()
+      document.documentElement.scrollTop = 900
+      Object.defineProperty(document, 'scrollingElement', { value: document.documentElement, configurable: true })
+      fireEvent.click(within(screen.getByRole('region', { name: '入口 × 15 分鐘' })).getAllByRole('gridcell')[2])
+      expect(screen.getByRole('tab', { name: '車流熱力' })).toHaveAttribute('aria-selected', 'true')
+      expect(document.documentElement.scrollTop).toBe(0)
+      expect(selectedName()).toHaveTextContent('1. 堤頂大道')
+    })
+  })
 })

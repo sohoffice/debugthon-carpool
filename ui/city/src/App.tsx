@@ -56,19 +56,24 @@ export function App() {
   const shownSlotData = shownDay && shownSlot ? shownDay.slots.find((s) => slotTime(s.slot_start) === shownSlot.time) : undefined
   const selected = picked ?? (shownSlotData && defaultGateway(shownSlotData))
   // Picking today's latest slot again goes back to following it.
+  // Below 768px the page scrolls (T71): a new tab starts at its top, e.g. the traffic map after a grid cell.
+  const showTab = (t: Tab) => {
+    setTab(t)
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0
+  }
   const pickSlot = (c: SlotChoice) => setChoice(c.date === todayDate && c.time === latestTime ? null : c)
   // A grid cell opens 車流熱力 at that gateway and slot of today; one not over yet opens the latest slot (SC-C1).
   const openCell = (vdId: string, time: string) => {
     const past = todayDate && latestTime && time < latestTime
     setChoice(past ? { date: todayDate, time } : null)
     setPicked(vdId)
-    setTab('traffic')
+    showTab('traffic')
   }
 
   return (
-    <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-paper">
-      <TopBar clock={clock} tab={tab} onTab={setTab} latest={latest?.detectors} />
-      <main className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-dvh min-w-0 flex-col bg-paper md:h-dvh md:overflow-hidden">
+      <TopBar clock={clock} tab={tab} onTab={showTab} latest={latest?.detectors} />
+      <main className="flex flex-1 flex-col md:min-h-0">
         {tab === 'overview' && (
           <OverviewTab
             live={live.data}

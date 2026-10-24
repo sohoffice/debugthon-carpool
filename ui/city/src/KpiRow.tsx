@@ -17,8 +17,8 @@ export function KpiRow({ live, today }: KpiRowProps) {
   const liveMark = live?.simulated && '含模擬'
   const todayMark = today?.simulated && '含模擬'
   return (
-    <div className="grid min-h-28 grid-cols-[1.45fr_1fr_1fr_1fr_1fr] gap-3.5">
-      <section aria-label="估計減少的車次" className="flex min-w-0 flex-col rounded-[8px] bg-brand px-4 py-3 text-white [--color-sim:var(--color-simulated-light)]">
+    <div className="grid min-h-28 grid-cols-2 gap-3.5 md:grid-cols-[1.45fr_1fr_1fr_1fr_1fr]">
+      <section aria-label="估計減少的車次" className="col-span-2 flex min-w-0 flex-col rounded-[8px] bg-brand md:col-span-1 px-4 py-3 text-white [--color-sim:var(--color-simulated-light)]">
         <p className="flex items-center gap-2 text-sm font-semibold text-brand-soft">
           估計減少的車次 {today?.trips_saved_estimate && <SimulatedBadge label="估算" />}
         </p>

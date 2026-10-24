@@ -68,7 +68,7 @@ ui/
 
 ### 5. 版面與樣式
 
-- 行動裝置優先（Demo 時用手機）。以 390px 寬度測試。市府管理介面（`city/`）是桌機版面，以 1440px 寬度測試，所以 `shared` 不放只適用手機的版面。
+- 行動裝置優先（Demo 時用手機）。以 390px 寬度測試。市府管理介面（`city/`）是桌機版面，在 768px 以下重排成單欄（T71），以 1440px 與 390px 兩種寬度測試（`e2e/city-narrow.spec.ts`）；`shared` 不放只適用手機的版面。
 - 只用 Tailwind。顏色用 `shared/src/theme.css` 的 token（色彩定義與用途見 `../docs/ui-design.md` 8.1），不要在 app 裡直接寫新的色碼。
 - 全螢幕版面用 `h-dvh`。
 
@@ -86,4 +86,4 @@ ui/
 - 不測：樣式、Tailwind class、地圖繪製、snapshot、簡單的元件。
 - mock `fetch` 或 `api` 物件，不要 mock React 內部。測試環境沒有 Maps 金鑰，所以地圖會顯示提示文字；駕駛 SC-D3 的小地圖則整塊不出現（`useMapAvailable`）。
 - 每個 app 保留一個 smoke test（`App.test.tsx`），確認整體接線正常。
-- 端對端測試用 Playwright，放在 `e2e/*.spec.ts`，以 `just ui e2e` 執行。只測跨駕駛與乘客兩個介面的完整流程（快樂路徑、無車可配），以及工作單明文要求的 e2e 情境（例如 #55 的園區外目的地）；其他畫面細節留給 Vitest 測。
+- 端對端測試用 Playwright，放在 `e2e/*.spec.ts`，以 `just ui e2e` 執行。只測跨駕駛與乘客兩個介面的完整流程（快樂路徑、無車可配），以及工作單明文要求的 e2e 情境（例如 #55 的園區外目的地、#208 市府管理介面在 390px 與 1440px 的版面）；其他畫面細節留給 Vitest 測。

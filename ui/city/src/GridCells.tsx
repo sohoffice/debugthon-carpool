@@ -35,6 +35,9 @@ function cellClass(c: GridCell, mode: TrafficMode, framed: boolean): string {
   return `${bg} ${ring}`
 }
 
+// Below 768px (T71): fixed-width slot columns that scroll sideways inside the grid, under a sticky name column.
+const STICKY = 'max-md:sticky max-md:left-0 max-md:z-2 max-md:bg-white'
+
 /** Gateways × 15-minute slots in UD-28's order, with the two groups' titles (REQ-079, SC-C1). */
 export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, label, onCell, onRow, selected, onHover }: GridCellsProps) {
   const firstFreeway = rows.findIndex((r) => r.gateway.source === 'freeway')
@@ -42,19 +45,22 @@ export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, l
     <div
       role="grid"
       aria-label={label}
-      className={`grid min-h-0 grid-cols-[minmax(0,21rem)_repeat(12,minmax(0,1fr))] gap-0.5 text-xs/[13px] ${fixedRows ? '' : 'flex-1'}`}
-      style={{ gridAutoRows: fixedRows ? '13px' : 'minmax(13px,1fr)' }}
+      className={`grid min-h-0 grid-cols-[8.5rem_repeat(12,2.75rem)] gap-0.5 text-xs/[18px] max-md:auto-rows-[18px] max-md:overflow-x-auto md:grid-cols-[minmax(0,21rem)_repeat(12,minmax(0,1fr))] md:leading-[13px] ${fixedRows ? 'md:auto-rows-[13px]' : 'md:flex-1 md:auto-rows-[minmax(13px,1fr)]'}`}
       onMouseLeave={() => onHover?.(null)}
     >
-      <span className="font-bold tracking-wide text-ink-soft">市區道路</span>
+      <span className={`font-bold tracking-wide text-ink-soft ${STICKY}`}>市區道路</span>
       {DAY_SLOTS.map((t, s) => (
-        <span key={t} className={`text-center text-[11px] whitespace-nowrap ${s === framed ? 'font-bold text-ink' : 'text-ink-soft'}`}>
+        <span key={t} className={`text-center whitespace-nowrap max-md:text-xs md:text-[11px] ${s === framed ? 'font-bold text-ink' : 'text-ink-soft'}`}>
           {everyLabel || s % 2 === 0 || s === framed ? t : ''}
         </span>
       ))}
       {rows.map((r, i) => (
         <Fragment key={r.gateway.vd_id}>
-          {i === firstFreeway && <span className="col-span-full flex items-end border-b border-rule text-[11px] font-bold tracking-wide text-ink-soft">國道 1 號出口匝道</span>}
+          {i === firstFreeway && (
+            <span className="col-span-full flex items-end border-b border-rule font-bold tracking-wide text-ink-soft max-md:text-xs md:text-[11px]">
+              <span className="max-md:sticky max-md:left-0">國道 1 號出口匝道</span>
+            </span>
+          )}
           <RowName gateway={r.gateway} selected={selected === r.gateway.vd_id} onRow={onRow} />
           {r.cells.map((c, s) => (
             <button
@@ -86,11 +92,11 @@ function RowName({ gateway: g, selected, onRow }: { gateway: CityGateway; select
       <span className="truncate">
         {shortGateway(g.gateway)}
         {g.proxy && ' *'}
-        <em className="ml-1 text-ink-soft not-italic">{g.location_note}</em>
+        <em className="ml-1 text-ink-soft not-italic max-md:hidden">{g.location_note}</em>
       </span>
     </>
   )
-  const cls = `flex min-w-0 items-center overflow-hidden pr-2 text-left whitespace-nowrap text-ink ${selected ? 'font-bold' : ''}`
+  const cls = `flex min-w-0 items-center overflow-hidden pr-2 text-left whitespace-nowrap text-ink ${STICKY} ${selected ? 'font-bold' : ''}`
   if (!onRow) {
     return (
       <span role="rowheader" className={cls} title={`${g.gateway}，${g.location_note}`}>
