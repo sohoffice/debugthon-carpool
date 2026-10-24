@@ -26,10 +26,11 @@ interface TopBarProps {
 export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
   return (
     <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[48px_40px] items-center bg-ink whitespace-nowrap text-white [--color-sim:var(--color-simulated-light)] md:flex md:h-15 md:gap-5 md:pr-5">
-      <h1 className="flex h-full min-w-0 shrink-0 items-center gap-2 font-semibold md:gap-2.5 md:text-[17px]">
+      <h1 className="flex h-full min-w-0 items-center gap-2 overflow-hidden font-semibold md:shrink-0 md:gap-2.5 md:overflow-visible md:text-[17px]">
         <span className="h-full w-2 shrink-0 bg-brand" />
-        <span className="flex flex-col max-md:text-[13px]/tight md:contents">
-          <span>內科上班順起來: 內科順路共乘</span>
+        {/* Below 768px the name wraps after 起來: so it fits beside the clock with the static site's 首頁 link (T68). */}
+        <span className="flex flex-col max-md:text-[13px]/[15px] md:contents">
+          <span className="max-md:w-[7.5em] max-md:whitespace-normal">內科上班順起來: 內科順路共乘</span>
           <span className="font-medium text-fog max-md:text-xs md:text-[15px]">市府儀表板</span>
         </span>
       </h1>

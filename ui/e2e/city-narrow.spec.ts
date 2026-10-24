@@ -109,6 +109,26 @@ test.describe('390px (T71)', () => {
   })
 })
 
+// The static site's 首頁 link pads the header's first child on narrow screens (T68's contract).
+const HOME_LINK_PADDING = '@media (max-width: 767.98px) { #root header > :first-child { padding-left: 56px } }'
+
+for (const homeLink of [false, true]) {
+  test(`360px${homeLink ? ' with the static site 首頁 padding' : ''}: the name ends left of the clock (T71, T68)`, async ({ browser }) => {
+    const page = await open(browser, 360, 780)
+    if (homeLink) await page.addStyleTag({ content: HOME_LINK_PADDING })
+    const ends = await page.evaluate(() => {
+      const h1 = document.querySelector('header h1')!
+      const range = document.createRange()
+      range.selectNodeContents(h1)
+      const clock = [...document.querySelectorAll('header > div')].find((d) => d.textContent?.includes('週'))!
+      return { name: Math.max(...[...range.getClientRects()].map((r) => r.right)), clock: clock.getBoundingClientRect().left }
+    })
+    expect(ends.name).toBeLessThanOrEqual(ends.clock)
+    await expect(page.getByText('市府儀表板')).toBeVisible()
+    await expect(page.getByText('模擬時間')).toBeVisible()
+  })
+}
+
 test('1440px: every tab fits one screen, no page scroll (T71)', async ({ browser }) => {
   const page = await open(browser, 1440, 900)
   for (const name of TABS) {
