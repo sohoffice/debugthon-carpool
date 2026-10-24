@@ -19,7 +19,7 @@ demo-check:
         echo "error: Docker is not running; start Docker first" >&2
         failed=1
     fi
-    # demo-offstage and the mock server run .ts files directly (Node 22.18+ or 23.6+)
+    # demo-auto and the mock server run .ts files directly (Node 22.18+ or 23.6+)
     if ! node -e 'process.exit(process.features.typescript ? 0 : 1)' 2>/dev/null; then
         echo "error: Node $(node --version 2>/dev/null || echo 'is missing') cannot run TypeScript files; install Node 22.18 or later" >&2
         failed=1
@@ -58,14 +58,43 @@ demo: demo-check
     if [ ! -f ui/node_modules/.package-lock.json ] || [ ui/package-lock.json -nt ui/node_modules/.package-lock.json ]; then
         just ui install
     fi
-    echo "showcase http://localhost:5170 · run \`just demo-offstage\` in another terminal for driver5 and the simulator"
+    echo "showcase http://localhost:5170 · press 開始 Demo there (simulator and driver5 run on the page)"
     echo "Ctrl-C stops the UIs; the backend keeps running (just backend down)"
     just ui dev
 
-# Run the Demo's off-stage part on the `just demo` setup (T18E): driver5 and the simulator, cues in the terminal; Ctrl-C stops
-demo-offstage delay="10":
-    cd "{{source_directory()}}/ui" && npx playwright install chromium && node scripts/demo-offstage.ts "{{delay}}"
+# Run the whole Demo hands-off in a visible browser (docs/demo-script.md): starts what is not running yet, presses 開始 Demo, then plays both phones; DEMO_HEADLESS=1 hides the window
+demo-auto:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{source_directory()}}"
+    just infra up
+    just backend db-apply
+    # A running backend is reused (it may come from another checkout); it needs the demo reset on
+    if curl -sf -o /dev/null http://localhost:8080/api/ping; then
+        echo "backend already running; using it"
+    else
+        DEMO_RESET=1 just backend up
+    fi
+    if [ ! -f ui/node_modules/.package-lock.json ] || [ ui/package-lock.json -nt ui/node_modules/.package-lock.json ]; then
+        just ui install
+    fi
+    if curl -sf -o /dev/null http://localhost:5170; then
+        echo "UIs already running; using them"
+    else
+        # Started here, so stopped here when the run ends; set -m gives the UIs their own process
+        # group, so the whole group (npm and the Vite servers under it) goes and just itself does not
+        set -m
+        just ui dev >/tmp/carpool-demo-auto-ui.log 2>&1 &
+        ui_pgid=$!
+        set +m
+        trap 'kill -TERM -- -$ui_pgid 2>/dev/null || true' EXIT
+        for port in {{ui_ports}}; do
+            for _ in $(seq 60); do curl -sf -o /dev/null http://localhost:$port && break; sleep 0.5; done
+            curl -sf -o /dev/null http://localhost:$port || { echo "error: UI on :$port did not start; see /tmp/carpool-demo-auto-ui.log" >&2; exit 1; }
+        done
+    fi
+    cd ui && npx playwright install chromium && node scripts/demo-auto.ts
 
-# Put the demo back to its start (DD-29); rerun `just demo-offstage` to restart the simulator
+# Put the demo back to its start (DD-29); the showcase's simulator keeps running
 demo-reset:
     @curl -sf -X POST http://localhost:8080/api/demo/reset && echo "demo reset"

@@ -5,6 +5,17 @@ import { distanceTravelled, makePath, MAX_REPORTS_PER_TICK, pointAt, REPORT_STEP
 
 const SONGSHAN = { lat: 25.049806, lng: 121.578206 }
 const PICKUP_RADIUS_M = 80
+/** pass_margin (DD-06): passed once beyond the radius plus this. */
+const PASS_MARGIN_M = 25
+/** docs/demo-script.md: the request goes out about 40 s after driver4 departs; driver5 must not have passed by then. */
+const SUBMIT_AFTER_S = 40
+
+/** Metres along a path to the pickup point. */
+function toPickup(name: string): number {
+  const path = makePath(SIMULATOR_ROUTES[name].path)
+  const i = path.points.findIndex((p) => distanceM(p, SONGSHAN) < 1)
+  return path.cumulative[i]
+}
 
 describe('simulator path (T08)', () => {
   it('moves by elapsed time: 30 km/h is about 500 m a minute', () => {
@@ -29,5 +40,16 @@ describe('simulator path (T08)', () => {
       expect(passes, name).toBe(true)
       expect(pointAt(path, path.length + 100)).toEqual(path.points.at(-1))
     }
+  })
+
+  it('driver5 starts nearer the pickup than driver4, so it gets the request first (DD-45)', () => {
+    expect(toPickup('driver5')).toBeCloseTo(400, -1)
+    expect(toPickup('driver5')).toBeLessThan(toPickup('driver4'))
+  })
+
+  it('driver5 has not passed the pickup when the request goes out, departing with driver4 (DD-45)', () => {
+    const { speedKmh } = SIMULATOR_ROUTES.driver5
+    const passedAfterS = (toPickup('driver5') + PICKUP_RADIUS_M + PASS_MARGIN_M) / (speedKmh / 3.6)
+    expect(passedAfterS).toBeGreaterThan(SUBMIT_AFTER_S + 20)
   })
 })

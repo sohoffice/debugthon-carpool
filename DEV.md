@@ -26,7 +26,7 @@
 - [just](https://github.com/casey/just) 1.31 以上（需支援 `mod`）
 - Docker（用於 `docker-compose.yml` 中的 PostgreSQL）
 - Java 21 以上與 [Maven](https://maven.apache.org/) 3.8 以上：執行 Karate API 測試（`just backend karate`）用；版本不符時 Maven 在編譯前就以訊息指出需要的版本
-- [Node.js](https://nodejs.org/) 22（22.18 以上）、24 或 26 以上：`just demo-offstage` 與示範後端直接執行 `.ts` 檔，需要 Node 原生支援 TypeScript（22.18、23.6 起）；Vitest 只支援 22.12 以上的 22、24 與 26 以上，不含 23、25
+- [Node.js](https://nodejs.org/) 22（22.18 以上）、24 或 26 以上：`just demo-auto` 與示範後端直接執行 `.ts` 檔，需要 Node 原生支援 TypeScript（22.18、23.6 起）；Vitest 只支援 22.12 以上的 22、24 與 26 以上，不含 23、25
 
 ## Just 指令
 
@@ -49,7 +49,7 @@
 | `just backend db-reset` | 清空 `public` schema 並重新套用全部遷移（測試資料可隨時重建） |
 
 - 以環境變數 `PORT` 變更連接埠，例如 `PORT=9000 just backend up`。
-- Demo 重設 API（`POST /api/demo/reset`，DD-29）只在環境變數 `DEMO_RESET` 為真（`1`、`true`）時註冊；後端程式本身預設不開。本機開發就是 Demo 環境（DD-24），所以 `just backend up` 預設帶 `DEMO_RESET=1`，展示頁的重設按鈕與 Karate 不必另外設定；要關掉用 `DEMO_RESET=0 just backend up`（已在執行時先 `just backend down`）。
+- Demo 重設 API（`POST /api/demo/reset`，DD-29）只在環境變數 `DEMO_RESET` 為真（`1`、`true`）時註冊；後端程式本身預設不開。本機開發就是 Demo 環境（DD-24），所以 `just backend up` 預設帶 `DEMO_RESET=1`，展示頁的「開始 Demo／重新開始」與 Karate 不必另外設定；要關掉用 `DEMO_RESET=0 just backend up`（已在執行時先 `just backend down`）。
 - 資料庫資料庫遷移使用 [goose](https://github.com/pressly/goose)，以 `go tool goose` 執行（版本鎖定於 `backend/go.mod`，無需另外安裝）。遷移檔為 `backend/migrations/` 下的 SQL，需同時寫 `-- +goose Up` 與 `-- +goose Down`，讓 `just backend db-rollback` 能回滾；測試資料不需保留，改動後也可用 `just backend db-reset` 整個重建。
 - 連線字串預設由 `POSTGRES_*` 組成，也可直接設定 `DATABASE_URL` 覆寫。
 - 執行檔、pid 檔與日誌位於 `backend/.run/`（`server`、`server.pid`、`server.log`），此目錄已列入 `.gitignore`。
@@ -76,7 +76,7 @@
 | `just ui install` | 安裝所有前端 workspace 的 npm 套件（第一次使用前執行） |
 | `just ui driver` | 啟動駕駛介面開發伺服器，網址 `http://localhost:5173` |
 | `just ui passenger` | 啟動乘客介面開發伺服器，網址 `http://localhost:5174` |
-| `just ui showcase` | 啟動展示頁（UD-18），網址 `http://localhost:5170`，並排嵌入駕駛與乘客介面 |
+| `just ui showcase` | 啟動展示頁（UD-18、UD-30），網址 `http://localhost:5170`，並排嵌入駕駛與乘客介面，並執行模擬器與 Demo 台下操作（按「開始 Demo」） |
 | `just ui city` | 啟動市府管理介面（DD-39，桌機版面），網址 `http://localhost:5175/?account=city1` |
 | `just ui dev-mock` | 啟動示範後端（`:8081`）、兩個介面、展示頁與市府管理介面，全部連到示範後端（開發期間用） |
 | `just ui dev` | 啟動兩個介面、展示頁與市府管理介面，連到 Go 後端 `:8080`（後端先用 `just backend up` 啟動） |
@@ -106,7 +106,8 @@
 - 以網址參數切換 Demo 帳號，例如 `http://localhost:5173/?account=driver2`。
 - 市府管理介面（`ui/city`）以 `?account=city1` 開啟（token `city:city1`），只呼叫 `/api/city/*`；以駕駛或乘客帳號開啟時只顯示無權限的訊息。以 1440 × 900 的桌機畫面設計，不支援手機寬度。示範後端的市府 API 一律以「今天 08:15」為現在（如同設定了 `demo_clock`），數字是另外產生的假資料，和 Go 後端不同。
 - 除錯模式（Demo 工具）加上 `?debug=1`，畫面左緣會出現「除錯」標籤（`docs/ui-design.md` 8.8）：
-  - 駕駛：`http://localhost:5173/?debug=1` 可切換帳號，並執行模擬器（DD-14）：按「開始模擬」後，有進行中行程的駕駛沿預先定義的路徑回報位置。接 Go 後端時，車輛位置全靠它。Demo 時由 `just demo-offstage` 在背景開一個這樣的頁面，不要再自己另開（見〈Demo〉）。
+  - 駕駛：`http://localhost:5173/?debug=1` 可切換主畫面的駕駛帳號（SC-X2）。模擬器不在這裡，在展示頁（DD-14）。
+- 模擬器在展示頁 `http://localhost:5170` 執行（DD-14、DD-45）：按「開始 Demo」後，有進行中行程的駕駛沿預先定義的路徑（`ui/showcase/src/simulatorRoutes.ts`）回報位置，每秒查一次行程。接 Go 後端時，車輛位置全靠它；開發時要讓車動起來，也是開展示頁按「開始 Demo」。重新整理展示頁會停掉模擬器。
   - 乘客：`http://localhost:5174/?debug=1` 可設定乘客的目前位置（DD-26），例如「離松山車站 420 公尺」來展示請求被拒絕。同一帳號的其他分頁會跟著改。
 - 環境變數放在根目錄 `.env`：
   - `VITE_GOOGLE_MAPS_API_KEY`：瀏覽器用的 Google Maps 金鑰，會公開給使用者。請限制為 HTTP 參照網址，且只開 Maps JavaScript API；不要沿用伺服器端的 `MAP_API_KEY`。未設定時地圖顯示提示文字，其他功能照常運作。
@@ -122,10 +123,11 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
 | --- | --- |
 | `just demo-check` | 檢查 `just demo` 需要、但不會替你準備的東西：Docker 有在執行、Node 能直接執行 TypeScript、根目錄有 `.env`、`:5170`／`:5173`／`:5174`／`:5175` 沒被占用；`MAP_API_KEY` 或 `VITE_GOOGLE_MAPS_API_KEY` 是空的只警告（Demo 會改用模擬路線或不顯示地圖） |
 | `just demo` | 一個指令啟動全部元件：先執行 `just demo-check`，再啟動 PostgreSQL（`just infra up`）、套用遷移、重新啟動後端（開啟 Demo 重設）、兩個介面與展示頁（`just ui dev`）。`ui/package-lock.json` 比上次安裝新（例如 pull 之後）或從沒安裝過時，先執行 `just ui install`。按 Ctrl-C 停止介面，後端繼續在背景執行（`just backend down` 停止） |
-| `just demo-reset` | 一個指令把 Demo 重設回初始狀態（呼叫 `POST /api/demo/reset`）；展示頁的「重設」按鈕呼叫同一個 API |
+| `just demo-reset` | 一個指令把 Demo 重設回初始狀態（呼叫 `POST /api/demo/reset`）；展示頁的「開始 Demo／重新開始」呼叫同一個 API。展示頁的模擬器照常執行，但兩支手機不會自己重新載入 |
+| `just demo-auto` | 一個指令自動跑完整個 Demo（`ui/scripts/demo-auto.ts`）：還沒啟動的元件先啟動（已在執行的後端與介面直接沿用），接著開一個看得到的瀏覽器視窗，在展示頁按「開始 Demo」，再照 `docs/demo-script.md` 替講者操作兩支手機，從出發一路到「共乘完成」，以展示頁的「紀錄」判斷台下操作的進度，每一步之間停約 3 秒。每一步的截圖存在 `ui/test-results/demo-auto/`，紀錄出現錯誤就中斷、以非 0 的結束代碼結束。介面若是這個指令啟動的，結束時一併關掉。加 `DEMO_HEADLESS=1` 不開視窗、不停頓。給預演前確認整套流程、或錄影用；真人上台仍照劇本操作。它會開一個自己的展示頁，執行時不要另外開著展示頁按「開始 Demo」 |
 
-- 開啟的網址：展示頁 `http://localhost:5170`（並排嵌入兩支手機）。模擬器（DD-14）由 `just demo-offstage` 在背景開啟，照 `docs/demo-script.md` 演出時不要再另開 `http://localhost:5173/?debug=1` 按「開始模擬」，否則兩個模擬器會同時回報同一批車的位置。不跑台下腳本、只想讓 `driver1`～`driver3` 動起來時，才自己開這個分頁。
-- 重設之後，重新執行 `just demo-offstage`（或重新整理自己開的除錯模式駕駛頁面），模擬器就從起點重新開始；展示頁按「重設」會自己重新載入兩支手機。
+- 開啟的網址：展示頁 `http://localhost:5170`（並排嵌入兩支手機，右下角可切換到嵌入的市府戰情室）。按「開始 Demo」後，展示頁自己執行模擬器與台下操作（`driver5` 跟著 `driver4` 出發、收到請求就婉拒，DD-14、DD-45），不需要另開終端機。只開一個展示頁：兩個展示頁都按「開始 Demo」，會有兩個模擬器回報同一批車的位置。
+- 「重新開始」（按兩次）重設 Demo 並重新載入兩支手機；模擬器不停，換了新行程的帳號從路徑起點重新開始。重新整理展示頁會停掉模擬器，要再按「開始 Demo」（會重設）。每一步與錯誤寫在右下角的「紀錄」（UD-30）。
 - 重設的內容（DD-29）只動 Demo 帳號（`users.simulated`），在同一個交易內完成：
   - 刪除 Demo 乘客的請求與這些請求的服務紀錄；這些請求暫留或佔用的座位還給原本的行程。
   - 駕駛點數還原為種子（DD-34）：在刪除服務紀錄之前，刪除 Demo 駕駛的 `ride` 點數紀錄，以及因載 Demo 乘客而產生的 `ride` 點數紀錄（非 Demo 駕駛的累積點數隨之重算為點數紀錄的加總）；再呼叫 `seed_demo_driver_points()`（遷移 `20261022100000_driver_points.sql`），把 Demo 駕駛的累積點數設為 `seed` 紀錄的加總。`seed` 紀錄不刪除。
@@ -259,7 +261,7 @@ Demo 時所有元件都在同一台機器上執行（DD-24）。指令定義在�
   - `driver3` 多等 3 分鐘：標籤加分（4 分鐘）抵不過多出的等待（6 分鐘），`driver1` 勝出。
   - `driver2` 只等 1 分鐘、其他車等 8 分鐘：短等待勝過步行，`driver2` 勝出；把步行加重 `walk_weight` 調高（例如 6，以 SQL 修改系統設定，DD-20）則回到 `driver3`。
   - `driver3` 等待超過 10 分鐘：直接排除，不論標籤。
-  模擬行程沒有種子位置，等待時間要由駕駛介面的模擬器（`?debug=1`）回報位置來調整。
+  模擬行程沒有種子位置，等待時間要由展示頁的模擬器回報位置來調整。
 - 重建：遷移已套用的資料庫要改種子時，用 `just backend db-reset`。Down 只在剛種子的資料庫可用，跑過 Demo 後（位置紀錄、請求都會參照這些資料）請改用 `db-reset`。
 - 駕駛點數（T35，DD-34）由遷移 `backend/migrations/20261022100000_driver_points.sql` 建立：`driver_profiles.point_balance` 與點數紀錄 `driver_point_ledger`，以及系統設定 `points_per_ride`（每次共乘點數，預設 10，每次完成共乘時重新讀取）。種子替每位 Demo 駕駛建立一列 `driver_profiles`（常用資料欄位為空，`GET /api/driver/profile` 的常用資料仍回傳 `null`）與每筆 10 點的 `seed` 紀錄：`driver1` 3 筆、`driver2` 2 筆、`driver3` 4 筆、`driver4` 8 筆（展示駕駛資訊用，DD-35）、`driver5` 1 筆，累積點數等於紀錄的加總（REQ-073）。
 - 系統設定預設值在建立結構的遷移中（`system_settings`）。
