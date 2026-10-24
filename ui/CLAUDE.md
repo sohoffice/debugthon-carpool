@@ -20,6 +20,8 @@ ui/
 
 使用 npm workspaces。`shared` 沒有建置步驟：各 app 直接 import 它的 TypeScript 原始碼。
 
+模擬器（DD-14）的本體是 `showcase/src/simulator.ts`（`createSimulator`），不依賴 React，也不讀 `showcase/src/config.ts`，快轉開關與要代確認的帳號由呼叫端傳入；路徑在 `simulatorRoutes.ts`、推進與回報間隔在 `simulatorPath.ts`。展示頁的 `useSimulator` 只是它的薄包裝；靜態站的劇本（DD-46）以相對路徑 `../showcase/src/simulator.ts` import 同一個模組。
+
 ## 指令（在 `ui/` 下執行）
 
 在專案根目錄也可以用 `just ui <指令>`，見 `../DEV.md` 的「前端」小節。
