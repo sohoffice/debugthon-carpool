@@ -7,6 +7,8 @@ const params = new URLSearchParams(window.location.search)
 // Demo accounts: driver4 departs on stage (UD-14); switch with ?driver=…&passenger=….
 const driver = params.get('driver') ?? 'driver4'
 const passenger = params.get('passenger') ?? 'passenger1'
+/** The stage car's fast-forwards (T64, DD-14); `?fast=0` keeps it at its set speed. Read once at load. */
+export const FAST_FORWARD = params.get('fast') !== '0'
 
 const appUrl = (port: number, query: string) => `${window.location.protocol}//${window.location.hostname}:${port}/?${query}`
 

@@ -1,7 +1,7 @@
 import { ApiError, createApiClient, type ApiClient, type DriverRequests, type TripView } from '@carpool/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { POLL_INTERVAL_MS } from './config'
-import { distanceAlong, makePath, pointAt, reportDistances, type Motion, type SimPath } from './simulatorPath'
+import { FAST_FORWARD, POLL_INTERVAL_MS } from './config'
+import { distanceAlong, makePath, pointAt, reportDistances, type FastSegment, type Motion, type SimPath } from './simulatorPath'
 import { SIMULATOR_ROUTES, type SimulatorRoute } from './simulatorRoutes'
 
 const TICK_MS = 1000
@@ -21,8 +21,12 @@ interface Track {
   checkedAt: number
   /** When the car started moving; null while parked at the path start until a request (T63). */
   releasedAt: number | null
-  /** When the first confirmed passenger was seen, for the fast-forward (T63). */
+  /** When the first confirmed passenger was seen, for the fast-forward to the pickup (T63). */
   fastAt: number | null
+  /** When the passenger was first seen on board, or gone after a ride, for the fast-forward to the end (T64). */
+  endAt: number | null
+  /** A confirmed or boarded passenger has been seen on this trip (T64). */
+  hadPassenger: boolean
   /** Metres along the path last reported; -1 before the first report. */
   reported: number
   autoAccept: boolean
@@ -42,6 +46,8 @@ const newTrack = (tripId: number | null, now: number, autoAccept: boolean, hold:
   checkedAt: now,
   releasedAt: hold ? null : now,
   fastAt: null,
+  endAt: null,
+  hadPassenger: false,
   reported: -1,
   autoAccept,
   requestsCheckedAt: 0,
@@ -52,16 +58,27 @@ const newTrack = (tripId: number | null, now: number, autoAccept: boolean, hold:
 const withRelease = (track: Track, releasedAt: number | undefined): Track =>
   track.releasedAt === null && releasedAt !== undefined ? { ...track, releasedAt } : track
 
-const motionOf = (route: SimulatorRoute, track: Track): Motion => ({
+/** The fast-forwards that have started, in path order; none with `?fast=0` (T63, T64). */
+function fastSegments(route: SimulatorRoute, track: Track, length: number, fastForward: boolean): FastSegment[] {
+  if (!fastForward) return []
+  const segments: FastSegment[] = []
+  if (route.fastForward && track.fastAt !== null) segments.push({ at: track.fastAt, ...route.fastForward })
+  if (route.fastToEnd && track.endAt !== null) segments.push({ at: track.endAt, speedKmh: route.fastToEnd.speedKmh, untilM: length })
+  return segments
+}
+
+const motionOf = (route: SimulatorRoute, track: Track, length: number, fastForward: boolean): Motion => ({
   releasedAt: track.releasedAt,
   speedKmh: route.speedKmh,
-  fast: route.fastForward && track.fastAt !== null ? { at: track.fastAt, ...route.fastForward } : null,
+  fast: fastSegments(route, track, length, fastForward),
 })
 
-/** Still has to read its own requests: parked, or waiting for a confirmed passenger to fast-forward (T63). */
-function watchesRequests(route: SimulatorRoute, track: Track): boolean {
+/** Still has to read its own requests: parked, or a fast-forward has yet to start (T63, T64). */
+function watchesRequests(route: SimulatorRoute, track: Track, fastForward: boolean): boolean {
   if (track.releasedAt === null) return true
-  return !!route.fastForward && track.fastAt === null && track.reported < route.fastForward.untilM
+  if (!fastForward) return false
+  if (route.fastForward && track.fastAt === null && track.reported < route.fastForward.untilM) return true
+  return !!route.fastToEnd && track.endAt === null
 }
 
 /** The simulator's statuses, and `release` for a request seen elsewhere (the off-stage decline, DD-45). */
@@ -97,7 +114,7 @@ async function confirmPending(api: ApiClient) {
  * For the seeded trips it also confirms requests when the trip auto-accepts (DD-33).
  * Nothing is saved: reloading the showcase stops it (UD-30).
  */
-export function useSimulator(accounts: string[], running: boolean): Simulator {
+export function useSimulator(accounts: string[], running: boolean, fastForward = FAST_FORWARD): Simulator {
   const drivers = useMemo(
     () =>
       Object.fromEntries(
@@ -165,7 +182,7 @@ export function useSimulator(accounts: string[], running: boolean): Simulator {
         tracks.current[name] = track
         await confirmPending(driver.api)
       }
-      if (watchesRequests(driver.route, track) && now - track.stageCheckedAt >= TRIP_CHECK_MS) {
+      if (watchesRequests(driver.route, track, fastForward) && now - track.stageCheckedAt >= TRIP_CHECK_MS) {
         track = { ...track, stageCheckedAt: now }
         tracks.current[name] = track
         const { pending, passengers } = await driver.api.get<DriverRequests>('/driver/requests')
@@ -173,12 +190,16 @@ export function useSimulator(accounts: string[], running: boolean): Simulator {
         track = withRelease(tracks.current[name], releases.current[track.tripId ?? -1])
         const releasedAt = track.releasedAt ?? (pending.length > 0 || passengers.length > 0 ? now : null)
         const fastAt = track.fastAt ?? (driver.route.fastForward && passengers.length > 0 ? now : null)
-        track = { ...track, releasedAt, fastAt }
+        // On board, or the ride is already over (完成 without 上車): either way, on to the end (T64).
+        const boarded = passengers.some((p) => p.boarded)
+        const gone = track.hadPassenger && passengers.length === 0
+        const endAt = track.endAt ?? (driver.route.fastToEnd && (boarded || gone) ? now : null)
+        track = { ...track, releasedAt, fastAt, endAt, hadPassenger: track.hadPassenger || passengers.length > 0 }
         tracks.current[name] = track
       }
       if (track.reported >= driver.path.length) return setStatus(name, { kind: 'arrived' })
 
-      const along = distanceAlong(motionOf(driver.route, track), now, driver.path.length)
+      const along = distanceAlong(motionOf(driver.route, track, driver.path.length, fastForward), now, driver.path.length)
       const steps = track.reported < 0 ? [0, ...reportDistances(0, along)] : reportDistances(track.reported, along)
       // One at a time and in order: the backend reads them as the car's track (DD-06).
       for (const d of steps) {
@@ -205,7 +226,7 @@ export function useSimulator(accounts: string[], running: boolean): Simulator {
     return () => clearInterval(timer)
     // `key` stands for the account list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, key, drivers])
+  }, [running, key, drivers, fastForward])
 
   return { statuses, release }
 }

@@ -11,6 +11,8 @@ export interface SimulatorRoute {
   holdUntilRequest?: boolean
   /** From the first confirmed passenger, this speed until untilM metres along the path, then speedKmh (T63). */
   fastForward?: { speedKmh: number; untilM: number }
+  /** From the first boarded passenger (or once the passengers are gone), this speed to the path end (T64). */
+  fastToEnd?: { speedKmh: number }
 }
 
 export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
@@ -113,12 +115,16 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
   // 535 m before 松山車站, so it can be matched right after departure; then on to 瑞光路 513 巷.
   // Parked there until its first request (DD-45). Once the passenger is confirmed it fast-forwards
   // past the pickup: 535 m + the 80 m radius + the 25 m pass margin (DD-06) + 20 m to spare, about
-  // 640 m in about 8 s at 300 km/h. With up to a second each for the simulator to see the confirm
-  // and for the passenger UI's poll, the passenger sees 車已到上車點 about 10 s after 確認.
+  // 640 m within one tick at 2400 km/h (T64). With up to a second each for the simulator to see the
+  // confirm and for the passenger UI's poll, the passenger sees 車已到上車點 about 4 s after 確認.
+  // Once the passenger is on board it fast-forwards the remaining ~4.3 km to 瑞光路 513 巷 in about
+  // 4 s at 4000 km/h; the trip ends there by itself (DD-30) with the ride, and with the polls both
+  // phones change about 6 s after 我已上車. Reports stay 20 m apart.
   driver4: {
     speedKmh: 25,
     holdUntilRequest: true,
-    fastForward: { speedKmh: 300, untilM: 660 },
+    fastForward: { speedKmh: 2400, untilM: 660 },
+    fastToEnd: { speedKmh: 4000 },
     path: [
       [25.045005, 121.577907],
       [25.047269, 121.577913],
