@@ -41,16 +41,18 @@ async function logged(page: Page, pattern: RegExp, timeoutMs: number) {
   }
 }
 
-/** 0:15: both stage tags 一定要, 安靜坐車 最好, then send. */
+/** Both stage tags 一定要, then send (T65: no 最好, so nothing is relaxed). */
 async function sendRequest(passenger: FrameLocator) {
   await passenger.getByRole('button', { name: '今天我要搭' }).click()
   const sheet = passenger.getByRole('dialog', { name: '送出搭車請求' })
-  for (const name of ['不抽菸', '能放大件行李']) {
+  for (const name of ['不抽菸', '安靜坐車']) {
     await sleep(PAUSE_MS / 3)
     await sheet.getByRole('radiogroup', { name: `${name}的篩選` }).getByRole('radio', { name: '一定要' }).click()
   }
-  await sleep(PAUSE_MS / 3)
-  await sheet.getByRole('radiogroup', { name: '安靜坐車的篩選' }).getByRole('radio', { name: '最好' }).click()
+  // The browser remembers filters (7.1): an earlier Demo's 能放大件行李 一定要 would match no car.
+  for (const name of ['能放大件行李', '可以聊天']) {
+    await sheet.getByRole('radiogroup', { name: `${name}的篩選` }).getByRole('radio', { name: '不在意' }).click()
+  }
   await sleep(PAUSE_MS)
   await passenger.getByRole('button', { name: '送出請求' }).click()
   await passenger.getByRole('heading', { name: '正在等駕駛確認' }).waitFor({ timeout: 15_000 })

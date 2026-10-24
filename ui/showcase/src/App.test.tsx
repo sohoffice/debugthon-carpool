@@ -83,12 +83,17 @@ describe('showcase App (UD-18, UD-30, DD-45)', () => {
     await advance(0)
 
     expect(screen.getByRole('button', { name: '重新開始' })).toBeInTheDocument()
-    expect(backend.sequence().slice(0, 6)).toEqual([
+    expect(backend.sequence().slice(0, 9)).toEqual([
       'POST /api/demo/reset',
+      // 不抽菸 and 安靜通勤 on, the earlier 可載行李 off (T65).
       'PUT /api/me/tags/1 driver4',
-      'PUT /api/me/tags/2 driver4',
+      'PUT /api/me/tags/3 driver4',
+      'DELETE /api/me/tags/2 driver4',
       'PUT /api/me/tags/1 driver5',
-      'PUT /api/me/tags/2 driver5',
+      'PUT /api/me/tags/3 driver5',
+      'DELETE /api/me/tags/2 driver5',
+      // driver3 is seeded with both stage tags: it drops 安靜通勤.
+      'DELETE /api/me/tags/3 driver3',
       // The simulator looks up the first driver's trip.
       'GET /api/driver/trips/current driver1',
     ])
@@ -100,7 +105,7 @@ describe('showcase App (UD-18, UD-30, DD-45)', () => {
     const log = openLog()
     expect(log.getAllByRole('listitem').map((li) => li.textContent?.slice(8))).toEqual([
       '開始 Demo：資料已重設',
-      '標籤已選好：driver4、driver5 都帶「不抽菸」「可載行李」',
+      '標籤已選好：driver4、driver5 都帶「不抽菸」「安靜通勤」',
       '模擬器開始了',
     ])
   })
