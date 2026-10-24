@@ -1,14 +1,17 @@
 // @vitest-environment node
+import { decodePolyline, distanceM, type RequestStatusView, type TripView } from '@carpool/shared'
 import { describe, expect, it } from 'vitest'
-import { distanceM } from '@carpool/shared'
-import { makePath } from '../showcase/src/simulatorPath.ts'
+import { createMockApi } from '../mock-server/src/api.ts'
+import { loadStaticData } from '../mock-server/src/data/load.ts'
+import { makePath, pointAt } from '../showcase/src/simulatorPath.ts'
 import { SIMULATOR_ROUTES } from '../showcase/src/simulatorRoutes.ts'
 import {
   CONFIRM_DELAY_MS,
   detectPassengerStep,
   dueToConfirm,
   PASSENGER_STEPS,
-  TOUR_ROUTES,
+  PICKUP,
+  tourRoute,
   TOUR_DRIVERS,
   type PassengerTourState,
 } from './passengerTour.ts'
@@ -81,27 +84,83 @@ describe('tour routes (T70, T63, T64)', () => {
     expect(TOUR_DRIVERS).toEqual(['driver1', 'driver2', 'driver3'])
   })
 
-  for (const name of ['driver1', 'driver2', 'driver3']) {
-    it(`${name}: the showcase path cut short of its end, parked until a request, fast past the pickup, then fast to the cut`, () => {
-      const route = TOUR_ROUTES[name]
+  // The mock moves a car by projecting its reports onto the trip's own path (followReports). After the
+  // pickup the tour route has to be that path, or the car sticks at the pickup (#217 review: driver2).
+  const tripOf = (name: string) => {
+    const api = createMockApi(loadStaticData(), Date.now, { followReports: true })
+    const r = api.handle({ method: 'GET', path: '/api/driver/trips/current', query: new URLSearchParams(), authorization: `Bearer driver:${name}`, body: undefined })
+    return r.body as TripView
+  }
+
+  for (const name of TOUR_DRIVERS) {
+    it(`${name}: the showcase approach, then the trip's own route cut short of its end; parked, then two fast-forwards`, () => {
+      const trip = tripOf(name)
+      const onward = decodePolyline(trip.route!.polyline)
+      const route = tourRoute(SIMULATOR_ROUTES[name], onward)
+      const path = makePath(route.path)
       const full = makePath(SIMULATOR_ROUTES[name].path)
-      const cut = makePath(route.path)
-      const end = full.points.at(-1)!
-      const pickupIndex = full.points.findIndex((p) => p.lat === 25.049806 && p.lng === 121.578206)
+      const pickupIndex = SIMULATOR_ROUTES[name].path.findIndex(([lat, lng]) => lat === PICKUP.lat && lng === PICKUP.lng)
       const pickupM = full.cumulative[pickupIndex]
 
-      // Same streets as the showcase up to the cut.
-      expect(route.path.slice(0, -1)).toEqual(SIMULATOR_ROUTES[name].path.slice(0, route.path.length - 1))
-      // The car stops outside the mock's arrival radius, so the ride is not over until 我已下車 (DD-23, DD-30).
-      expect(distanceM(cut.points.at(-1)!, end)).toBeGreaterThan(ARRIVAL_RADIUS_M)
-      expect(distanceM(cut.points.at(-1)!, end)).toBeLessThan(150)
+      // Same streets as the showcase up to the pickup.
+      expect(route.path.slice(0, pickupIndex + 1)).toEqual(SIMULATOR_ROUTES[name].path.slice(0, pickupIndex + 1))
+      // Then every report lies on the trip's route: within a few metres of it.
+      const onwardPath = makePath(onward.map((p): [number, number] => [p.lat, p.lng]))
+      for (let d = pickupM; d <= path.length; d += 20) {
+        const p = pointAt(path, d)
+        const nearest = Math.min(...Array.from({ length: Math.ceil(onwardPath.length / 5) + 1 }, (_, i) => distanceM(p, pointAt(onwardPath, i * 5))))
+        expect(nearest, `${name} at ${d} m`).toBeLessThan(5)
+      }
+      // It stops outside the mock's arrival radius, so the ride is not over until 我已下車 (DD-23, DD-30).
+      const end = onward.at(-1)!
+      expect(distanceM(path.points.at(-1)!, end)).toBeGreaterThan(ARRIVAL_RADIUS_M)
+      expect(distanceM(path.points.at(-1)!, end)).toBeLessThan(150)
       expect(route.holdUntilRequest).toBe(true)
       // Past the pickup area and its leave margin, so it counts as passed (DD-06), but not far past.
       expect(route.fastForward!.untilM).toBeGreaterThan(pickupM + PICKUP_RADIUS_M + PASS_MARGIN_M)
       expect(route.fastForward!.untilM).toBeLessThan(pickupM + 200)
       expect(route.fastToEnd).toBeDefined()
     })
+
   }
+
+  it('two rides in one page load: each matched car, driven along its tour route, passes the pickup (#217 review)', () => {
+    const api = createMockApi(loadStaticData(), Date.now, { followReports: true })
+    const call = <T>(method: string, path: string, auth: string, body?: unknown) => {
+      const u = new URL(path, 'http://x')
+      return api.handle({ method, path: u.pathname, query: u.searchParams, authorization: auth, body }).body as T
+    }
+    const P = 'Bearer passenger:passenger1'
+    const SUBMIT = { pickup_point_id: 1, location: { lat: 25.0498, lng: 121.5782 }, destination: { name: '瑞光路 513 巷', lat: 25.0765, lng: 121.5742 }, stop_ids: [9, 23], tag_filters: [] }
+    const carried: string[] = []
+    for (let ride = 0; ride < 3; ride++) {
+      call('POST', '/api/activities', P)
+      const { id } = call<{ id: number }>('POST', '/api/passenger/requests', P, SUBMIT)
+      const name = TOUR_DRIVERS.find((n) => call<{ pending: { id: number }[] }>('GET', '/api/driver/requests', `Bearer driver:${n}`).pending.some((r) => r.id === id))!
+      carried.push(name)
+      const auth = `Bearer driver:${name}`
+      const trip = call<TripView>('GET', '/api/driver/trips/current', auth)
+      call('POST', `/api/driver/requests/${id}/accept`, auth)
+      const route = tourRoute(SIMULATOR_ROUTES[name], decodePolyline(trip.route!.polyline))
+      const path = makePath(route.path)
+      const report = (from: number, to: number) => {
+        for (let d = from; d < to; d += 20) call('POST', '/api/location', auth, pointAt(path, d))
+        call('POST', '/api/location', auth, pointAt(path, to))
+      }
+      // Where the first fast-forward leaves the car (T63): the board must say it has passed the pickup.
+      report(0, route.fastForward!.untilM)
+      const atPickup = call<RequestStatusView>('GET', `/api/passenger/requests/${id}`, P)
+      expect(atPickup.passed_pickup, `ride ${ride + 1} on ${name}`).toBe(true)
+      expect(atPickup.eta_s).toBeNull()
+      call('POST', `/api/passenger/requests/${id}/board`, P)
+      // The second fast-forward (T64) to the cut: still the visitor's ride to finish (DD-23).
+      report(route.fastForward!.untilM, path.length)
+      expect(call<RequestStatusView>('GET', `/api/passenger/requests/${id}`, P).status).toBe('boarded')
+      call('POST', `/api/passenger/requests/${id}/complete`, P)
+    }
+    // The other cars get rides too, so it is not driver1 alone.
+    expect(new Set(carried).size).toBeGreaterThan(1)
+  })
 
   it('the showcase routes are untouched', () => {
     for (const name of ['driver1', 'driver2', 'driver3']) {

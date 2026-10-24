@@ -1,7 +1,7 @@
 // Static site only: the passenger tour (T70, DD-46). The visitor is the passenger and presses
 // every passenger button; the tour moves 3 simulated cars to 松山車站 and confirms for the one the
 // backend matches, so the screen is confirmed about 3 s after the request. Matching stays the backend's (REQ-031, REQ-042).
-import { ApiError, createApiClient, distanceM, getAccountFromUrl, type CurrentRequest, type RequestStatus, type RequestStatusView } from '@carpool/shared'
+import { ApiError, createApiClient, decodePolyline, getAccountFromUrl, type CurrentRequest, type LatLng, type RequestStatus, type RequestStatusView, type TripView } from '@carpool/shared'
 import { createSimulator } from '../showcase/src/simulator.ts'
 import { makePath, pointAt } from '../showcase/src/simulatorPath.ts'
 import { SIMULATOR_ROUTES, type SimulatorRoute } from '../showcase/src/simulatorRoutes.ts'
@@ -18,9 +18,10 @@ export const TOUR_DRIVERS = ['driver1', 'driver2', 'driver3']
  */
 export const CONFIRM_DELAY_MS = 2000
 const SUBMIT_SHEET = '[role="dialog"][aria-label="送出搭車請求"]'
-/** SC-P9's heading: a completed ride is the 6th step only while its screen is up (its 回到首頁 goes back to the board). */
-const COMPLETED_HEADING = '共乘完成'
-const PICKUP = { lat: 25.049806, lng: 121.578206 }
+/** The board's main button: back on the board after a closed ride (完成畫面的回到首頁, no car, too far). */
+const BOARD_BUTTON = '今天我要搭'
+/** 松山車站, where every showcase path and every trip route meet. */
+export const PICKUP = { lat: 25.049806, lng: 121.578206 }
 /** Where each car stops after 我已上車: this far before its trip's end, outside the mock's 50 m arrival radius. */
 const STOP_SHORT_M = 80
 /** Past the pickup's 80 m radius and 25 m leave margin (DD-06), plus a little room. */
@@ -67,7 +68,7 @@ export function dueToConfirm(requestedAt: number, now: number): boolean {
   return now - requestedAt >= CONFIRM_DELAY_MS
 }
 
-/** The showcase's path cut STOP_SHORT_M before its end, so the car parks short of the destination. */
+/** `points` cut STOP_SHORT_M before their end, so the car parks short of the destination. */
 function cutShort(points: [number, number][]): [number, number][] {
   const path = makePath(points)
   const cutAt = path.length - STOP_SHORT_M
@@ -76,12 +77,19 @@ function cutShort(points: [number, number][]): [number, number][] {
   return [...kept, [end.lat, end.lng]]
 }
 
-function tourRoute(route: SimulatorRoute): SimulatorRoute {
-  const path = makePath(route.path)
-  const pickupM = path.cumulative[path.points.reduce((best, p, i) => (distanceM(p, PICKUP) < distanceM(path.points[best], PICKUP) ? i : best), 0)]
+/**
+ * A tour car's route: the showcase's approach to 松山車站, then the trip's own route (`onward`, from
+ * the pickup) cut short of its end. The static site's mock moves a car by projecting each report onto
+ * its trip path (followReports), so off that path the car would stick at the pickup (#217 review).
+ */
+export function tourRoute(route: SimulatorRoute, onward: LatLng[]): SimulatorRoute {
+  const pickupIndex = route.path.findIndex(([lat, lng]) => lat === PICKUP.lat && lng === PICKUP.lng)
+  if (pickupIndex < 0) throw new Error('tour route: the path does not pass 松山車站')
+  const approach = route.path.slice(0, pickupIndex + 1)
+  const pickupM = makePath(approach).length
   return {
     ...route,
-    path: cutShort(route.path),
+    path: [...approach, ...cutShort(onward.map((p): [number, number] => [p.lat, p.lng])).slice(1)],
     // Parked until a request, so the board keeps 3 cars however long the visitor looks (T63).
     holdUntilRequest: true,
     fastForward: { speedKmh: FAST_TO_PICKUP_KMH, untilM: Math.round(pickupM + PAST_PICKUP_M) },
@@ -89,8 +97,17 @@ function tourRoute(route: SimulatorRoute): SimulatorRoute {
   }
 }
 
-/** Static-site copies of driver1–3's routes; the showcase's own stay as they are. */
-export const TOUR_ROUTES: Record<string, SimulatorRoute> = Object.fromEntries(TOUR_DRIVERS.map((name) => [name, tourRoute(SIMULATOR_ROUTES[name])]))
+/** Each tour car's route, from its trip's route as the backend planned it (DD-21). */
+async function tourRoutes(): Promise<Record<string, SimulatorRoute>> {
+  const entries = await Promise.all(
+    TOUR_DRIVERS.map(async (name): Promise<[string, SimulatorRoute]> => {
+      const trip = await createApiClient('driver', name).get<TripView>('/driver/trips/current')
+      if (!trip.route) throw new Error(`tour route: ${name}'s trip has no route`)
+      return [name, tourRoute(SIMULATOR_ROUTES[name], decodePolyline(trip.route.polyline))]
+    }),
+  )
+  return Object.fromEntries(entries)
+}
 
 /** Confirms the request for whichever tour car the backend sent it to, like that driver's 確認 (DD-33). */
 async function confirmFor(requestId: number) {
@@ -106,7 +123,7 @@ async function confirmFor(requestId: number) {
   }
 }
 
-function startTour() {
+async function startTour() {
   const passenger = createApiClient('passenger', getAccountFromUrl(DEFAULT_ACCOUNT))
   // /current is empty once the request is closed: the last one is read by its id.
   let lastId: number | null = null
@@ -119,9 +136,10 @@ function startTour() {
       lastId = open.id
       return { status: open.status, sheetOpen, request: open }
     }
-    // Closed (no car and too far never open): only a completed ride still on screen counts.
-    const onScreen = [...document.querySelectorAll('h1')].some((h) => h.textContent === COMPLETED_HEADING)
-    if (lastId === null || !onScreen) {
+    // Closed: the last ride counts until the app is back on the board. Checked on the board, not on
+    // 共乘完成, which shows up to one poll after the backend has closed the ride.
+    const onBoard = [...document.querySelectorAll('button')].some((b) => b.textContent?.trim() === BOARD_BUTTON)
+    if (lastId === null || onBoard) {
       lastId = null
       return { status: null, sheetOpen, request: null }
     }
@@ -138,9 +156,9 @@ function startTour() {
     confirmed.add(request.id)
   }
 
-  createSimulator({ accounts: TOUR_DRIVERS, fastForward: true, routes: TOUR_ROUTES }).start()
+  createSimulator({ accounts: TOUR_DRIVERS, fastForward: true, routes: await tourRoutes() }).start()
   runTour({ read, detect: detectPassengerStep, steps: PASSENGER_STEPS, act, intervalMs: TOUR_POLL_MS })
 }
 
 // The showcase embeds this same page and runs its own Demo there: no cars, no bar (DD-46).
-if (typeof window !== 'undefined' && !isEmbedded()) startTour()
+if (typeof window !== 'undefined' && !isEmbedded()) startTour().catch((err) => console.warn('static tour:', err))

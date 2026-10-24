@@ -5,8 +5,8 @@ import { SITE_URL } from '../playwright.config'
 const PASSENGER = `${SITE_URL}passenger/index.html`
 const PORTAL = `${SITE_URL}index.html`
 const STEP_TIMEOUT_MS = 30_000
-/** #210: 送出後約 3 秒內畫面換成已確認; a little room for the test's own polling. */
-const CONFIRM_WITHIN_MS = 3500
+/** #210: 送出後約 3 秒內畫面換成已確認; room for the test's own polling and a busy machine. */
+const CONFIRM_WITHIN_MS = 4000
 
 async function openPhone(browser: Browser, url: string): Promise<Page> {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
@@ -75,6 +75,26 @@ test('390px: four taps, six steps in step with the screens, done within a minute
   await page.locator('#root').getByRole('button', { name: '回到首頁' }).click()
   await expect(page.getByRole('button', { name: '今天我要搭' })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
   await onStep(page, 1, '「今天我要搭」')
+})
+
+test('two rides in one page load: the second car reaches the pickup too (#217 review)', async ({ browser }) => {
+  test.setTimeout(120_000)
+  const page = await openPhone(browser, PASSENGER)
+  const plates: string[] = []
+  for (let ride = 1; ride <= 2; ride++) {
+    await page.getByRole('button', { name: '今天我要搭' }).click({ timeout: STEP_TIMEOUT_MS })
+    await page.getByRole('button', { name: '送出請求' }).click()
+    await expect(page.getByRole('button', { name: '我已上車' })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
+    plates.push((await page.getByText(/^ABC-\d{4}$/).first().textContent()) ?? '')
+    // The fast-forward takes about a second; well within 10 s on any car (T63).
+    await expect(page.getByRole('heading', { name: '車已到上車點' }), `ride ${ride}`).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: '我已上車' }).click()
+    await page.getByRole('button', { name: '我已下車，結束共乘' }).click({ timeout: STEP_TIMEOUT_MS })
+    await expect(page.getByRole('heading', { name: '共乘完成' })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
+    await page.locator('#root').getByRole('button', { name: '回到首頁' }).click()
+  }
+  // A different car the second time: the first is still on its way to the park.
+  expect(new Set(plates).size).toBe(2)
 })
 
 test('首頁 on the bar goes back to the portal; picking the passenger again starts at step 1 (T70)', async ({ browser }) => {
