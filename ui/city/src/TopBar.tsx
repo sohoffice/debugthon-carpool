@@ -22,6 +22,8 @@ interface TopBarProps {
  * Board-ink bar shared by the three tabs (UD-27): name, tabs, network lights, Demo clock (DD-41).
  * Below 1024px it is two rows (T71, T72): name and clock, then the tabs (scrolling sideways) and the worst
  * level's count. The static site's 首頁 link pads the first child, the <h1>, on narrow screens (T68).
+ * From 1024px to 1365px it is one row that fits with the 72px 首頁 link (T72): the name over 市府儀表板,
+ * no 現在, and the lights only as the count.
  */
 export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
   return (
@@ -29,9 +31,9 @@ export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
       <h1 className="flex h-full min-w-0 items-center gap-2 overflow-hidden font-semibold lg:shrink-0 lg:gap-2.5 lg:overflow-visible lg:text-[17px]">
         <span className="h-full w-2 shrink-0 bg-brand" />
         {/* Below 1024px the name wraps after 起來: so it fits beside the clock with the static site's 首頁 link (T68). */}
-        <span className="flex flex-col max-lg:text-[13px]/[15px] lg:contents">
+        <span className="flex flex-col max-lg:text-[13px]/[15px] lg:max-xxl:leading-tight xxl:contents">
           <span className="max-lg:w-[7.5em] max-lg:whitespace-normal">內科上班順起來: 內科順路共乘</span>
-          <span className="font-medium text-fog max-lg:text-xs lg:text-[15px]">市府儀表板</span>
+          <span className="font-medium text-fog max-lg:text-xs lg:text-[15px] lg:max-xxl:text-[13px]">市府儀表板</span>
         </span>
       </h1>
       <nav role="tablist" aria-label="分頁" className="row-start-2 flex h-full min-w-0 shrink-0 overflow-x-auto max-lg:pl-1 lg:overflow-visible">
@@ -53,7 +55,7 @@ export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
           <span>
             {monthDay(clock.today)} 週{weekdayOf(clock.today)}
           </span>
-          <span className="max-lg:hidden">現在</span>
+          <span className="max-xxl:hidden">現在</span>
           <span className="flex flex-col items-start gap-0.5 lg:contents">
             <span className="text-[22px]/none font-extrabold text-white tabular-nums lg:text-[28px]/none">{clockTime(clock.now)}</span>
             {clock.demo_clock && <SimulatedBadge label="模擬時間" />}
@@ -66,7 +68,7 @@ export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
 
 /**
  * 16 small blocks, one per gateway's level in the latest slot, and only the worst level's count (UD-27);
- * below 1024px only the count (T71, T72).
+ * below 1366px only the count (T71, T72).
  */
 function NetworkLights({ latest }: { latest: CityGateway[] | undefined }) {
   if (!latest) return <div className="ml-auto max-lg:row-start-2" />
@@ -74,8 +76,8 @@ function NetworkLights({ latest }: { latest: CityGateway[] | undefined }) {
   const worst = worstLevel(levels)
   return (
     <div className="col-start-2 row-start-2 ml-auto flex shrink-0 items-center gap-2 pr-4 text-[13px] text-asphalt-soft lg:pr-0" aria-label="路網狀態" data-testid="network-lights">
-      <span className="max-lg:hidden">{latest.length} 個入口</span>
-      <span className="flex gap-[3px] max-lg:hidden">
+      <span className="max-xxl:hidden">{latest.length} 個入口</span>
+      <span className="flex gap-[3px] max-xxl:hidden">
         {latest.map((g, i) => {
           const l = levels[i]
           return (

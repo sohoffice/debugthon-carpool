@@ -1,2 +1,7 @@
 @import 'tailwindcss';
 @import '@carpool/shared/theme.css';
+
+/* The desktop top bar fits on one row with every part only from here; below it, from lg, it drops some (T72). */
+@theme {
+  --breakpoint-xxl: 85.375rem;
+}

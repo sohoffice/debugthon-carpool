@@ -133,6 +133,21 @@ for (const width of [360, 390, 768, 1023]) {
   })
 }
 
+// T72 (#219): from 1024px the link is 72×60 and pads the whole top bar; the clock and 模擬時間 still fit.
+for (const width of [1024, 1280, 1440]) {
+  test(`${width}px 市府儀表板: with 「← 首頁」 the top bar fits, the clock and 模擬時間 inside the window`, async ({ browser }) => {
+    const page = await openAt(browser, width, 800, `${SITE_URL}city/index.html`)
+    await expect(page.getByRole('link', { name: HOME })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
+    await expect(page.getByTestId('network-lights')).toContainText(/\d+ 處/, { timeout: STEP_TIMEOUT_MS })
+    const header = page.locator('#root header')
+    expect(await header.evaluate((h) => h.scrollWidth - h.clientWidth)).toBe(0)
+    for (const text of ['模擬時間', /^\d{2}:\d{2}$/]) {
+      const box = (await header.getByText(text).boundingBox())!
+      expect(box.x + box.width, String(text)).toBeLessThanOrEqual(width)
+    }
+  })
+}
+
 test('picking the driver again after going home starts over', async ({ page }) => {
   await page.goto(PORTAL)
   await card(page, '我是駕駛').click()

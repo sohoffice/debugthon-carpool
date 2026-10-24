@@ -173,6 +173,15 @@ for (const [width, height] of [[1440, 760], [1512, 860], [1280, 800], [1024, 768
     // Nor does the number row above give way to it.
     expect(boxes.panelTop).toBeGreaterThanOrEqual(boxes.kpiBottom)
     expect(boxes.rowHeight).toBeGreaterThanOrEqual(13)
+    // Every panel's content stays inside its own box, e.g. the pickup table at 1024px where its headers wrap.
+    const spills = await page.locator('main section[aria-label]').evaluateAll((sections) =>
+      sections.flatMap((s) => {
+        const box = s.getBoundingClientRect()
+        const bottom = Math.max(...[...s.querySelectorAll('*')].map((e) => e.getBoundingClientRect().bottom))
+        return bottom > box.bottom + 0.5 ? [`${s.getAttribute('aria-label')} +${Math.round(bottom - box.bottom)}px`] : []
+      }),
+    )
+    expect(spills).toEqual([])
     // Every area can be scrolled into view.
     for (const name of ['估計減少的車次', '入口 × 15 分鐘', '今天的請求', '過去 10 個上班日的共乘數', '各上車點']) {
       const area = page.getByRole('region', { name, exact: true })
@@ -180,6 +189,26 @@ for (const [width, height] of [[1440, 760], [1512, 860], [1280, 800], [1024, 768
       await expect(area, name).toBeInViewport()
     }
   })
+}
+
+// T72: from 1024px to 1365px the one-row top bar drops parts so the clock and 模擬時間 stay on screen,
+// also with the static site's 72px 首頁 link.
+const DESKTOP_HOME_PADDING = '@media (min-width: 1024px) { #root header { padding-left: 72px } }'
+for (const width of [1024, 1280, 1365]) {
+  for (const homeLink of [false, true]) {
+    test(`${width}px${homeLink ? ' with the static site 首頁 padding' : ''}: the top bar fits, clock and 模擬時間 in the window (T72, REQ-063)`, async ({ browser }) => {
+      const page = await open(browser, width, 800)
+      if (homeLink) await page.addStyleTag({ content: DESKTOP_HOME_PADDING })
+      // The lights come with the traffic poll, after the numbers: measure with them in.
+      await expect(page.getByTestId('network-lights')).toContainText(/\d+ 處/)
+      const header = page.locator('#root header')
+      expect(await header.evaluate((h) => h.scrollWidth - h.clientWidth)).toBe(0)
+      for (const text of ['模擬時間', /^\d{2}:\d{2}$/, /^\d{1,2}\/\d{1,2} 週/]) {
+        const box = (await header.getByText(text).boundingBox())!
+        expect(box.x + box.width, String(text)).toBeLessThanOrEqual(width)
+      }
+    })
+  }
 }
 
 // T72: 768–1023px uses T71's single column.

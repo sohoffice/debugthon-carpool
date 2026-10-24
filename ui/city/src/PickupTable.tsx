@@ -23,6 +23,8 @@ export function PickupTable({ history, live, today, error }: PickupTableProps) {
       marks={[mixed && '含模擬']}
       title={history && (worst ? `${worst.name}沒搭到最多：駕駛不夠` : '各上車點都載得到人')}
       error={error && '上車點資料讀取失敗，顯示上一次的資料'}
+      // As tall as its table: around 1024px the headers wrap and it outgrows the row's 262px (T72).
+      className="lg:min-h-min"
     >
       {history && (
         <table className="w-full text-base max-lg:text-sm">
