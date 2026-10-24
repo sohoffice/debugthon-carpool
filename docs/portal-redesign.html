@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>單一入口改版提案</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: a design memo, one column of prose; each flow is a horizontal strip of phone mockups that scrolls on its own. */
+:root {
+  --paper: #eef2f3; --surface: #ffffff; --ink: #132126; --ink-soft: #56666c; --rule: #d5dcdd;
+  --brand: #00707c; --brand-soft: #d6eef0; --brand-glow: #5fd0d6;
+  --asphalt: #16191b; --plate: #22282b; --asphalt-line: #353d41; --fog: #a9b7ba;
+  --signal: #ffc61a; --sim: #6a4fb8; --danger: #c0362c;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #0f1517; --surface: #172024; --ink: #e4ecee; --ink-soft: #9fb0b5; --rule: #2a3639;
+  --brand: #3fb7c1; --brand-soft: #123a3f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #0f1517; --surface: #172024; --ink: #e4ecee; --ink-soft: #9fb0b5; --rule: #2a3639;
+  --brand: #3fb7c1; --brand-soft: #123a3f; color-scheme: dark }
+
+body { background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.7;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 40px 80px; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.3; }
+h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 900; display: flex; gap: 14px; align-items: stretch; }
+h1::before { content: ""; width: 10px; background: var(--brand); flex: none; }
+h2 { font-size: 24px; font-weight: 700; }
+h3 { font-size: 17px; font-weight: 700; }
+p { margin: 0; max-width: 65ch; }
+section { display: flex; flex-direction: column; gap: 16px; }
+.lead { color: var(--ink-soft); font-size: 17px; }
+.eyebrow { font-size: 13px; letter-spacing: .08em; color: var(--brand); font-weight: 700; }
+
+.problems { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.problem { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.problem b { font-size: 15px; }
+.problem span { color: var(--ink-soft); font-size: 15px; }
+
+/* Flow strips */
+.strip { overflow-x: auto; padding-bottom: 12px; }
+.strip ol { list-style: none; margin: 0; padding: 0; display: flex; gap: 20px; width: max-content; }
+.strip li { display: flex; flex-direction: column; gap: 10px; width: 196px; }
+.cap { font-size: 14px; color: var(--ink-soft); line-height: 1.5; }
+.cap b { color: var(--ink); display: block; font-size: 15px; }
+.step-no { font-variant-numeric: tabular-nums; color: var(--brand); font-weight: 700; }
+
+/* Phone mockup: 390x844 at 0.5 scale */
+.phone { width: 196px; height: 410px; border-radius: 26px; background: #0b0d0e; padding: 7px; box-sizing: border-box; flex: none; }
+.scr { width: 100%; height: 100%; border-radius: 20px; overflow: hidden; position: relative; display: flex; flex-direction: column; font-size: 11px; line-height: 1.4; }
+.scr.white { background: #fff; color: #132126; }
+.scr.asph { background: var(--asphalt); color: #fff; }
+.sb { height: 18px; flex: none; font-size: 9px; padding: 4px 14px 0; font-weight: 700; opacity: .8; }
+/* Coach bar: the tour's own layer, shown above every screen */
+.coach { margin: 4px 8px; border-radius: 10px; background: var(--brand); color: #fff; padding: 6px 9px; font-size: 10px; line-height: 1.35; flex: none; }
+.coach { position: relative; padding-right: 40px; }
+.coach::after { content: "首頁"; position: absolute; top: 5px; right: 6px; font-size: 9px; font-weight: 700; border: 1px solid rgba(255,255,255,.6); border-radius: 999px; padding: 0 5px; }
+.coach .acts { display: flex; gap: 4px; margin-top: 5px; }
+.coach .acts span { flex: 1; text-align: center; border-radius: 999px; padding: 2px 0; font-weight: 700; background: #fff; color: var(--brand); }
+.coach .acts span + span { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.7); }
+.asph .coach .acts span:first-child { color: #0e3a3f; }
+.sig { background: var(--signal) !important; color: #16191b !important; }
+.sig .coach { background: #0e3a3f; color: #fff; border: none; }
+.coach .dots { display: flex; gap: 3px; margin-bottom: 3px; }
+.coach .dots i { width: 14px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.35); }
+.coach .dots i.on { background: #fff; }
+.asph .coach { background: #0e3a3f; border: 1px solid var(--brand-glow); }
+.body { flex: 1; padding: 8px 10px; display: flex; flex-direction: column; gap: 7px; min-height: 0; }
+.map { flex: 1; border-radius: 8px; background:
+  linear-gradient(90deg, transparent 47%, #c9d3d5 47% 53%, transparent 53%),
+  linear-gradient(0deg, transparent 60%, #c9d3d5 60% 64%, transparent 64%), #e7eeef; position: relative; min-height: 60px; }
+.map .route { position: absolute; left: 18%; top: 20%; width: 60%; height: 55%; border: 3px solid var(--brand); border-left: none; border-bottom: none; border-radius: 0 14px 0 0; }
+.map .car { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: var(--brand); border: 2px solid #fff; }
+.btn { border-radius: 999px; text-align: center; font-weight: 700; padding: 8px; font-size: 12px; }
+.btn.brand { background: var(--brand); color: #fff; }
+.btn.signal { background: var(--signal); color: #16191b; }
+.btn.ghost { border: 1.5px solid currentColor; opacity: .75; }
+.pulse { box-shadow: 0 0 0 3px rgba(255,198,26,.45); }
+.white .btn.brand.pulse { box-shadow: 0 0 0 3px rgba(0,112,124,.3); }
+.plate { background: var(--plate); border-radius: 6px; padding: 7px 8px; }
+.yellow { border: 2px solid var(--signal); }
+.lbl { font-size: 9px; opacity: .7; }
+.big { font-size: 15px; font-weight: 900; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.chip { font-size: 9px; border: 1px dashed var(--sim); color: var(--sim); border-radius: 4px; padding: 0 4px; }
+.asph .chip { border-color: #c8b9ff; color: #c8b9ff; }
+.board { background: #132126; color: #fff; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; }
+.board .row span:last-child { color: var(--brand-glow); font-weight: 700; font-variant-numeric: tabular-nums; }
+.card { border: 1px solid #d5dcdd; border-radius: 8px; padding: 7px 8px; }
+.toast { position: absolute; left: 8px; right: 8px; top: 92px; background: #fff; color: #132126; border-radius: 10px; padding: 7px 9px; box-shadow: 0 6px 18px rgba(0,0,0,.25); font-size: 10px; }
+
+/* Portal picker mockups */
+.pickers { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 28px; align-items: start; }
+.desk { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 22px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.desk .ttl { font-weight: 900; font-size: 18px; display: flex; gap: 10px; }
+.desk .ttl::before { content: ""; width: 6px; background: var(--brand); }
+.portals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.portal { border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 6px; min-height: 120px; }
+.portal b { font-size: 18px; }
+.portal span { font-size: 13px; opacity: .8; line-height: 1.5; }
+.portal em { margin-top: auto; font-style: normal; font-size: 12px; font-weight: 700; }
+.p-driver { background: var(--asphalt); color: #fff; outline: 2px solid #fff; outline-offset: -6px; }
+.p-pass { background: var(--brand); color: #fff; border-radius: 0; border-left: 7px solid var(--brand); box-shadow: inset 6px 0 0 #fff; padding-left: 22px; }
+.m-portal.p-pass { padding-left: 16px; border-radius: 0; }
+.p-city { background: var(--surface); color: var(--ink); border: 1px solid var(--rule); }
+.m-portal { border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; gap: 2px; }
+.m-portal b { font-size: 13px; }
+.m-portal span { font-size: 9px; opacity: .8; }
+@media (max-width: 640px) {
+  .pickers { grid-template-columns: 1fr; justify-items: center; }
+  .desk { justify-self: stretch; }
+  .portals { grid-template-columns: 1fr; }
+}
+
+/* Tables */
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; min-width: 560px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-size: 13px; color: var(--ink-soft); font-weight: 700; letter-spacing: .04em; }
+td:first-child { font-weight: 700; white-space: nowrap; }
+code { font-size: 14px; background: var(--brand-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.note { border-left: 4px solid var(--signal); background: var(--surface); padding: 12px 16px; border-radius: 0 8px 8px 0; display: flex; flex-direction: column; gap: 6px; }
+ul.tight { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; max-width: 70ch; }
+:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:14px">
+    <span class="eyebrow">內科上班順起來 · 靜態展示站改版</span>
+    <h1>一次只看一個角色</h1>
+    <p class="lead">投票的人多半用手機打開連結。現在的首頁把兩支手機並排縮小，在手機上字小到看不清，還要懂 Demo 流程才知道要按哪裡。改版後，首頁只問一件事：你想以哪個身分體驗？選了之後，畫面就是那個角色的 App，旁邊的事全部自動發生。</p>
+  </header>
+
+  <section>
+    <h2>現在的問題</h2>
+    <div class="problems">
+      <div class="problem"><b>首頁在手機上縮到看不清</b><span>展示頁固定 2 支手機 + 兩側欄位，約 1,728px 寬，整體縮放。390px 寬的手機上，App 只剩約 20% 大小。</span></div>
+      <div class="problem"><b>一個人要同時操作兩個角色</b><span>駕駛要出發、乘客要送出，還得先按「開始 Demo」。沒看過講稿的人不知道順序。</span></div>
+      <div class="problem"><b>儀表板只有桌機版面</b><span>市府儀表板以 1440px 設計，嵌入時整頁縮放；在手機上表格與熱力格子都擠成一團。</span></div>
+    </div>
+    <p>好消息：駕駛與乘客 App 本身在 600px 以下已經是全螢幕手機版，不用重做。要改的是<strong>入口</strong>、<strong>每個角色的自動劇本</strong>，以及<strong>儀表板的窄螢幕版面</strong>。</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">畫面 0</span>
+    <h2>入口：選一個身分</h2>
+    <p>取代現在的展示頁成為 <code>index.html</code>。三張大卡片，沿用 App 內已有的角色招牌：駕駛是柏油路牌，乘客是車站站牌，儀表板是白底。手機上直排、桌機上橫排。</p>
+    <div class="pickers">
+      <div class="phone"><div class="scr white">
+        <div class="sb">08:12</div>
+        <div class="body" style="gap:8px">
+          <div style="font-weight:900;font-size:13px;display:flex;gap:6px"><span style="width:4px;background:#00707c"></span>內科上班順起來</div>
+          <div style="font-size:10px;color:#56666c">選一個身分，約 1 分鐘走完一趟</div>
+          <div class="m-portal p-driver"><b>我是駕駛</b><span>出發 → 有人搭 → 載到公司</span></div>
+          <div class="m-portal p-pass"><b>我是乘客</b><span>找車 → 上車 → 到站</span></div>
+          <div class="m-portal p-city"><b>市府儀表板</b><span>看園區的車流與共乘數字</span></div>
+          <div style="margin-top:auto;font-size:9px;color:#56666c;text-align:center">所有資料都是模擬的，可放心亂按</div>
+        </div>
+      </div></div>
+      <div class="desk">
+        <div class="ttl">內科上班順起來: 內科順路共乘</div>
+        <div style="color:var(--ink-soft);font-size:14px">選一個身分，約 1 分鐘走完一趟。所有資料都是模擬的。</div>
+        <div class="portals">
+          <div class="portal p-driver"><b>我是駕駛</b><span>開車上班順路載人。系統會自動派一位乘客給你。</span><em>開始體驗 →</em></div>
+          <div class="portal p-pass"><b>我是乘客</b><span>在站牌等順路的車，系統幫你配車，不用選車。</span><em>開始體驗 →</em></div>
+          <div class="portal p-city"><b>市府儀表板</b><span>園區入口的車流、今天的共乘請求與減少的車次。</span><em>打開儀表板 →</em></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">劇本 A · 駕駛</span>
+    <h2>駕駛：你只要按「我出發了」，乘客會自己出現</h2>
+    <p>頂端一條導覽列（青色）告訴你現在第幾步、下一步按哪裡。導覽列是展示站外加的一層，不屬於 App 本身，比照除錯模式列為 DD-04 的例外（新的 DD，DD-46，見 design.md 4.16）：它是 Demo 工具，只在靜態站打包時出現，實際上路的駕駛 App 不會有它。</p>
+    <p>導覽列右邊固定一顆「首頁」，任何一步都能回到選身分的畫面，不用確認：資料都是模擬的，回首頁就重來。瀏覽器的「上一頁」也一樣會回首頁，因為每個角色是首頁連過去的獨立頁面。</p>
+    <div class="strip" tabindex="0" aria-label="駕駛劇本的五個畫面">
+      <ol>
+        <li>
+          <div class="phone"><div class="scr asph">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></div>設定已經填好，按「我出發了」就好</div>
+            <div class="body"><div class="map"><div class="route"></div></div>
+              <div class="plate"><div class="lbl">上車點</div><b>松山車站</b><div class="lbl">目的地</div><b>內湖科學園區 瑞光路</b></div>
+              <div class="btn brand pulse">我出發了</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">1</span><b>出發確認</b>既有畫面 SC-D1，預先選好上車點、目的地、座位與標籤。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr asph">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>開往上車點中，幾秒後會有人要搭</div>
+            <div class="body"><div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px"><span class="lbl">行程中</span><span class="big">目前沒有<br>搭車請求</span></div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">2</span><b>行程中：等請求</b>約 4 秒後，劇本以模擬乘客送出一筆請求。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr asph sig">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>有人要搭！看一下下車點，按「確認」</div>
+            <div class="body"><div class="big" style="font-size:16px">有乘客要搭車</div><div><div class="lbl">上車</div><b>松山車站</b></div><div><div class="lbl">下車</div><b>瑞光路 583 巷</b></div>
+              <div class="map" style="flex:0 0 90px"><div class="route"></div></div>
+              <div style="flex:1"></div>
+              <div class="btn pulse" style="background:#16191b;color:#fff">確認</div><div class="btn ghost">婉拒</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">3</span><b>有請求</b>既有畫面 SC-D3（整個畫面換成標線黃，UD-04；只有上車點與下車點，沒有乘客名字，DD-04）。按婉拒也行：劇本會在幾秒後再送一筆。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr asph">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>到上車點了，乘客上車後按「已上車」</div>
+            <div class="body"><div class="lbl">行程中</div><div class="big">目前沒有<br>搭車請求</div><div class="plate"><div class="lbl">下車</div><b>瑞光路 583 巷</b><div class="lbl">等上車</div></div>
+              <div style="flex:1"></div>
+              <div class="btn brand pulse">已上車</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">4</span><b>載到乘客</b>車輛快轉到上車點（沿用 T63 的快轉）。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr asph">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>完成！你今天幫園區少了一輛車<div class="acts"><span>換成乘客體驗</span><span>回到首頁</span></div></div>
+            <div class="body" style="justify-content:center;align-items:center;text-align:center;gap:10px"><div class="lbl">已到達目的地</div><div class="big" style="font-size:18px">行程結束</div><div>這趟載了 1 位乘客</div>
+              <div class="btn ghost" style="align-self:stretch;margin-top:auto">好</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">5</span><b>行程結束</b>既有 SC-D4，App 本體不變（保留「好」）。快轉到目的地後自動結束（T64）。「換角色」與「回到首頁」在導覽列上。</div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">劇本 B · 乘客</span>
+    <h2>乘客：站牌上已經有車在來</h2>
+    <p>導覽列和駕駛一樣，右邊固定一顆「首頁」。乘客共 6 步，訪客要按 4 下：「今天我要搭」「送出請求」「我已上車」「我已下車，結束共乘」。</p>
+    <p>一打開就有 3～4 輛模擬車往松山車站開來，供給看板有東西可看。送出後，被配到的那台模擬車約 3 秒後自動確認（配哪台由既有媒合決定，REQ-042），然後快轉到站。</p>
+    <div class="strip" tabindex="0" aria-label="乘客劇本的六個畫面">
+      <ol>
+        <li>
+          <div class="phone"><div class="scr white">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>有 3 輛車順路經過這站，按「今天我要搭」</div>
+            <div class="body">
+              <div class="board"><div class="lbl" style="color:#a9b7ba">松山車站 · 往內科</div>
+                <div class="row"><span>第 1 班</span><span>4 分</span></div><div class="row"><span>第 2 班</span><span>9 分</span></div><div class="row"><span>第 3 班</span><span>15 分</span></div></div>
+              <div class="map"><div class="car" style="left:30%;top:18%"></div><div class="car" style="left:62%;top:55%"></div><div class="car" style="left:15%;top:70%"></div></div>
+              <div class="btn brand pulse">今天我要搭</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">1</span><b>供給看板</b>既有 SC-P2。目的地已預填，跳過 SC-P1 設定。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr white">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i></div>確認一下要去哪，按「送出請求」</div>
+            <div class="body" style="justify-content:flex-end"><div class="card" style="display:flex;flex-direction:column;gap:5px"><b style="font-size:13px">送出搭車請求</b><div class="lbl">上車：松山車站 · 下車：瑞光路 583 巷</div><div class="lbl">平台會替你分配一台最快能送你到的車。</div>
+              <div class="btn brand pulse">送出請求</div></div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">2</span><b>送出前確認</b>SC-P3 底部面板（UD-08）。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr white">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>正在幫你找順路的駕駛…</div>
+            <div class="body" style="justify-content:center;align-items:center;text-align:center;gap:6px"><div class="big">正在等駕駛確認</div><div style="color:#56666c">駕駛確認後，這裡會顯示車牌和到達時間。</div><div class="btn ghost" style="align-self:stretch;margin-top:auto">取消請求</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">3</span><b>等駕駛確認</b>SC-P4。被配到的模擬車約 3 秒後自動確認。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr white">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>配到車了！車到站後按「我已上車」</div>
+            <div class="toast"><b>阿德 · 白色 RAV4 ABC-1234</b><br>約 4 分鐘到松山車站</div>
+            <div class="body"><div class="map"><div class="route"></div><div class="car" style="left:16%;top:70%"></div></div>
+              <div class="btn brand pulse">我已上車</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">4</span><b>已確認</b>SC-P5（含模擬推播）。車快轉到站。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr white">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>在車上了，到公司後按「我已下車，結束共乘」</div>
+            <div class="body"><div class="map"><div class="route"></div><div class="car" style="left:70%;top:20%"></div></div>
+              <div class="btn brand pulse">我已下車，結束共乘</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">5</span><b>已上車</b>SC-P6。快轉到下車點。</div>
+        </li>
+        <li>
+          <div class="phone"><div class="scr white">
+            <div class="sb">08:12</div>
+            <div class="coach"><div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>到了！今天少開一輛車進內科<div class="acts"><span>換成駕駛體驗</span><span>回到首頁</span></div></div>
+            <div class="body" style="justify-content:center;align-items:center;text-align:center;gap:10px"><div class="big" style="font-size:18px">共乘完成</div><div style="color:#56666c">這趟共乘已記錄。</div><div style="color:#56666c">車上 1 分鐘</div></div>
+          </div></div>
+          <div class="cap"><span class="step-no">6</span><b>共乘完成</b>SC-P9，App 本體不變；快轉時車上時間是「1 分鐘」（DD-14）。「換角色」與「回到首頁」在導覽列上。</div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">畫面 C · 儀表板</span>
+    <h2>儀表板：功能不變，窄螢幕改成單欄</h2>
+    <p>內容與輪詢都照舊。版面在 768px 以下重排，桌機 1440px 的樣子完全不動。</p>
+    <div class="tbl"><table>
+      <thead><tr><th>區塊</th><th>桌機（現在）</th><th>手機（768px 以下）</th></tr></thead>
+      <tbody>
+        <tr><td>頂端列</td><td>名稱、分頁、16 個號誌燈、時鐘一列</td><td>兩列：名稱＋時鐘；分頁可橫向滑動。號誌燈收成「壅塞 3 處」一個小字</td></tr>
+        <tr><td>回首頁</td><td>靜態站才有：名稱左邊一個「← 首頁」</td><td>同左，放在第一列最左邊</td></tr>
+        <tr><td>數字列</td><td>5 格橫排</td><td>「減少的車次」整寬大格，其他 4 格排 2×2</td></tr>
+        <tr><td>入口 × 時段格子</td><td>16 列 × 12 時段</td><td>左欄入口名稱固定，時段區自己橫向捲動</td></tr>
+        <tr><td>請求、歷史、上車點</td><td>兩欄並排</td><td>單欄依序往下排，頁面整體可捲動（桌機維持一屏不捲）</td></tr>
+        <tr><td>即時地圖</td><td>地圖 + 右側 360px 清單</td><td>地圖佔上方 55%，清單在下方</td></tr>
+        <tr><td>車流熱力</td><td>時段鍵一列</td><td>時段鍵橫向捲動，選中的時段捲到可見範圍</td></tr>
+        <tr><td>車流熱力的入口詳情</td><td>地圖右側 360px 一欄</td><td>移到地圖與時段鍵之後，往下排</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>怎麼做（給開發的大方向）</h2>
+    <ul class="tight">
+      <li><strong>只改靜態站，不動產品程式。</strong>劇本放在 <code>ui/static-site/</code>（例如 <code>driverTour.ts</code>、<code>passengerTour.ts</code>），和現在的 <code>installMock.ts</code> 一樣只在靜態站打包時注入。</li>
+      <li><strong>劇本直接操作瀏覽器裡的示範後端。</strong>駕駛劇本：偵測到出發後，用模擬乘客帳號送請求；確認後快轉車輛。乘客劇本：開頁就讓幾台模擬車出發並移動，被配到的那台自動確認。</li>
+      <li><strong>模擬器要從展示頁搬出來。</strong>現在車輛移動寫在 <code>showcase/src/useSimulator.ts</code>（React hook）。要把移動邏輯拆成不依賴 React 的模組，劇本與展示頁共用。這是最大的一塊工。</li>
+      <li><strong>每位訪客一個世界。</strong>示範後端本來就跑在各自的瀏覽器裡，所以 100 人同時投票也互不干擾，也不用「重新開始」按鈕；重新整理就重來。</li>
+      <li><strong>導覽列</strong>是一個靜態站專用的小元件，依目前畫面（讀示範後端狀態）顯示步驟，不改 App 的畫面元件。它和除錯模式一樣列為 DD-04 的例外（DD-46）。</li>
+      <li><strong>現在的雙手機展示頁</strong>保留在 <code>showcase.html</code>，現場 Demo 照舊用；只是不再當首頁。</li>
+    </ul>
+  </section>
+
+  <section class="note">
+    <h3>已決定（2026-10-24）</h3>
+    <ul class="tight">
+      <li>「確認」「已上車」等按鈕由使用者自己按，導覽列指出要按哪裡；劇本只代替另一個角色。</li>
+      <li>雙手機展示頁改放 <code>showcase.html</code>，現場 Demo 照舊用，入口不連過去。</li>
+      <li>回首頁後再選同一個角色，從頭開始。</li>
+      <li>工作單：<a href="https://github.com/sohoffice/debugthon-carpool/issues/206">#206 T67</a>、<a href="https://github.com/sohoffice/debugthon-carpool/issues/207">#207 T68</a>、<a href="https://github.com/sohoffice/debugthon-carpool/issues/209">#209 T69</a>、<a href="https://github.com/sohoffice/debugthon-carpool/issues/210">#210 T70</a>、<a href="https://github.com/sohoffice/debugthon-carpool/issues/208">#208 T71</a>。</li>
+    </ul>
+  </section>
+</div>
+</html>
