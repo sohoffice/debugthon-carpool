@@ -251,6 +251,8 @@ func sameNames(a, b []string) bool { return strings.Join(a, ",") == strings.Join
 // 不抽菸 and has the fewest seats. Each step changes one thing and flips the winner.
 func TestSeedShowsWaitWalkTagTradeoff(t *testing.T) {
 	tx := testTx(t)
+	// The seeded cars as just after a reset: a Demo may have driven them to the end (DD-29).
+	wantStatus(t, resetCall(t, tx, true), http.StatusNoContent, "")
 
 	eta := func(d1, d2, d3 float64) map[string]float64 {
 		return map[string]float64{"driver1": d1, "driver2": d2, "driver3": d3}
