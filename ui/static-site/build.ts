@@ -25,13 +25,22 @@ const APPS = [
 ]
 const SHOWCASE_PAGE = 'showcase.html'
 
-/** Imports the mock first in each app's entry, so fetch is patched before the app's first /api call. */
-function installMockFirst(): Plugin {
+/** Each role's tour and coach bar (DD-46), imported right after the mock in that app's entry. */
+const TOURS: Record<string, string> = {
+  driver: `${SITE_DIR}driverTour.ts`,
+}
+
+/**
+ * Imports the mock first in each app's entry, so fetch is patched before the app's first /api call,
+ * then the app's tour if it has one.
+ */
+function installMockFirst(app: string): Plugin {
+  const imports = [INSTALL_MOCK, ...(TOURS[app] ? [TOURS[app]] : [])].map((file) => `import ${JSON.stringify(file)}\n`).join('')
   return {
     name: 'static-site-install-mock',
     enforce: 'pre',
     transform(code, id) {
-      return id.endsWith('/src/main.tsx') ? `import ${JSON.stringify(INSTALL_MOCK)}\n${code}` : null
+      return id.endsWith('/src/main.tsx') ? `${imports}${code}` : null
     },
   }
 }
@@ -66,7 +75,7 @@ for (const app of APPS) {
     configFile: false,
     // Relative asset paths: the site works from any folder, e.g. a bucket path.
     base: './',
-    plugins: [installMockFirst(), ...(PAGE_PLUGINS[app.name] ?? [])],
+    plugins: [installMockFirst(app.name), ...(PAGE_PLUGINS[app.name] ?? [])],
     resolve: { alias: { 'node:fs': FS_SHIM } },
     build: { outDir: app.outDir, emptyOutDir: app.name === 'showcase' },
   }
