@@ -32,9 +32,9 @@ interface TrafficTabProps {
 const LEVELS: CongestionLevel[] = [1, 2, 3, 4]
 // The 16 gateways fill the map, clear of the legend top left and the date and source top right (UD-28).
 const LINES_PADDING = { top: 72, right: 48, bottom: 32, left: 200 }
-// Below 768px the date and the legend sit across the map's top, so the lines go under them (T71).
+// Below 1024px the date and the legend sit across the map's top, so the lines go under them (T71, T72).
 const NARROW_LINES_PADDING = { top: 190, right: 16, bottom: 16, left: 16 }
-const NARROW = '(max-width: 47.99rem)'
+const NARROW = '(max-width: 63.99rem)'
 const LEVEL_RANGES = ['≥ 75%', '50–75%', '30–50%', '< 30%']
 const LEVEL_WIDTH = [4, 5, 7, 9]
 const VS_USUAL_WIDTH = [4, 4, 7, 9]
@@ -42,8 +42,8 @@ const VS_USUAL_WIDTH = [4, 4, 7, 9]
 /**
  * 車流熱力 (SC-C1, UD-28): the 16 gateways' lines on the map, the date menu, time line and mode under
  * it, the same colours in the gateway × slot grid, and on the right the slowest three and the selected
- * gateway. Everything comes from the shown date's ?date= response (DD-39). Below 768px everything stacks:
- * map, controls, grid, then the right column (T71).
+ * gateway. Everything comes from the shown date's ?date= response (DD-39). Below 1024px everything stacks:
+ * map, controls, grid, then the right column (T71, T72).
  */
 export function TrafficTab(p: TrafficTabProps) {
   const [tip, setTip] = useState<{ cell: GridCell; at: { x: number; y: number } } | null>(null)
@@ -63,16 +63,16 @@ export function TrafficTab(p: TrafficTabProps) {
   const dayName = shown && (isToday ? `今天（${shown.simulated ? '模擬' : '實測'}）` : `${monthDay(shown.date)} 週${weekdayOf(shown.date)}（${shown.simulated ? '模擬' : '實測'}）`)
 
   return (
-    <div className="flex flex-col md:grid md:min-h-0 md:flex-1 md:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="flex min-w-0 flex-col md:min-h-0">
-        <section aria-label="車流地圖" className="relative min-h-[280px] max-md:h-[55dvh] md:flex-1">
+    <div className="flex flex-col lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="flex min-w-0 flex-col lg:min-h-0">
+        <section aria-label="車流地圖" className="relative min-h-[280px] max-lg:h-[55dvh] lg:flex-1">
           <MapView>
             <FitBounds points={fitPoints} padding={narrow ? NARROW_LINES_PADDING : LINES_PADDING} />
             {shown && <GatewayLines cells={slotCells} mode={p.mode} selected={p.selected} onSelect={p.onSelect} onHover={hover} />}
           </MapView>
           <MapLegend mode={p.mode} />
           {p.slot && (
-            <p className="absolute top-4 right-4 flex items-center gap-2 rounded-[8px] border border-rule bg-white/95 px-3 py-1.5 text-[15px] font-semibold text-ink max-md:top-2 max-md:right-2 max-md:left-2 max-md:text-sm" data-testid="map-slot">
+            <p className="absolute top-4 right-4 flex items-center gap-2 rounded-[8px] border border-rule bg-white/95 px-3 py-1.5 text-[15px] font-semibold text-ink max-lg:top-2 max-lg:right-2 max-lg:left-2 max-lg:text-sm" data-testid="map-slot">
               {monthDay(p.slot.date)} 週{weekdayOf(p.slot.date)} {slotLabel(p.slot.time)}
               <SourceBadge source={source} />
             </p>
@@ -110,7 +110,7 @@ export function TrafficTab(p: TrafficTabProps) {
           {shown && <GridLegend mode={p.mode} notYet={isToday && over < DAY_SLOTS.length} />}
         </Panel>
       </div>
-      <aside className="flex flex-col gap-3.5 border-rule bg-paper p-4 max-md:border-t md:min-h-0 md:overflow-hidden md:border-l">
+      <aside className="flex flex-col gap-3.5 border-rule bg-paper p-4 max-lg:border-t lg:min-h-0 lg:overflow-hidden lg:border-l">
         <SlowestPanel slot={slotData} time={p.slot?.time ?? DAY_SLOTS[0]} source={source} onSelect={p.onSelect} />
         <GatewayDetail day={shown} vdId={p.selected} slot={s} over={isToday ? over : DAY_SLOTS.length} isToday={isToday} />
       </aside>
@@ -123,7 +123,7 @@ export function TrafficTab(p: TrafficTabProps) {
 function MapLegend({ mode }: { mode: TrafficMode }) {
   const vs = mode === 'vs-usual'
   return (
-    <div className="absolute top-4 left-4 rounded-[8px] border border-rule bg-white/95 px-3 py-2 text-[13px] whitespace-nowrap text-ink max-md:top-16 max-md:left-2 max-md:px-2 max-md:py-1.5 max-md:text-xs" aria-label="圖例">
+    <div className="absolute top-4 left-4 rounded-[8px] border border-rule bg-white/95 px-3 py-2 text-[13px] whitespace-nowrap text-ink max-lg:top-16 max-lg:left-2 max-lg:px-2 max-lg:py-1.5 max-lg:text-xs" aria-label="圖例">
       <p className="mb-1 font-semibold">{vs ? '和其他天同時段比' : '路況（速度 ÷ 全天 p85）'}</p>
       {LEVELS.map((l) => (
         <p key={l} className="flex items-center gap-2">

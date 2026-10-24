@@ -56,7 +56,7 @@ export function App() {
   const shownSlotData = shownDay && shownSlot ? shownDay.slots.find((s) => slotTime(s.slot_start) === shownSlot.time) : undefined
   const selected = picked ?? (shownSlotData && defaultGateway(shownSlotData))
   // Picking today's latest slot again goes back to following it.
-  // Below 768px the page scrolls (T71): a new tab starts at its top, e.g. the traffic map after a grid cell.
+  // Below 1024px the page scrolls (T71, T72): a new tab starts at its top, e.g. the traffic map after a grid cell.
   const showTab = (t: Tab) => {
     setTab(t)
     if (document.scrollingElement) document.scrollingElement.scrollTop = 0
@@ -71,9 +71,9 @@ export function App() {
   }
 
   return (
-    <div className="flex min-h-dvh min-w-0 flex-col bg-paper md:h-dvh md:overflow-hidden">
+    <div className="flex min-h-dvh min-w-0 flex-col bg-paper lg:h-dvh lg:overflow-hidden">
       <TopBar clock={clock} tab={tab} onTab={showTab} latest={latest?.detectors} />
-      <main className="flex flex-1 flex-col md:min-h-0">
+      <main className="flex flex-1 flex-col lg:min-h-0">
         {tab === 'overview' && (
           <OverviewTab
             live={live.data}

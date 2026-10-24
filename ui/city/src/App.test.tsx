@@ -391,7 +391,7 @@ describe('city war room (SC-C1, UD-27)', () => {
     fireEvent.click(box)
     expect(box).toBeChecked()
   })
-  describe('below 768px (T71)', () => {
+  describe('below 1024px (T71, T72)', () => {
     // jsdom has no layout: a 300px time-key row holding 12 keys of 56px, one every 57px.
     function narrowKeys() {
       const isRow = (el: HTMLElement) => el.getAttribute('aria-label') === '時段'

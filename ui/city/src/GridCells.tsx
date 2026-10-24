@@ -1,5 +1,5 @@
 import { SimulatedBadge, type CityGateway } from '@carpool/shared'
-import { Fragment } from 'react'
+import { Fragment, type CSSProperties } from 'react'
 import { LEVEL_BG, LEVEL_NAMES, VS_USUAL_BG, VS_USUAL_NAMES, type CongestionLevel } from './congestion'
 import type { GridCell, GridRow } from './gatewayRows'
 import { shortGateway } from './gatewayRows'
@@ -35,8 +35,24 @@ function cellClass(c: GridCell, mode: TrafficMode, framed: boolean): string {
   return `${bg} ${ring}`
 }
 
-// Below 768px (T71): fixed-width slot columns that scroll sideways inside the grid, under a sticky name column.
-const STICKY = 'max-md:sticky max-md:left-0 max-md:z-2 max-md:bg-white'
+// Desktop rows are at least 13px with 2px gaps (gap-0.5).
+const ROW_MIN_PX = 13
+const ROW_GAP_PX = 2
+
+/**
+ * The stretching grid's least height on desktop: the header, every gateway and the freeway title at
+ * ROW_MIN_PX. It is the grid's intrinsic height (contain-intrinsic-height), so 總覽's row is never
+ * shorter: a short window scrolls 總覽 instead of letting the rows spill over the legend (T72). Without
+ * it the grid would ask for its text's height, a pixel more per row, and 1440×900 would change.
+ */
+function minHeight(rows: GridRow[]): number {
+  const lines = 1 + rows.length + (rows.some((r) => r.gateway.source === 'freeway') ? 1 : 0)
+  return lines * ROW_MIN_PX + (lines - 1) * ROW_GAP_PX
+}
+
+// Below 1024px (T71, T72): slot columns at least 2.75rem, filling the width where there is room and
+// scrolling sideways inside the grid where there is not, under a sticky name column.
+const STICKY = 'max-lg:sticky max-lg:left-0 max-lg:z-2 max-lg:bg-white'
 
 /** Gateways × 15-minute slots in UD-28's order, with the two groups' titles (REQ-079, SC-C1). */
 export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, label, onCell, onRow, selected, onHover }: GridCellsProps) {
@@ -45,20 +61,21 @@ export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, l
     <div
       role="grid"
       aria-label={label}
-      className={`grid min-h-0 grid-cols-[8.5rem_repeat(12,2.75rem)] gap-0.5 text-xs/[18px] max-md:auto-rows-[18px] max-md:overflow-x-auto md:grid-cols-[minmax(0,21rem)_repeat(12,minmax(0,1fr))] md:leading-[13px] ${fixedRows ? 'md:auto-rows-[13px]' : 'md:flex-1 md:auto-rows-[minmax(13px,1fr)]'}`}
+      className={`grid min-h-0 grid-cols-[8.5rem_repeat(12,minmax(2.75rem,1fr))] gap-0.5 text-xs/[18px] max-lg:auto-rows-[18px] max-lg:overflow-x-auto lg:grid-cols-[minmax(0,21rem)_repeat(12,minmax(0,1fr))] lg:leading-[13px] ${fixedRows ? 'lg:auto-rows-[13px]' : 'lg:flex-1 lg:auto-rows-[minmax(13px,1fr)] lg:[contain:size] lg:[contain-intrinsic-height:var(--grid-min)]'}`}
+      style={{ '--grid-min': `${minHeight(rows)}px` } as CSSProperties}
       onMouseLeave={() => onHover?.(null)}
     >
       <span className={`font-bold tracking-wide text-ink-soft ${STICKY}`}>市區道路</span>
       {DAY_SLOTS.map((t, s) => (
-        <span key={t} className={`text-center whitespace-nowrap max-md:text-xs md:text-[11px] ${s === framed ? 'font-bold text-ink' : 'text-ink-soft'}`}>
+        <span key={t} className={`text-center whitespace-nowrap max-lg:text-xs lg:text-[11px] ${s === framed ? 'font-bold text-ink' : 'text-ink-soft'}`}>
           {everyLabel || s % 2 === 0 || s === framed ? t : ''}
         </span>
       ))}
       {rows.map((r, i) => (
         <Fragment key={r.gateway.vd_id}>
           {i === firstFreeway && (
-            <span className="col-span-full flex items-end border-b border-rule font-bold tracking-wide text-ink-soft max-md:text-xs md:text-[11px]">
-              <span className="max-md:sticky max-md:left-0">國道 1 號出口匝道</span>
+            <span className="col-span-full flex items-end border-b border-rule font-bold tracking-wide text-ink-soft max-lg:text-xs lg:text-[11px]">
+              <span className="max-lg:sticky max-lg:left-0">國道 1 號出口匝道</span>
             </span>
           )}
           <RowName gateway={r.gateway} selected={selected === r.gateway.vd_id} onRow={onRow} />
@@ -92,7 +109,7 @@ function RowName({ gateway: g, selected, onRow }: { gateway: CityGateway; select
       <span className="truncate">
         {shortGateway(g.gateway)}
         {g.proxy && ' *'}
-        <em className="ml-1 text-ink-soft not-italic max-md:hidden">{g.location_note}</em>
+        <em className="ml-1 text-ink-soft not-italic max-lg:hidden">{g.location_note}</em>
       </span>
     </>
   )

@@ -13,7 +13,7 @@ interface PickupTableProps {
 /** Now and today per pickup point, then the past 10 workdays' averages per day (REQ-078, REQ-080). */
 export function PickupTable({ history, live, today, error }: PickupTableProps) {
   const mixed = history?.simulated || live?.simulated || today?.simulated
-  const th = 'px-2 py-1 text-right font-medium max-md:px-1'
+  const th = 'px-2 py-1 text-right font-medium max-lg:px-1'
   const rows = history ? pickupRows(history, live, today) : []
   const worst = rows.find((r) => r.worst)
   return (
@@ -23,15 +23,17 @@ export function PickupTable({ history, live, today, error }: PickupTableProps) {
       marks={[mixed && '含模擬']}
       title={history && (worst ? `${worst.name}沒搭到最多：駕駛不夠` : '各上車點都載得到人')}
       error={error && '上車點資料讀取失敗，顯示上一次的資料'}
+      // As tall as its table: around 1024px the headers wrap and it outgrows the row's 262px (T72).
+      className="lg:min-h-min"
     >
       {history && (
-        <table className="w-full text-base max-md:text-sm">
+        <table className="w-full text-base max-lg:text-sm">
           <thead>
             <tr className="text-sm text-ink-soft">
-              <th rowSpan={2} className="px-2 py-1 text-left align-bottom font-medium max-md:px-1">上車點</th>
+              <th rowSpan={2} className="px-2 py-1 text-left align-bottom font-medium max-lg:px-1">上車點</th>
               <th rowSpan={2} className={`${th} align-bottom`}>現在等待</th>
               <th rowSpan={2} className={`${th} align-bottom`}>今日完成</th>
-              <th colSpan={4} className="border-b border-rule px-2 py-1 text-center font-medium max-md:px-1">平均每天（過去 10 個上班日）</th>
+              <th colSpan={4} className="border-b border-rule px-2 py-1 text-center font-medium max-lg:px-1">平均每天（過去 10 個上班日）</th>
             </tr>
             <tr className="text-sm text-ink-soft">
               <th className={th}>駕駛</th>
@@ -43,13 +45,13 @@ export function PickupTable({ history, live, today, error }: PickupTableProps) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className={`border-t border-rule tabular-nums ${r.worst ? 'font-bold text-danger' : ''}`}>
-                <td className="px-2 py-1.5 max-md:px-1 font-bold">{r.name}</td>
-                <td className="px-2 py-1.5 max-md:px-1 text-right">{r.waiting ?? '—'}</td>
-                <td className="px-2 py-1.5 max-md:px-1 text-right">{r.completedToday ?? '—'}</td>
-                <td className="px-2 py-1.5 max-md:px-1 text-right">{oneDecimal(r.drivers)}</td>
-                <td className="px-2 py-1.5 max-md:px-1 text-right">{oneDecimal(r.passengers)}</td>
-                <td className="px-2 py-1.5 max-md:px-1 text-right">{oneDecimal(r.rides)}</td>
-                <td className="px-2 py-1.5 max-md:px-1 text-right" data-testid="missed">{oneDecimal(r.missed)}</td>
+                <td className="px-2 py-1.5 max-lg:px-1 font-bold">{r.name}</td>
+                <td className="px-2 py-1.5 max-lg:px-1 text-right">{r.waiting ?? '—'}</td>
+                <td className="px-2 py-1.5 max-lg:px-1 text-right">{r.completedToday ?? '—'}</td>
+                <td className="px-2 py-1.5 max-lg:px-1 text-right">{oneDecimal(r.drivers)}</td>
+                <td className="px-2 py-1.5 max-lg:px-1 text-right">{oneDecimal(r.passengers)}</td>
+                <td className="px-2 py-1.5 max-lg:px-1 text-right">{oneDecimal(r.rides)}</td>
+                <td className="px-2 py-1.5 max-lg:px-1 text-right" data-testid="missed">{oneDecimal(r.missed)}</td>
               </tr>
             ))}
           </tbody>

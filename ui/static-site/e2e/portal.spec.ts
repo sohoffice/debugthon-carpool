@@ -101,7 +101,8 @@ test('市府儀表板: has 「← 首頁」 top left, which returns to the porta
   await expect(page).toHaveURL(PORTAL)
 })
 
-for (const width of [360, 390]) {
+// 768 and 1023: single column up to 1024px since T72 (#219), the link moved with it.
+for (const width of [360, 390, 768, 1023]) {
   test(`${width}px 市府儀表板: 「← 首頁」 is clear of the name, and the name of the clock`, async ({ browser }) => {
     const page = await openAt(browser, width, 844, `${SITE_URL}city/index.html`)
     const home = page.getByRole('link', { name: HOME })
@@ -124,6 +125,26 @@ for (const width of [360, 390]) {
     const clockBox = (await clock.boundingBox())!
     const sameRow = clockBox.y < brandBar.y + brandBar.height && clockBox.y + clockBox.height > brandBar.y
     if (sameRow) expect(nameTextRight).toBeLessThanOrEqual(clockBox.x)
+
+    // The narrow link stays in the name's row, clear of the tabs below it, which keep their full width.
+    const firstTab = (await page.getByRole('tab').first().boundingBox())!
+    expect(box.y + box.height).toBeLessThanOrEqual(firstTab.y)
+    expect(firstTab.x).toBeLessThan(box.width)
+  })
+}
+
+// T72 (#219): from 1024px the link is 72×60 and pads the whole top bar; the clock and 模擬時間 still fit.
+for (const width of [1024, 1280, 1440]) {
+  test(`${width}px 市府儀表板: with 「← 首頁」 the top bar fits, the clock and 模擬時間 inside the window`, async ({ browser }) => {
+    const page = await openAt(browser, width, 800, `${SITE_URL}city/index.html`)
+    await expect(page.getByRole('link', { name: HOME })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
+    await expect(page.getByTestId('network-lights')).toContainText(/\d+ 處/, { timeout: STEP_TIMEOUT_MS })
+    const header = page.locator('#root header')
+    expect(await header.evaluate((h) => h.scrollWidth - h.clientWidth)).toBe(0)
+    for (const text of ['模擬時間', /^\d{2}:\d{2}$/]) {
+      const box = (await header.getByText(text).boundingBox())!
+      expect(box.x + box.width, String(text)).toBeLessThanOrEqual(width)
+    }
   })
 }
 

@@ -21,8 +21,8 @@ const MODES: [TrafficMode, string][] = [
 ]
 
 /**
- * Under the map: the date menu, the 12-slot time line and 路況／比平常 (SC-C1, ui-oi-22). Below 768px
- * the time line is a row of its own that scrolls sideways, the selected slot kept in view (T71).
+ * Under the map: the date menu, the 12-slot time line and 路況／比平常 (SC-C1, ui-oi-22). Below 1024px
+ * the time line is a row of its own that scrolls sideways, the selected slot kept in view (T71, T72).
  */
 export function TrafficControls({ today, days, latestTime, value, onChange, mode, onMode }: TrafficControlsProps) {
   const open = slotsOf(value.date, today, latestTime)
@@ -34,10 +34,10 @@ export function TrafficControls({ today, days, latestTime, value, onChange, mode
     if (row && key && row.scrollWidth > row.clientWidth) row.scrollLeft = key.offsetLeft - (row.clientWidth - key.offsetWidth) / 2
   }, [value.date, value.time])
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-rule bg-white px-4 max-md:py-2.5 md:h-14 md:flex-nowrap">
+    <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-rule bg-white px-4 max-lg:py-2.5 lg:h-14 lg:flex-nowrap">
       <select
         aria-label="日期"
-        className="h-10 rounded-[8px] border border-rule bg-white px-3 text-[15px] font-semibold text-ink max-md:min-w-0 max-md:flex-1"
+        className="h-10 rounded-[8px] border border-rule bg-white px-3 text-[15px] font-semibold text-ink max-lg:min-w-0 max-lg:flex-1"
         value={value.date}
         onChange={(e) => onChange(changeDate(value, e.target.value, today, latestTime))}
       >
@@ -47,7 +47,7 @@ export function TrafficControls({ today, days, latestTime, value, onChange, mode
           </option>
         ))}
       </select>
-      <div ref={keys} role="group" aria-label="時段" className="order-last flex min-w-0 gap-px max-md:relative max-md:basis-full max-md:overflow-x-auto md:order-none md:flex-1">
+      <div ref={keys} role="group" aria-label="時段" className="order-last flex min-w-0 gap-px max-lg:relative max-lg:basis-full max-lg:overflow-x-auto lg:order-none lg:flex-1">
         {DAY_SLOTS.map((t) => {
           const can = open.includes(t)
           return (
@@ -59,7 +59,7 @@ export function TrafficControls({ today, days, latestTime, value, onChange, mode
               title={can ? undefined : '還沒到'}
               disabled={!can}
               onClick={() => onChange({ date: value.date, time: t })}
-              className={`h-8 min-w-0 rounded-[3px] max-md:w-14 max-md:shrink-0 md:flex-1 text-xs font-semibold tabular-nums ${t === value.time ? 'bg-ink text-white' : can ? 'bg-paper text-ink hover:bg-rule' : 'bg-paper text-fog'}`}
+              className={`h-8 min-w-0 rounded-[3px] max-lg:w-14 max-lg:shrink-0 lg:flex-1 text-xs font-semibold tabular-nums ${t === value.time ? 'bg-ink text-white' : can ? 'bg-paper text-ink hover:bg-rule' : 'bg-paper text-fog'}`}
             >
               {t}
             </button>
