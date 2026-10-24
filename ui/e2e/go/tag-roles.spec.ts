@@ -48,8 +48,8 @@ test('tags by side on Go: 只載 is required, an old filter is dropped, 最好 r
   await passenger.getByRole('button', { name: '查看接近的車' }).click()
   await expect(board.getByText(/^\d+ 台車接近中$/)).toBeVisible()
 
-  // Both stage tags 一定要 and 安靜坐車 最好: driver4 gets it without 開車喜歡安靜, so it is relaxed (REQ-047).
-  await requestWithStageTagsRequired(passenger, { preferQuiet: true })
+  // Both stage tags 一定要 and 可以聊天 最好: driver4 gets it without 可以聊天, so it is relaxed (REQ-047).
+  await requestWithStageTagsRequired(passenger, { preferChat: true })
   await expect(passenger.getByRole('heading', { name: '正在等駕駛確認' })).toBeVisible()
   await expect(driver.getByRole('heading', { name: '有乘客要搭車' })).toBeVisible()
   await driver.getByRole('button', { name: '確認' }).click()

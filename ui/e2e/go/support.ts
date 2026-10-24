@@ -7,11 +7,13 @@ export const DRIVER4 = { Authorization: 'Bearer driver:driver4' }
 export const DRIVER5 = { Authorization: 'Bearer driver:driver5' }
 /**
  * Only the people on stage carry both as their own tags: required, they send the request to driver4.
- * Of the simulated drivers, driver2 has only 可載行李 and driver3 only 不抽菸 (T43).
+ * Of the simulated drivers, driver3 is seeded with both; the showcase's 開始 Demo drops its 安靜通勤
+ * (T65), and resetDemo does the same here (the e2e has no showcase).
  */
-export const STAGE_TAGS = ['不抽菸', '可載行李']
+export const STAGE_TAGS = ['不抽菸', '安靜通勤']
 /** The stage tags as each side sees them (DD-42): a driver describing itself, a passenger filtering drivers. */
-export const STAGE_TAG_WORDS = { driverSelf: ['我不抽菸', '車上能放大件行李'], passengerFilter: ['不抽菸', '能放大件行李'] }
+export const STAGE_TAG_WORDS = { driverSelf: ['我不抽菸', '開車喜歡安靜'], passengerFilter: ['不抽菸', '安靜坐車'] }
+export const DRIVER3 = { Authorization: 'Bearer driver:driver3' }
 export const PASSENGER1 = { Authorization: 'Bearer passenger:passenger1' }
 
 const appUrl = (port: number, account: string) => `http://localhost:${port}/?account=${account}`
@@ -35,11 +37,13 @@ export async function stageTagIds(request: APIRequestContext): Promise<number[]>
 /**
  * Back to the Demo's start (DD-29). The reset keeps the tags people chose themselves, so driver4's
  * stage tags are dropped here too, and driver5's, which a test may have picked as the second car,
- * and passenger1's own tags: nothing a test did is left for the next one. The reset also puts driver4's trip settings back,
- * auto-accept off included (DD-19), and cancels any trip still open.
+ * and passenger1's own tags: nothing a test did is left for the next one. driver3 drops 安靜通勤,
+ * as 開始 Demo does (T65), so no simulated car carries both stage tags. The reset also puts driver4's
+ * trip settings back, auto-accept off included (DD-19), and cancels any trip still open.
  */
 export async function resetDemo(request: APIRequestContext) {
   expect((await request.post(`${API}/demo/reset`)).status()).toBe(204)
+  expect((await request.delete(`${API}/me/tags/${await tagId(request, '安靜通勤')}`, { headers: DRIVER3 })).ok()).toBe(true)
   for (const tagId of await stageTagIds(request)) {
     for (const headers of [DRIVER4, DRIVER5]) expect((await request.delete(`${API}/me/tags/${tagId}`, { headers })).ok()).toBe(true)
   }
@@ -85,15 +89,15 @@ export async function pickStageTags(driver: Page) {
 
 /**
  * The passenger sends a request with both stage tags 一定要, so only driver5 and driver4 can take it
- * (REQ-035, REQ-040); `preferQuiet` also sets 安靜坐車 to 最好, which neither has (REQ-047).
+ * (REQ-035, REQ-040); `preferChat` also sets 可以聊天 to 最好, which neither has (REQ-047, T65).
  */
-export async function requestWithStageTagsRequired(passenger: Page, { preferQuiet = false } = {}) {
+export async function requestWithStageTagsRequired(passenger: Page, { preferChat = false } = {}) {
   await passenger.getByRole('button', { name: '今天我要搭' }).click()
   const sheet = passenger.getByRole('dialog', { name: '送出搭車請求' })
   for (const name of STAGE_TAG_WORDS.passengerFilter) {
     await sheet.getByRole('radiogroup', { name: `${name}的篩選` }).getByRole('radio', { name: '一定要' }).click()
   }
-  if (preferQuiet) await sheet.getByRole('radiogroup', { name: '安靜坐車的篩選' }).getByRole('radio', { name: '最好' }).click()
+  if (preferChat) await sheet.getByRole('radiogroup', { name: '可以聊天的篩選' }).getByRole('radio', { name: '最好' }).click()
   await passenger.getByRole('button', { name: '送出請求' }).click()
 }
 
