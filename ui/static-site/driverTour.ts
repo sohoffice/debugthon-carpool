@@ -4,7 +4,7 @@
 import { createApiClient, type ApiClient, type DriverRequests, type PassengerProfile, type RequestView, type Tag, type TripView } from '@carpool/shared'
 import { createSimulator } from '../showcase/src/simulator.ts'
 import { clearStageTagsFromSeeded, SEEDED_WITH_STAGE_TAGS, selectStageTags, STAGE_TAGS } from '../showcase/src/stageTag.ts'
-import { DRIVER_STEPS, driverStep, INITIAL_SENDER, nextSender, type DriverTourState, type SenderState } from './driverSteps.ts'
+import { afterSend, DRIVER_STEPS, driverStep, INITIAL_SENDER, nextSender, type DriverTourState, type SenderState, type SendOutcome } from './driverSteps.ts'
 import { isEmbedded, runTour } from './tour.ts'
 
 /** The driver app's default account: the stage car, prefilled from its seeded trip (REQ-016). */
@@ -81,9 +81,14 @@ function start() {
     sender = next.state
     if (!next.send) return
     const account = PASSENGERS[(sender.sent - 1) % PASSENGERS.length]
-    const sent = await sendRequest(account)
-    // Not to driver4 (no car, or refused): count it as seen, so the next one follows the decline delay.
-    if (sent.status !== 'waiting_driver') sender = { ...sender, seen: true }
+    let outcome: SendOutcome
+    try {
+      outcome = (await sendRequest(account)).status === 'waiting_driver' ? 'waiting' : 'elsewhere'
+    } catch (err) {
+      console.warn('static driver tour: request not sent, trying again', err)
+      outcome = 'failed'
+    }
+    sender = afterSend(sender, outcome)
   }
 
   runTour({ read, detect: driverStep, steps: DRIVER_STEPS, act, intervalMs: TOUR_POLL_MS })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  afterSend,
   DEPART,
   DRIVER_STEPS,
   driverStep,
@@ -88,5 +89,43 @@ describe('nextSender (DD-46: the simulated passenger asks, and asks again after 
       4000,
       6000 + FIRST_REQUEST_DELAY_MS,
     ])
+  })
+})
+
+describe('afterSend (T69 review: a send that fails or goes elsewhere is tried again)', () => {
+  /** nextSender, then afterSend with the send's outcome, as driverTour's act() does. */
+  function run(timeline: [number, DriverTourState][], outcomes: ('waiting' | 'elsewhere' | 'failed')[]): number[] {
+    let state: SenderState = INITIAL_SENDER
+    const at: number[] = []
+    for (const [t, s] of timeline) {
+      const next = nextSender(state, s, t)
+      state = next.state
+      if (next.send) {
+        state = afterSend(state, outcomes[at.length] ?? 'waiting')
+        at.push(t)
+      }
+    }
+    return at
+  }
+
+  it(`a failed first send is tried again ${NEXT_REQUEST_DELAY_MS} ms later, not stuck`, () => {
+    expect(run([[0, driving], [4000, driving], [4500, driving], [4500 + NEXT_REQUEST_DELAY_MS, driving]], ['failed'])).toEqual([4000, 4500 + NEXT_REQUEST_DELAY_MS])
+  })
+
+  it('not again sooner than the delay, so a lasting error does not flood the backend', () => {
+    expect(run([[0, driving], [4000, driving], [4500, driving], [4500 + NEXT_REQUEST_DELAY_MS - 1, driving]], ['failed'])).toEqual([4000])
+  })
+
+  it('a request that went to another car (or no car) is tried again too', () => {
+    expect(run([[0, driving], [4000, driving], [4500, driving], [4500 + NEXT_REQUEST_DELAY_MS, driving]], ['elsewhere'])).toEqual([4000, 4500 + NEXT_REQUEST_DELAY_MS])
+  })
+
+  it('a request waiting for driver4 is not sent again before it shows', () => {
+    expect(run([[0, driving], [4000, driving], [4500, driving], [20_000, driving]], ['waiting'])).toEqual([4000])
+  })
+
+  it('a failed send after a decline is tried again as well', () => {
+    const timeline: [number, DriverTourState][] = [[0, driving], [4000, driving], [4500, { ...driving, pending: 1 }], [5000, driving], [8000, driving], [8500, driving], [11_500, driving]]
+    expect(run(timeline, ['waiting', 'failed'])).toEqual([4000, 8000, 11_500])
   })
 })

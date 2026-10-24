@@ -76,3 +76,14 @@ export function nextSender(prev: SenderState, s: DriverTourState, now: number): 
     ? { state: { departedAt, sent: prev.sent + 1, seen: false, emptySince: null }, send }
     : { state: { ...prev, departedAt, emptySince }, send }
 }
+
+/** What came of a send: waiting for driver4, decided otherwise (another car, no car), or it threw. */
+export type SendOutcome = 'waiting' | 'elsewhere' | 'failed'
+
+/**
+ * After a send: only a request waiting for driver4 is waited for. One that failed or went elsewhere
+ * counts as seen, so nextSender tries again after NEXT_REQUEST_DELAY_MS instead of waiting forever.
+ */
+export function afterSend(state: SenderState, outcome: SendOutcome): SenderState {
+  return outcome === 'waiting' ? state : { ...state, seen: true }
+}

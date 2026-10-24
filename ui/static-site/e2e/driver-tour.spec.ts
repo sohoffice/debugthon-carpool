@@ -57,6 +57,27 @@ test('婉拒: the next request comes a few seconds later', async ({ page }) => {
   await onStep(page, 3, '按「確認」')
 })
 
+test('a failed send is tried again: the request still comes (T69 review)', async ({ page }) => {
+  await page.goto(DRIVER)
+  await expect(page.getByRole('button', { name: '我出發了' })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
+  // The tour's first request throws, as a mock error on /passenger/requests would; the app's own calls are untouched.
+  await page.evaluate(() => {
+    const fetch = window.fetch
+    let failed = false
+    window.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url
+      if (!failed && url.startsWith('/api/passenger/requests') && init?.method === 'POST') {
+        failed = true
+        return Promise.reject(new Error('injected'))
+      }
+      return fetch(input, init)
+    }
+  })
+  await page.getByRole('button', { name: '我出發了' }).click()
+  await expect(page.getByRole('heading', { name: '有乘客要搭車' })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
+  await onStep(page, 3, '按「確認」')
+})
+
 test('首頁 from the middle of a trip goes to the portal; the driver again starts at step 1', async ({ page }) => {
   await page.goto(DRIVER)
   await page.getByRole('button', { name: '我出發了' }).click()
