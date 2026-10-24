@@ -25,8 +25,9 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
-  useSimulator(SIMULATED_ACCOUNTS, started)
-  useOffstage(started, log.add)
+  const simulator = useSimulator(SIMULATED_ACCOUNTS, started)
+  // The off-stage part sees driver5's request before declining it; the simulator may not (T63).
+  useOffstage(started, log.add, simulator.release)
 
   async function start() {
     setError(null)

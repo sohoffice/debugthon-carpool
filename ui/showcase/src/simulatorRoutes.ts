@@ -7,6 +7,10 @@ export interface SimulatorRoute {
   speedKmh: number
   /** [lat, lng] in travel order. */
   path: [number, number][]
+  /** Parked at the path start until the trip's first request, then at speedKmh (DD-14, DD-45, T63). */
+  holdUntilRequest?: boolean
+  /** From the first confirmed passenger, this speed until untilM metres along the path, then speedKmh (T63). */
+  fastForward?: { speedKmh: number; untilM: number }
 }
 
 export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
@@ -107,8 +111,14 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
     ],
   },
   // 535 m before 松山車站, so it can be matched right after departure; then on to 瑞光路 513 巷.
+  // Parked there until its first request (DD-45). Once the passenger is confirmed it fast-forwards
+  // past the pickup: 535 m + the 80 m radius + the 25 m pass margin (DD-06) + 20 m to spare, about
+  // 640 m in about 8 s at 300 km/h. With up to a second each for the simulator to see the confirm
+  // and for the passenger UI's poll, the passenger sees 車已到上車點 about 10 s after 確認.
   driver4: {
     speedKmh: 25,
+    holdUntilRequest: true,
+    fastForward: { speedKmh: 300, untilM: 660 },
     path: [
       [25.045005, 121.577907],
       [25.047269, 121.577913],
@@ -129,13 +139,13 @@ export const SIMULATOR_ROUTES: Record<string, SimulatorRoute> = {
       [25.0765, 121.5742],
     ],
   },
-  // 400 m before 松山車站, nearer than driver4, so departing together it reaches the pickup first and
-  // gets the request (DD-45). It counts as passed once 80 m + the 25 m pass margin beyond the pickup
-  // (DD-06): (400 + 105) m at 25 km/h is about 73 s after departure. docs/demo-script.md sends the
-  // request about 40 s after driver4 departs (the opening, then 0:00 to 0:15), leaving about 30 s.
-  // Then on to 瑞光路 513 巷.
+  // 400 m before 松山車站, nearer than driver4, so it ranks first and gets the request (DD-45).
+  // Both are parked at their starts until a request comes (T63), so the request can go out any
+  // time after driver4 departs; driver5 then drives on at 25 km/h after declining it. Then on to
+  // 瑞光路 513 巷.
   driver5: {
     speedKmh: 25,
+    holdUntilRequest: true,
     path: [
       [25.046223, 121.57791],
       [25.047269, 121.577913],
