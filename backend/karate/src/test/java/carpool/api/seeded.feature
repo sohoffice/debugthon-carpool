@@ -152,11 +152,13 @@ Feature: tag selection and seeded reference data
     * status 200
     * match response == { usual_arrival_time: null, usual_destination: null, accepted_stops: [] }
 
-    * configure headers = { Authorization: 'Bearer driver:driver5' }
-    * path 'api', 'driver', 'trips', 'defaults'
-    * method get
-    * status 200
-    * match response == { pickup_point_id: null, destination: null, capacity: null, auto_accept: false, tag_filters: [] }
+    # driver5 departs off stage in every Demo (DD-45), so its defaults are the last Demo trip, not
+    # the seed. What the seed means is that driver5 gets no trip of its own: every driver5 trip on
+    # the shared database was started through the departure API, which writes its activity
+    # (DD-25); a seeded trip has none, like driver4's ended one, or is simulated.
+    * def Db = Java.type('carpool.api.Db')
+    * def seededTrips = Db.queryLong("SELECT count(*) FROM trips t JOIN users u ON u.id = t.driver_id WHERE u.username = 'driver5' AND (t.simulated OR NOT EXISTS (SELECT 1 FROM activities a WHERE a.trip_id = t.id AND a.user_id = t.driver_id))")
+    * match seededTrips == 0
 
   Scenario: driver4's defaults are the seeded ended trip
     * configure headers = { Authorization: 'Bearer driver:driver4' }

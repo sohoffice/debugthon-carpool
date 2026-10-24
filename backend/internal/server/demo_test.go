@@ -299,6 +299,8 @@ func TestDemoResetTwice(t *testing.T) {
 // rebuilds on first use from the current source.
 func TestDemoResetRebuildsSimulatedRoutes(t *testing.T) {
 	tx := testTx(t)
+	// Start from a reset, so driver1-3 have running simulated trips whatever a Demo left behind.
+	wantStatus(t, resetCall(t, tx, true), http.StatusNoContent, "")
 	trip := func(driver string) int64 {
 		return queryInt(t, tx, `
 			SELECT t.id FROM trips t JOIN users u ON u.id = t.driver_id
