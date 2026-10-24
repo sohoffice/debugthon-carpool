@@ -25,7 +25,7 @@ interface OverviewTabProps {
  */
 export function OverviewTab(p: OverviewTabProps) {
   return (
-    <div className="flex flex-col gap-3.5 px-4 pt-4 pb-5 lg:grid lg:min-h-0 lg:flex-1 lg:grid-rows-[auto_minmax(min-content,1fr)_262px] lg:overflow-y-auto lg:px-5">
+    <div className="flex flex-col gap-3.5 px-4 pt-4 pb-5 lg:grid lg:min-h-0 lg:flex-1 lg:grid-rows-[max-content_minmax(min-content,1fr)_262px] lg:overflow-y-auto lg:px-5">
       <KpiRow live={p.live} today={p.today} />
       <div className="flex flex-col gap-3.5 lg:grid lg:min-h-0 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <GatewayGrid day={p.trafficDay} error={p.trafficDayError} onCell={p.onCell} />

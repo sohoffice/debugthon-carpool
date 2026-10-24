@@ -144,7 +144,7 @@ for (const [width, height] of [[1440, 900], [1920, 1080]]) {
 
 // T72: a desktop window too short for the 16 gateway rows scrolls 總覽 instead of letting them spill.
 for (const [width, height] of [[1440, 760], [1512, 860], [1280, 800], [1024, 768]]) {
-  test(`${width}×${height} 總覽: the 16 rows stay in the grid, above its legend and the panels below; all areas scroll into view (T72)`, async ({ browser }) => {
+  test(`${width}×${height} 總覽: the 16 rows stay in the grid, between the number row and its legend, above the panels below; all areas scroll into view (T72)`, async ({ browser }) => {
     const page = await open(browser, width, height)
     const grid = page.getByRole('grid', { name: '今天各入口每 15 分鐘的路況' })
     await expect(grid.getByRole('rowheader')).toHaveCount(16)
@@ -153,7 +153,10 @@ for (const [width, height] of [[1440, 760], [1512, 860], [1280, 800], [1024, 768
       const bottom = (e: Element) => e.getBoundingClientRect().bottom
       const cells = [...g.querySelectorAll('[role=gridcell]')]
       const history = document.querySelector('[aria-label="過去 10 個上班日的共乘數"]')!
+      const kpi = document.querySelector('[aria-label="估計減少的車次"]')!
       return {
+        kpiBottom: bottom(kpi),
+        panelTop: panel.getBoundingClientRect().top,
         overflow: g.scrollHeight - g.clientHeight,
         lastRow: bottom(cells[cells.length - 1]),
         gridBottom: bottom(g),
@@ -167,6 +170,8 @@ for (const [width, height] of [[1440, 760], [1512, 860], [1280, 800], [1024, 768
     expect(boxes.lastRow).toBeLessThanOrEqual(boxes.gridBottom + 0.5)
     expect(boxes.legendTop).toBeGreaterThanOrEqual(boxes.gridBottom - 0.5)
     expect(boxes.historyTop).toBeGreaterThanOrEqual(boxes.panelBottom)
+    // Nor does the number row above give way to it.
+    expect(boxes.panelTop).toBeGreaterThanOrEqual(boxes.kpiBottom)
     expect(boxes.rowHeight).toBeGreaterThanOrEqual(13)
     // Every area can be scrolled into view.
     for (const name of ['估計減少的車次', '入口 × 15 分鐘', '今天的請求', '過去 10 個上班日的共乘數', '各上車點']) {
