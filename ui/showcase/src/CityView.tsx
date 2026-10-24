@@ -19,7 +19,7 @@ export function CityView({ visible }: { visible: boolean }) {
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <iframe
           src={CITY_URL}
-          title="市府戰情室"
+          title="市府儀表板"
           className="absolute top-0 left-0 block origin-top-left border-0"
           style={{ width: `${100 / scale}%`, height: `${100 / scale}%`, transform: `scale(${scale})` }}
         />

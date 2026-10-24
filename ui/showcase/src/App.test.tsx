@@ -65,7 +65,7 @@ describe('showcase App (UD-18, UD-30, DD-45)', () => {
     expect(screen.getByTitle('駕駛 App')).toHaveAttribute('src', expect.stringContaining('embed=1&account=driver4'))
     expect(screen.getByTitle('乘客 App')).toHaveAttribute('src', expect.stringContaining('embed=1&account=passenger1'))
     // Loaded from the start, so the first switch already shows data (UD-30 part 3).
-    expect(screen.getByTitle('市府戰情室')).toHaveAttribute('src', expect.stringMatching(/:5175\/\?account=city1$/))
+    expect(screen.getByTitle('市府儀表板')).toHaveAttribute('src', expect.stringMatching(/:5175\/\?account=city1$/))
 
     expect(screen.getByRole('button', { name: '開始 Demo' })).toBeInTheDocument()
     await advance(5000)
@@ -156,7 +156,7 @@ describe('showcase App (UD-18, UD-30, DD-45)', () => {
     render(<App />)
     await press('開始 Demo')
     const before = phoneSrcs()
-    const war = screen.getByTitle('市府戰情室')
+    const war = screen.getByTitle('市府儀表板')
     const tagCalls = () => backend.calls.filter((c) => c.method === 'PUT').length
 
     await press('重新開始')
@@ -168,7 +168,7 @@ describe('showcase App (UD-18, UD-30, DD-45)', () => {
     expect(after[0]).not.toBe(before[0])
     expect(after[1]).not.toBe(before[1])
     // The war room is not reloaded (UD-30 part 3).
-    expect(screen.getByTitle('市府戰情室')).toBe(war)
+    expect(screen.getByTitle('市府儀表板')).toBe(war)
 
     // The simulator is still looking up trips.
     const lookups = () => backend.calls.filter((c) => c.url === '/api/driver/trips/current').length
@@ -234,24 +234,24 @@ describe('showcase App (UD-18, UD-30, DD-45)', () => {
     render(<App />)
     await press('開始 Demo')
     const phones = phoneSrcs()
-    const war = screen.getByTitle('市府戰情室')
+    const war = screen.getByTitle('市府儀表板')
     const group = screen.getByRole('radiogroup', { name: '展示頁的畫面' })
     const phonesView = screen.getByRole('main', { hidden: true })
 
-    fireEvent.click(within(group).getByRole('radio', { name: '市府戰情室' }))
-    expect(within(group).getByRole('radio', { name: '市府戰情室' })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(within(group).getByRole('radio', { name: '市府儀表板' }))
+    expect(within(group).getByRole('radio', { name: '市府儀表板' })).toHaveAttribute('aria-checked', 'true')
     // Hidden, still mounted: the phones keep polling.
     expect(phonesView).toHaveClass('invisible')
     expect(phonesView).toHaveAttribute('inert')
     expect(war.closest('.fixed')).not.toHaveClass('invisible')
 
-    fireEvent.keyDown(within(group).getByRole('radio', { name: '市府戰情室' }), { key: 'ArrowLeft' })
+    fireEvent.keyDown(within(group).getByRole('radio', { name: '市府儀表板' }), { key: 'ArrowLeft' })
     expect(within(group).getByRole('radio', { name: '手機' })).toHaveAttribute('aria-checked', 'true')
     expect(within(group).getByRole('radio', { name: '手機' })).toHaveFocus()
     expect(phonesView).not.toHaveClass('invisible')
     expect(war.closest('.fixed')).toHaveClass('invisible')
     expect(phoneSrcs()[0]).toBe(phones[0])
     expect(phoneSrcs()[1]).toBe(phones[1])
-    expect(screen.getByTitle('市府戰情室')).toBe(war)
+    expect(screen.getByTitle('市府儀表板')).toBe(war)
   })
 })

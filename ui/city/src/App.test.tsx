@@ -144,7 +144,7 @@ const selectedName = () => within(screen.getByRole('region', { name: '選取的�
 describe('city war room (SC-C1, UD-27)', () => {
   it('opens on 總覽 with the full product name, the Demo clock and /api/city/* only', async () => {
     await renderApp()
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('內科上班順起來: 內科順路共乘市府戰情室')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('內科上班順起來: 內科順路共乘市府儀表板')
     expect(screen.getByRole('tab', { name: '總覽' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('08:15')).toBeInTheDocument()
     expect(screen.getByText('10/26 週一')).toBeInTheDocument()
