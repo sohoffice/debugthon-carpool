@@ -43,7 +43,7 @@
   .story-svg .park { fill: rgba(214,238,240,.4); stroke: var(--brand); stroke-width: 2; stroke-dasharray: 6 6; }
   .story-svg .mrt-line { fill: none; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
   .story-svg .walk { fill: none; stroke: var(--ink-soft); stroke-width: 1.5; stroke-dasharray: 2 4; }
-  .heat { z-index: 1; border-radius: 50%; }
+  .heat { z-index: 1; border-radius: 50%; will-change: transform; }
   .park-label { z-index: 2; }
   .park-label span { display: block; transform: translate(-50%, -50%); color: var(--brand-dark); font: 800 15px var(--font); white-space: nowrap; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; }
   .pin { z-index: 3; }
@@ -56,7 +56,7 @@
   .bneck { z-index: 3; }
   .bneck span { display: block; transform: translate(-50%, -180%); background: #fff; color: var(--danger); border: 1.5px solid var(--danger); font: 800 12px var(--font); border-radius: 4px; padding: 0 6px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
   .bldg span { display: block; transform: translate(-50%, -50%); background: rgba(19,33,38,.82); color: #fff; font: 700 11px var(--font); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
-  .car { z-index: 4; width: 20px; height: 20px; margin: -10px 0 0 -10px; display: flex; align-items: center; justify-content: center; }
+  .car { z-index: 4; will-change: transform; width: 20px; height: 20px; margin: -10px 0 0 -10px; display: flex; align-items: center; justify-content: center; }
   .car svg { filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
   /* The head count sits on the car body itself and stays upright while the car turns. */
   .car .rider { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: #fff; font: 900 12px/1 var(--font); text-shadow: 0 0 2px #004b52, 0 0 2px #004b52, 0 0 1px #004b52; }
@@ -65,7 +65,7 @@
   .car.carpool svg { transform-origin: center; filter: drop-shadow(0 0 3px rgba(0,163,173,.95)) drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
   .car.boarded .rider { display: flex; }
   .car.boarded svg rect + rect { display: none; }
-  .person { z-index: 5; width: 13px; height: 17px; margin: -18px 0 0 4px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
+  .person { z-index: 5; will-change: transform; width: 13px; height: 17px; margin: -18px 0 0 4px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
   .person.on-mrt { margin: -9px 0 0 -6px; }
   .person .phone { position: absolute; left: 11px; top: -8px; width: 8px; height: 12px; border: 2px solid var(--phone); border-radius: 2px; background: #fff; transform: scale(0); transform-origin: bottom left; transition: transform .3s cubic-bezier(.2,1.8,.4,1); }
   .person.app .phone { transform: scale(1); }
@@ -183,11 +183,13 @@ const MUTED_STYLE = [
 ]
 
 // Story metres per second for a car at its road's free speed. The animation exaggerates slowdowns so it is plain
-// where the roads are slower than usual: see slowness(). The numbers on screen keep the data's speeds.
+// where the roads are slower than usual: see slowness().
 const SPEED = { car: 1000, train: 1500, walk: 400 }
 // How slow a stretch looks, 0..1, from its speed as a share of free speed: nothing above 95%, the full effect from
 // 65% down. A car on it moves at lerp(1, CRAWL, slowness) of its free pace, and glows and heats on the same scale.
 const SLOW_FROM = 0.95, SLOW_FULL = 0.65, CRAWL = 0.3
+// Story seconds a car takes to brake into or speed out of a slow stretch, so it never jumps between paces.
+const PACE_EASE = 0.4
 const slowness = (share) => clamp01((SLOW_FROM - share) / (SLOW_FROM - SLOW_FULL))
 // Occupancy (the share of time a car sits on the sensor) catches queues at signals where the average speed holds
 // up, as on 民權大橋. It scales from the busiest slot measured as volume^occExp, the exponent fitted per detector
@@ -443,7 +445,7 @@ function loads(candsList, choice, perCar, background, share) {
  * q: vehicles per 15 minutes on each detector at the height of this scene, background included, from loads().
  */
 function simulate(vehicles, t0, q) {
-  const live = vehicles.map((v) => ({ v, state: 'home', leg: 0, dist: 0 }))
+  const live = vehicles.map((v) => ({ v, state: 'home', leg: 0, dist: 0, pace: 1 }))
   vehicles.forEach((v) => { v.track = [] })
   const speeds = [], jams = [], presence = []
   let rush = 0
@@ -477,7 +479,8 @@ function simulate(vehicles, t0, q) {
       }
       veh.track.push({ at: p.at, heading: p.heading, state: s.state, jam: jamHere })
       if (s.state !== 'moving') continue
-      s.dist += SPEED.car * lerp(1, CRAWL, jamHere) * DT
+      s.pace += (lerp(1, CRAWL, jamHere) - s.pace) * (DT / PACE_EASE)
+      s.dist += SPEED.car * s.pace * DT
       if (s.dist < path.len) continue
       s.dist = path.len
       if (s.leg < veh.legs.length - 1) { s.state = 'holding'; veh.reach = t }
@@ -711,9 +714,30 @@ const PERSON_SVG = `<svg width="13" height="17" viewBox="0 0 13 17"><path d="M1.
 
 let base = null
 let plan, T, sprites = []
+// Both base maps are Web Mercator: on screen x is linear in longitude and y in the Mercator ordinate, so two projected
+// points fix the mapping. Taken once per view, it spares every frame from asking the map, which forces a layout each
+// time a style has changed since the last one.
+const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
+function screenMapping(project) {
+  const A = [25.0, 121.45], B = [25.1, 121.65]
+  const a = project(A), b = project(B)
+  const kx = (b.x - a.x) / (B[1] - A[1]), ky = (b.y - a.y) / (mercY(B[0]) - mercY(A[0]))
+  return (p) => ({ x: a.x + (p[1] - A[1]) * kx, y: a.y + (mercY(p[0]) - mercY(A[0])) * ky })
+}
+let toScreen = null
+// Writes a style only when it changes: a repeated write still costs the browser a style pass, often a repaint.
+const setStyle = (el, prop, value) => {
+  const last = (el._style ??= {})
+  if (last[prop] !== value) { last[prop] = value; el.style[prop] = value }
+}
+// An element at no opacity is also taken out of painting: hundreds of hidden sprites still cost every frame.
+const setOpacity = (el, opacity) => {
+  setStyle(el, 'opacity', opacity.toFixed(2))
+  setStyle(el, 'visibility', opacity < 0.005 ? 'hidden' : 'visible')
+}
 const place = (el, p) => {
-  const q = base.project(p)
-  el.style.transform = `translate(${q.x}px, ${q.y}px)`
+  const q = (toScreen ??= screenMapping(base.project))(p)
+  setStyle(el, 'transform', `translate(${q.x.toFixed(1)}px, ${q.y.toFixed(1)}px)`)
 }
 
 function mountSprites() {
@@ -738,7 +762,8 @@ function mountSprites() {
 
 // Parts that only move when the view changes.
 function drawStatic() {
-  const toPath = (points) => 'M' + points.map((p) => { const q = base.project(p); return `${q.x.toFixed(1)},${q.y.toFixed(1)}` }).join('L')
+  toScreen = screenMapping(base.project)
+  const toPath = (points) => 'M' + points.map((p) => { const q = toScreen(p); return `${q.x.toFixed(1)},${q.y.toFixed(1)}` }).join('L')
   mrtPaths.forEach((m) => m.path.setAttribute('d', m.tracks.map(toPath).join('')))
   parkPath.setAttribute('d', toPath(PARK) + 'Z')
   place(parkLabel, [25.0715, 121.5778])
@@ -753,22 +778,23 @@ const CAR_INK = '#132126', CAR_POOL = '#00a3ad'
 // jam: how congested the car's stretch is, 0..1. The more, the redder its glow, on the same scale as the heat.
 function setCar(s, at, heading, opacity, pooling = false, riders = 0, jam = 0) {
   place(s.carEl, at)
-  const red = jam
+  // In quarter steps: every change of a glow repaints the car, and a jam builds up over many frames.
+  const red = Math.round(jam * 4) / 4
   const glows = [pooling ? 'drop-shadow(0 0 3px rgba(0,163,173,.95))' : '']
-  if (red > 0.05) glows.push(`drop-shadow(0 0 ${2 + 4 * red}px rgba(224,48,42,${0.35 + 0.6 * red}))`)
-  s.svg.style.filter = [...glows, 'drop-shadow(0 1px 1px rgba(0,0,0,.35))'].filter(Boolean).join(' ')
-  s.carEl.style.opacity = opacity
+  if (red > 0) glows.push(`drop-shadow(0 0 ${2 + 4 * red}px rgba(224,48,42,${(0.35 + 0.6 * red).toFixed(2)}))`)
+  setStyle(s.svg, 'filter', [...glows, 'drop-shadow(0 1px 1px rgba(0,0,0,.35))'].filter(Boolean).join(' '))
+  setOpacity(s.carEl, opacity)
   if (heading !== null && heading !== undefined) s.heading = heading
-  s.svg.style.transform = `rotate(${s.heading ?? 0}deg) scale(${riders ? 1.45 : 1})`
+  setStyle(s.svg, 'transform', `rotate(${Math.round(s.heading ?? 0)}deg) scale(${riders ? 1.45 : 1})`)
   const fill = pooling ? CAR_POOL : CAR_INK
   if (fill !== s.fill) { s.svg.querySelector('rect').setAttribute('fill', fill); s.fill = fill }
   s.carEl.classList.toggle('carpool', pooling)
   s.carEl.classList.toggle('boarded', riders > 0)
-  if (riders) s.rider.textContent = riders + 1
+  if (riders && s.rider.textContent !== String(riders + 1)) s.rider.textContent = riders + 1
 }
 function setPerson(s, at, opacity, app, onMrt = false) {
   place(s.personEl, at)
-  s.personEl.style.opacity = opacity
+  setOpacity(s.personEl, opacity)
   s.personEl.classList.toggle('app', app)
   s.personEl.classList.toggle('on-mrt', onMrt)
 }
@@ -786,7 +812,7 @@ function renderCommuter(s, t) {
     else if (t >= c.rideStart && t < c.rideEnd) { at = along(c.ride, span(t, c.rideStart, c.rideEnd)).at; onMrt = true }
     else if (t >= c.rideEnd) at = along(c.walk2, span(t, c.rideEnd, c.atPickup)).at
     setPerson(s, at, gone ? 0 : show, app && !onMrt && t < c.atPickup, onMrt)
-    s.walk.style.opacity = t >= c.walkStart && t < c.rideStart + 1 ? 0.8 : 0
+    setStyle(s.walk, 'opacity', t >= c.walkStart && t < c.rideStart + 1 ? '0.8' : '0')
     return
   }
   const p = trackAt(plan.sim, c.trip, t)
@@ -827,30 +853,28 @@ function drawHeat(jams, presence) {
       layer.insertBefore(el, parkLabel)
       heatEls.set(di, el)
     }
-    const w = jams[di]
-    const size = lerp(28, 76, w)
-    const core = 0.35 + 0.5 * w
-    const rgb = heatRgb(w)
-    place(el, d.at)
-    el.style.opacity = presence[di] * clamp01(w / 0.15)
-    el.style.width = el.style.height = `${size}px`
-    el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`
-    el.style.background = `radial-gradient(circle, rgba(${rgb},${core}) 0%, rgba(${rgb},${core / 3}) 45%, transparent 70%)`
+    paintHeat(el, d.at, jams[di], presence[di])
   })
+}
+// A heat spot at congestion w (0..1), shown as far as cars are there. Only what has changed is written, and a spot
+// that is out keeps its last look.
+function paintHeat(el, at, w, presence) {
+  const opacity = presence * clamp01(w / 0.15)
+  setOpacity(el, opacity)
+  if (opacity < 0.005) return
+  w = Math.round(w * 50) / 50
+  const size = lerp(28, 76, w)
+  const core = 0.35 + 0.5 * w
+  const rgb = heatRgb(w)
+  place(el, at)
+  setStyle(el, 'width', `${size}px`)
+  setStyle(el, 'height', `${size}px`)
+  setStyle(el, 'margin', `${-size / 2}px 0 0 ${-size / 2}px`)
+  setStyle(el, 'background', `radial-gradient(circle, rgba(${rgb},${core.toFixed(2)}) 0%, rgba(${rgb},${(core / 3).toFixed(2)}) 45%, transparent 70%)`)
 }
 
 function drawBridgeHeat(jams, presence) {
-  bridgeHeat.forEach(({ el, at, bi }, si) => {
-    const w = jams[BOTTLENECK_BRIDGES[bi].di]
-    const size = lerp(28, 76, w)
-    const core = 0.35 + 0.5 * w
-    const rgb = heatRgb(w)
-    place(el, at)
-    el.style.opacity = presence[si] * clamp01(w / 0.15)
-    el.style.width = el.style.height = `${size}px`
-    el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`
-    el.style.background = `radial-gradient(circle, rgba(${rgb},${core}) 0%, rgba(${rgb},${core / 3}) 45%, transparent 70%)`
-  })
+  bridgeHeat.forEach(({ el, at, bi }, si) => paintHeat(el, at, jams[BOTTLENECK_BRIDGES[bi].di], presence[si]))
 }
 
 function captionAt(t) {
@@ -900,9 +924,9 @@ function render(t) {
     sprites.forEach((s) => renderCommuter(s, t))
     drawHeat(hf.jams, hf.presence)
     drawBridgeHeat(hf.jams, hf.bridges)
-    pins.forEach((p) => { p.el.style.opacity = plan.adopters ? 1 : 0.55 })
+    pins.forEach((p) => setStyle(p.el, 'opacity', plan.adopters ? '1' : '0.55'))
     const riding = plan.adopters > 0 && t >= T.app && t < T.ridersUntil + 1
-    mrtPaths.forEach((m) => { m.path.style.opacity = riding ? 0.95 : 0.4 })
+    mrtPaths.forEach((m) => setStyle(m.path, 'opacity', riding ? '0.95' : '0.4'))
   }
   const [h2, p] = captionAt(t)
   if (h2 + p !== lastCaption) { $('caption').querySelector('h2').textContent = h2; $('caption').querySelector('p').textContent = p; lastCaption = h2 + p }
