@@ -1,5 +1,6 @@
 import { ApiError, createApiClient, type ApiClient, type DriverRequests, type TripView } from '@carpool/shared'
 import type { AddLog } from './log'
+import { SIMULATOR_ROUTES } from './simulatorRoutes'
 
 /** driver5's departure: same pickup and destination as driver4, no auto-accept, no tag filters (DD-45 step 2). */
 const DRIVER5_CAPACITY = 3
@@ -14,6 +15,16 @@ export const stageDrivers = (): OffstageDrivers => ({
   driver5: createApiClient('driver', 'driver5'),
 })
 
+type Account = keyof OffstageDrivers
+
+/** Stage cars that still owe their start report, and the log line that waits for them (DD-45 step 2, T75). */
+interface Starts {
+  accounts: readonly Account[]
+  message: string
+  /** A refused report was logged already; logged once, retried every round. */
+  failed: boolean
+}
+
 interface State {
   /** driver4's trip already logged as departed; null while it has none. */
   driver4Trip: number | null
@@ -21,15 +32,22 @@ interface State {
   followed: number | null
   /** driver5's trip being watched; null while it has none. */
   driver5Trip: number | null
+  starts: Starts | null
   passedTold: boolean
   declined: ReadonlySet<number>
   offline: boolean
 }
 
-const INITIAL: State = { driver4Trip: null, followed: null, driver5Trip: null, passedTold: false, declined: new Set(), offline: false }
+const INITIAL: State = { driver4Trip: null, followed: null, driver5Trip: null, starts: null, passedTold: false, declined: new Set(), offline: false }
 
 /** Tells the simulator a stage driver's trip has had a request, so it stops holding the car (T63). */
-export type OnRequest = (account: keyof OffstageDrivers, tripId: number) => void
+export type OnRequest = (account: Account, tripId: number) => void
+
+/** Where the simulator parks a stage car and reports it first: its path start (simulatorRoutes.ts). */
+function startOf(account: Account) {
+  const [lat, lng] = SIMULATOR_ROUTES[account].path[0]
+  return { lat, lng }
+}
 
 const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
@@ -44,9 +62,13 @@ const isRefusal = (err: unknown) => err instanceof ApiError && err.status < 500
 export function createOffstage(drivers: OffstageDrivers, log: AddLog, onRequest: OnRequest = () => {}) {
   let state = INITIAL
 
-  /** driver5 departs to driver4's destination, unless it is already driving. */
-  async function follow(driver5Running: boolean) {
-    if (driver5Running) return log('driver5 已經在行程中，沿用這趟')
+  /**
+   * driver5 departs to driver4's destination, unless it is already driving. Returns the cars that
+   * just departed, whose start is reported before the log line (DD-45 step 2); null when refused.
+   */
+  async function follow(driver5Running: boolean): Promise<Starts | null> {
+    // driver4 has just departed either way; a running driver5 has been reported by the simulator.
+    if (driver5Running) return { accounts: ['driver4'], message: 'driver5 已經在行程中，沿用這趟', failed: false }
     const trip = await drivers.driver4.get<TripView>('/driver/trips/current')
     try {
       await drivers.driver5.post('/driver/trips', {
@@ -56,11 +78,33 @@ export function createOffstage(drivers: OffstageDrivers, log: AddLog, onRequest:
         auto_accept: false,
         tag_filters: [],
       })
-      log('driver5 跟著出發了')
+      return { accounts: ['driver4', 'driver5'], message: 'driver5 跟著出發了', failed: false }
     } catch (err) {
       if (!isRefusal(err)) throw err
       log(`driver5 出發失敗：${reason(err)}`, true)
+      return null
     }
+  }
+
+  /**
+   * Each stage car reports its path start with its own token, so both can be matched, driver5 the
+   * nearer, by the time the log says so; the simulator reports on from there (DD-14, DD-45, T75).
+   * A refused report is logged and retried next round, like a failed 出發.
+   */
+  async function reportStarts(starts: Starts) {
+    for (const [i, account] of starts.accounts.entries()) {
+      try {
+        await drivers[account].post('/location', startOf(account))
+      } catch (err) {
+        if (!isRefusal(err)) throw err
+        if (!starts.failed) log(`${account} 回報起點失敗：${reason(err)}`, true)
+        state = { ...state, starts: { ...starts, accounts: starts.accounts.slice(i), failed: true } }
+        return
+      }
+      state = { ...state, starts: { ...starts, accounts: starts.accounts.slice(i + 1) } }
+    }
+    log(starts.message)
+    state = { ...state, starts: null }
   }
 
   async function decline(id: number, passengerName: string) {
@@ -84,10 +128,11 @@ export function createOffstage(drivers: OffstageDrivers, log: AddLog, onRequest:
       if (d4.trip_id !== null) log('driver4 出發了')
     }
     if (d4.trip_id !== null && d4.trip_id !== state.followed) {
-      await follow(d5.trip_id !== null)
-      state = { ...state, followed: d4.trip_id }
+      const starts = await follow(d5.trip_id !== null)
+      state = { ...state, followed: d4.trip_id, starts }
       d5 = await drivers.driver5.get<DriverRequests>('/driver/requests')
     }
+    if (state.starts) await reportStarts(state.starts)
 
     // Before declining: once declined, the request is gone from what the simulator reads (T63).
     for (const [account, requests] of [['driver4', d4], ['driver5', d5]] as const) {

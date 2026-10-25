@@ -201,6 +201,8 @@ describe('followReports (static site)', () => {
   it('moves the car to where the driver reports it, not by time', () => {
     api = createMockApi(data, () => clock, { followReports: true })
     call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    // Matched only once it has reported (T75).
+    call('POST', '/api/location', DRIVER, near(-500))
     const id = submit().id
     call('POST', `/api/driver/requests/${id}/accept`, DRIVER)
     // Reported 300 m before the pickup: ten minutes later it is still there.
@@ -213,6 +215,49 @@ describe('followReports (static site)', () => {
     const after = trip.route!.bus_stops.find((b) => b.lat > SONGSHAN.lat + 0.002)!
     call('POST', '/api/location', DRIVER, { lat: after.lat, lng: after.lng })
     expect(statusOf(id).passed_pickup).toBe(true)
+  })
+})
+
+describe('followReports: a car is matched only once it has reported (DD-45, T75)', () => {
+  const DRIVER5 = 'Bearer driver:driver5'
+  // The simulator's parking spots (showcase/src/simulatorRoutes.ts): driver5 400 m before 松山車站, driver4 535 m.
+  const DRIVER4_PARKED = { lat: 25.045005, lng: 121.577907 }
+  const DRIVER5_PARKED = { lat: 25.046223, lng: 121.57791 }
+  const assignedTo = (id: number) => (driverRequests().pending.some((r) => r.id === id) ? 'driver4' : json<DriverRequests>('GET', '/api/driver/requests', DRIVER5).pending.some((r) => r.id === id) ? 'driver5' : 'other')
+
+  beforeEach(() => {
+    api = createMockApi(data, () => clock, { followReports: true })
+    // As 開始 Demo: driver4 departs on stage, driver5 follows a second later (DD-45 step 2).
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    advance(1)
+    call('POST', '/api/driver/trips', DRIVER5, DEPARTURE)
+  })
+
+  it('driver5 parked nearer gets the request once both have reported', () => {
+    call('POST', '/api/location', DRIVER, DRIVER4_PARKED)
+    call('POST', '/api/location', DRIVER5, DRIVER5_PARKED)
+    expect(assignedTo(submit().id)).toBe('driver5')
+  })
+
+  it('a stage car that has not reported yet is not a candidate (the request went straight to driver4)', () => {
+    call('POST', '/api/location', DRIVER, DRIVER4_PARKED)
+    // driver5 departed but has no report: it must not rank by a time-based position, nor be offered.
+    const supply = json<Supply>('GET', SUPPLY, PASSENGER)
+    const tripOf = (auth: string) => json<TripView>('GET', '/api/driver/trips/current', auth).id
+    expect(supply.cars.map((c) => c.trip_id)).not.toContain(tripOf(DRIVER5))
+    expect(supply.cars.map((c) => c.trip_id)).toContain(tripOf(DRIVER))
+  })
+
+  it('neither has reported: neither is offered', () => {
+    const ids = json<Supply>('GET', SUPPLY, PASSENGER).cars.map((c) => c.trip_id)
+    for (const auth of [DRIVER, DRIVER5]) expect(ids).not.toContain(json<TripView>('GET', '/api/driver/trips/current', auth).id)
+  })
+
+  it('without followReports (just ui dev-mock, Go-like) an unreported car is still matched by time', () => {
+    api = createMockApi(data, () => clock)
+    call('POST', '/api/driver/trips', DRIVER, DEPARTURE)
+    const trip = json<TripView>('GET', '/api/driver/trips/current', DRIVER).id
+    expect(json<Supply>('GET', SUPPLY, PASSENGER).cars.map((c) => c.trip_id)).toContain(trip)
   })
 })
 

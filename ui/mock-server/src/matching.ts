@@ -34,6 +34,8 @@ export function matchTrips(world: World, lookups: Lookups, passengerId: number, 
   const preferred = search.tag_filters.filter((f) => f.intent === 'preferred').map((f) => f.tag_id)
 
   const matches = world.trips.flatMap((trip): (Match & { simulated: boolean })[] => {
+    // Not placed yet: matching only cars that have reported, like the Go backend (DD-45, T75).
+    if (trip.awaitingReport) return []
     if (trip.pickupPointId !== pickupPointId || !tripOpen(trip, lookups, now)) return []
     const etaS = etaToPickupS(trip, now)
     if (etaS > s.wait_limit * 60) return []

@@ -188,7 +188,6 @@ test('direct showcase.html is still the two-phone showcase, and 開始 Demo runs
   await expect(driver.getByRole('heading', { name: /目前沒有/ })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
   // driver5 follows off stage (DD-45 step 2); the request must wait for it, or only driver4 can be matched.
   await logged(page, /driver5 (跟著出發了|已經在行程中)/)
-  await page.waitForTimeout(DEMO_SETTLE_MS)
   await passenger.getByRole('button', { name: '今天我要搭' }).click({ timeout: STEP_TIMEOUT_MS })
   // The Demo's two stage tags 一定要, as ui/scripts/demo-auto.ts sends: only driver4 and driver5 carry both (DD-45 step 1).
   const sheet = passenger.getByRole('dialog', { name: '送出搭車請求' })

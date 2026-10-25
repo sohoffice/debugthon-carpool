@@ -182,7 +182,7 @@ export function createMockApi(data: StaticData, clock: () => number = Date.now, 
         ) {
           throw new MockError(400, 'invalid_route_preview', '路線預覽不存在、已使用，或與出發的上車點、目的地不符，請重新預覽')
         }
-        world = depart(world, lookups, user.id, settings, now())
+        world = depart(world, lookups, user.id, settings, now(), followReports)
         if (preview) preview.used = true
         return created(tripView(world, lookups, activeTripOf(world, user.id)!))
       },

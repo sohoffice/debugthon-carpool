@@ -29,6 +29,11 @@ export interface Trip {
   reports: { enteredPickup: boolean; passedPickup: boolean }
   /** Metres along the path of the latest report, when the mock follows reports (static site); then time no longer moves the car. */
   reportedAlong: number | null
+  /**
+   * Departed while the mock follows reports, and no report yet: not matched, as the Go backend
+   * skips a car that has not reported its position (DD-45, T75). Always false otherwise.
+   */
+  awaitingReport: boolean
 }
 
 export interface Dropoff {
@@ -175,6 +180,8 @@ interface NewTrip {
   simulated: boolean
   /** Seconds before reaching the pickup point at `now`. */
   startEtaS: number
+  /** Not matched until its first report (followReports, DD-45). */
+  awaitingReport?: boolean
 }
 
 export function addTrip(world: World, lookups: Lookups, spec: NewTrip, now: number): World {
@@ -199,6 +206,7 @@ export function addTrip(world: World, lookups: Lookups, spec: NewTrip, now: numb
     simulated: spec.simulated,
     reports: { enteredPickup: false, passedPickup: false },
     reportedAlong: null,
+    awaitingReport: spec.awaitingReport ?? false,
   }
   // Departing is the driver taking part today (DD-25).
   const withTrip = { ...world, nextTripId: world.nextTripId + 1, trips: [...world.trips, trip] }
