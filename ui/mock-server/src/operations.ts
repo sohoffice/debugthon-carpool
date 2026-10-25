@@ -143,7 +143,8 @@ function respawn(world: World, lookups: Lookups, tripId: number, now: number): W
 
 // ---------------------------------------------------------------- driver actions
 
-export function depart(world: World, lookups: Lookups, driverId: number, settings: DepartureSettings, now: number): World {
+/** `followReports`: the car is matched only from its first report on (static site, DD-45). */
+export function depart(world: World, lookups: Lookups, driverId: number, settings: DepartureSettings, now: number, followReports = false): World {
   if (activeTripOf(world, driverId)) throw new MockError(409, 'already_active', '駕駛已有進行中的行程')
   return addTrip(
     world,
@@ -157,6 +158,7 @@ export function depart(world: World, lookups: Lookups, driverId: number, setting
       tagFilters: settings.tag_filters,
       simulated: false,
       startEtaS: HUMAN_START_ETA_S,
+      awaitingReport: followReports,
     },
     now,
   )
@@ -277,7 +279,9 @@ export function reportLocation(world: World, lookups: Lookups, userId: number, p
   const report = { id: world.nextReportId, lat: position.lat, lng: position.lng, atMs: now }
   const stored = { ...world, nextReportId: world.nextReportId + 1, lastReports: { ...world.lastReports, [activity.id]: report } }
   if (activity.role !== 'driver' || activity.tripId === null) return stored
-  const followed = followReports ? updateTrip(stored, activity.tripId, (t) => ({ ...t, reportedAlong: projectAlong(t.path, position, t.reportedAlong ?? 0) })) : stored
+  const followed = followReports
+    ? updateTrip(stored, activity.tripId, (t) => ({ ...t, reportedAlong: projectAlong(t.path, position, t.reportedAlong ?? 0), awaitingReport: false }))
+    : stored
   return updateTrip(followed, activity.tripId, (t) => {
     if (t.reports.passedPickup) return t
     const pickup = mustGet(lookups.pickupById, t.pickupPointId, 'pickup point')
