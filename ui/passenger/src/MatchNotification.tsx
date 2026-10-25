@@ -1,4 +1,4 @@
-import { Wordmark } from '@carpool/shared'
+import { SimulatedBadge, Wordmark } from '@carpool/shared'
 import { useEffect, useRef } from 'react'
 
 const SHOW_MS = 5000
@@ -30,6 +30,10 @@ export function MatchNotification({ text, onClose }: { text: string; onClose: ()
         </span>
         <span className="mt-1 block text-base font-bold">配到車了</span>
         <span className="block text-base">{text}</span>
+        {/* Not a real system push (REQ-063); inside the button, so tapping or swiping it still closes. */}
+        <span className="mt-1 flex justify-end">
+          <SimulatedBadge label="模擬推播" />
+        </span>
       </button>
     </div>
   )
