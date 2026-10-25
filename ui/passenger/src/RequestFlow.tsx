@@ -95,6 +95,9 @@ export function RequestFlow({ initial, fresh, position, pickupPoints, busStops, 
       const eta = request.eta_s === null ? '' : ` ${minutesOf(request.eta_s)} 分鐘後到`
       setNotice(`${request.vehicle.plate}${eta}${request.pickup_point.name}`)
       setCelebrate(true)
+    } else if (request.status !== 'confirmed') {
+      // T73: off the confirmed screen it would cover the next one; only a new match shows it again.
+      setNotice(null)
     }
     previous.current = request.status
   }, [request])
@@ -154,7 +157,7 @@ export function RequestFlow({ initial, fresh, position, pickupPoints, busStops, 
   return (
     <>
       {screen}
-      {notice && <MatchNotification text={notice} onClose={closeNotice} />}
+      {notice && request.status === 'confirmed' && <MatchNotification text={notice} onClose={closeNotice} />}
       {(error || polling.error) && (
         <p role="alert" className="absolute inset-x-6 bottom-[calc(var(--safe-bottom)+92px)] z-10 border-l-4 border-danger bg-canvas/95 py-1 pl-3 text-base font-medium text-alert">
           {error ?? '連線不穩，顯示的是上一次的狀態。'}

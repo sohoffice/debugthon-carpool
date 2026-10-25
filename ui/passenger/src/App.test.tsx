@@ -259,6 +259,76 @@ describe('passenger App', () => {
     expect(await screen.findByRole('button', { name: '今天我要搭' })).toBeInTheDocument()
   })
 
+  describe('the 配到車了 notification only shows on the confirmed screen (UD-12, REQ-052, T73)', () => {
+    async function matched(backend: Backend) {
+      fakeBackend(backend)
+      render(<App />)
+      await sendRequest()
+      await screen.findByRole('heading', { name: '正在等駕駛確認' })
+      await nextPoll()
+      return (await screen.findByText('配到車了')).closest('button') as HTMLElement
+    }
+
+    it('boarding within 5 seconds closes it on the boarded screen', async () => {
+      await matched({ statuses: [request({}), request({}), CONFIRMED], actions: { board: BOARDED } })
+      fireEvent.click(screen.getByRole('button', { name: '我已上車' }))
+      expect(await screen.findByRole('heading', { name: `在${STOP.name}下車` })).toBeInTheDocument()
+      expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+    })
+
+    it('never covers the completed screen', async () => {
+      await matched({ statuses: [request({}), request({}), CONFIRMED], actions: { board: BOARDED, complete: COMPLETED } })
+      fireEvent.click(screen.getByRole('button', { name: '我已上車' }))
+      fireEvent.click(await screen.findByRole('button', { name: '我已下車，結束共乘' }))
+      expect(await screen.findByRole('heading', { name: '共乘完成' })).toBeInTheDocument()
+      expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+    })
+
+    it('a confirmed request going straight to completed does not show it either', async () => {
+      await matched({ statuses: [request({}), request({}), CONFIRMED, COMPLETED] })
+      await nextPoll()
+      expect(await screen.findByRole('heading', { name: '共乘完成' })).toBeInTheDocument()
+      expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+    })
+
+    it('a reassignment closes it, and the next match shows it again', async () => {
+      const again = { ...CONFIRMED, reassigned_count: 1 }
+      await matched({ statuses: [request({}), request({}), CONFIRMED, request({ reassigned_count: 1 }), again] })
+      await nextPoll()
+      expect(await screen.findByText('駕駛無法載你')).toBeInTheDocument()
+      expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+      await nextPoll()
+      expect(await screen.findByText('配到車了')).toBeInTheDocument()
+    })
+
+    it('staying on the confirmed screen, it closes after about 5 seconds', async () => {
+      await matched({ statuses: [request({}), request({}), CONFIRMED] })
+      await act(() => vi.advanceTimersByTimeAsync(4000))
+      expect(screen.getByText('配到車了')).toBeInTheDocument()
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+      // Closed by its own timer: the request is still confirmed.
+      expect(screen.getByRole('button', { name: '我已上車' })).toBeInTheDocument()
+    })
+
+    it('a tap closes it and stays on the confirmed screen', async () => {
+      fireEvent.click(await matched({ statuses: [request({}), request({}), CONFIRMED] }))
+      expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '我已上車' })).toBeInTheDocument()
+    })
+
+    it('a swipe up closes it; a small move does not', async () => {
+      const notification = await matched({ statuses: [request({}), request({}), CONFIRMED] })
+      fireEvent.pointerDown(notification, { clientY: 100 })
+      fireEvent.pointerUp(notification, { clientY: 76 })
+      expect(screen.getByText('配到車了')).toBeInTheDocument()
+      fireEvent.pointerDown(notification, { clientY: 100 })
+      fireEvent.pointerUp(notification, { clientY: 75 })
+      expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '我已上車' })).toBeInTheDocument()
+    })
+  })
+
   it('marks only simulated ETAs on the board (REQ-063)', async () => {
     fakeBackend({ simulated: [true, false, false] })
     render(<App />)
