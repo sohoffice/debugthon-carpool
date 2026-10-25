@@ -327,6 +327,56 @@ describe('passenger App', () => {
       expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: '我已上車' })).toBeInTheDocument()
     })
+
+    describe('is marked 模擬推播 (UD-12, REQ-063, T74)', () => {
+      it('on its own last row at the bottom right, below the text', async () => {
+        const notification = await matched({ statuses: [request({}), request({}), CONFIRMED] })
+        const badge = within(notification).getByText('模擬推播')
+        const row = badge.parentElement as HTMLElement
+        expect(row.parentElement).toBe(notification)
+        expect(notification.lastElementChild).toBe(row)
+        expect(row).toHaveClass('justify-end')
+        expect(row.childElementCount).toBe(1)
+        expect(within(notification).getByText('ABC-0004 3 分鐘後到松山車站').compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      })
+
+      it('goes away with the push after about 5 seconds', async () => {
+        await matched({ statuses: [request({}), request({}), CONFIRMED] })
+        await act(() => vi.advanceTimersByTimeAsync(4000))
+        expect(screen.getByText('模擬推播')).toBeInTheDocument()
+        await act(() => vi.advanceTimersByTimeAsync(1000))
+        expect(screen.queryByText('模擬推播')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: '我已上車' })).toBeInTheDocument()
+      })
+
+      it('goes away with the push when the request leaves confirmed', async () => {
+        const notification = await matched({ statuses: [request({}), request({}), CONFIRMED], actions: { board: BOARDED } })
+        expect(within(notification).getByText('模擬推播')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: '我已上車' }))
+        expect(await screen.findByRole('heading', { name: `在${STOP.name}下車` })).toBeInTheDocument()
+        expect(screen.queryByText('模擬推播')).not.toBeInTheDocument()
+      })
+
+      it('a tap on the badge closes the push like a tap anywhere on it', async () => {
+        await matched({ statuses: [request({}), request({}), CONFIRMED] })
+        fireEvent.click(screen.getByText('模擬推播'))
+        expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+        expect(screen.queryByText('模擬推播')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: '我已上車' })).toBeInTheDocument()
+      })
+
+      it('a swipe up that starts on the badge closes the push', async () => {
+        await matched({ statuses: [request({}), request({}), CONFIRMED] })
+        const badge = screen.getByText('模擬推播')
+        fireEvent.pointerDown(badge, { clientY: 100 })
+        fireEvent.pointerUp(badge, { clientY: 76 })
+        expect(screen.getByText('配到車了')).toBeInTheDocument()
+        fireEvent.pointerDown(badge, { clientY: 100 })
+        fireEvent.pointerUp(badge, { clientY: 75 })
+        expect(screen.queryByText('配到車了')).not.toBeInTheDocument()
+        expect(screen.queryByText('模擬推播')).not.toBeInTheDocument()
+      })
+    })
   })
 
   it('marks only simulated ETAs on the board (REQ-063)', async () => {
