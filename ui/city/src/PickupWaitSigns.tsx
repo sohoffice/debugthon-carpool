@@ -1,6 +1,6 @@
 import type { CityLive } from '@carpool/shared'
 
-/** Station-name signs in the map's bottom left: who is waiting to be matched at each pickup point (REQ-078). */
+/** Station-name signs, in the map's bottom left on desktop and under it below 1024px: who is waiting to be matched at each pickup point (REQ-078, T78). */
 export function PickupWaitSigns({ live }: { live: CityLive }) {
   return (
     <ul aria-label="各上車點等待配對" className="flex flex-wrap gap-2">
