@@ -1,2 +1,11 @@
 @import 'tailwindcss';
 @import '@carpool/shared/theme.css';
+
+/*
+ * SC-D3 on a short screen (T76, UD-05): the request screen's own height, not the window's, so the
+ * static site's coach bar counts. At 800px and up (a 390×844 phone, the showcase's phone) the screen
+ * keeps its full sizes; below, a two-line name would leave the full layout's map under 140px.
+ */
+@custom-variant short (@container request (max-height: 799px));
+/* The map slot is too small for a readable map: no map at all, as when it cannot load (UD-29). */
+@custom-variant map-cramped (@container map-slot (max-height: 139px));
