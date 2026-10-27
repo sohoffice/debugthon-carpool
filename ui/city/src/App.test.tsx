@@ -146,7 +146,8 @@ describe('city war room (SC-C1, UD-27)', () => {
     await renderApp()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('內科上班順起來: 內科順路共乘市府儀表板')
     expect(screen.getByRole('tab', { name: '總覽' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByText('08:15')).toBeInTheDocument()
+    // The top bar's clock; the grid's slot headers also read 08:15.
+    expect(within(screen.getByRole('banner')).getByText('08:15')).toBeInTheDocument()
     expect(screen.getByText('10/26 週一')).toBeInTheDocument()
     expect(screen.getByText('模擬時間')).toBeInTheDocument()
     expect(calls.every((c) => c.startsWith('/api/city/'))).toBe(true)
