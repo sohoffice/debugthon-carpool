@@ -20,8 +20,8 @@ interface TopBarProps {
 
 /**
  * Board-ink bar shared by the three tabs (UD-27): name, tabs, network lights, Demo clock (DD-41).
- * Below 1024px it is two rows (T71, T72): name and clock, then the tabs (scrolling sideways) and the worst
- * level's count. The static site's 首頁 link pads the first child, the <h1>, on narrow screens (T68).
+ * Below 1024px it is two rows (T71, T72): name and clock, then the tabs and the worst level's count across
+ * the full width, so all three tabs fit whole from 320px (T81). The static site's 首頁 link pads the first child, the <h1>, on narrow screens (T68).
  * From 1024px to 1365px it is one row that fits with the 72px 首頁 link (T72): the name over 市府儀表板,
  * no 現在, and the lights only as the count.
  */
@@ -36,7 +36,9 @@ export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
           <span className="font-medium text-fog max-lg:text-xs lg:text-[15px] lg:max-xxl:text-[13px]">市府儀表板</span>
         </span>
       </h1>
-      <nav role="tablist" aria-label="分頁" className="row-start-2 flex h-full min-w-0 shrink-0 overflow-x-auto max-lg:pl-1 lg:overflow-visible">
+      {/* Below 1024px the tabs and lights share their own full-width row, not the clock's column (T81). */}
+      <div className="col-span-2 row-start-2 flex h-full min-w-0 lg:contents">
+      <nav role="tablist" aria-label="分頁" className="flex h-full min-w-0 shrink-0 overflow-x-auto max-lg:pl-1 lg:overflow-visible">
         {TABS.map(([key, label]) => (
           <button
             key={key}
@@ -50,6 +52,7 @@ export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
         ))}
       </nav>
       <NetworkLights latest={latest} />
+      </div>
       {clock && (
         <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-1.5 pr-4 text-xs text-asphalt-soft lg:items-baseline lg:gap-2 lg:pr-0 lg:text-sm">
           <span>
@@ -71,11 +74,11 @@ export function TopBar({ clock, tab, onTab, latest }: TopBarProps) {
  * below 1366px only the count (T71, T72).
  */
 function NetworkLights({ latest }: { latest: CityGateway[] | undefined }) {
-  if (!latest) return <div className="ml-auto max-lg:row-start-2" />
+  if (!latest) return <div className="ml-auto" />
   const levels = latest.map((g) => gatewayLevel(g))
   const worst = worstLevel(levels)
   return (
-    <div className="col-start-2 row-start-2 ml-auto flex shrink-0 items-center gap-2 pr-4 text-[13px] text-asphalt-soft lg:pr-0" aria-label="路網狀態" data-testid="network-lights">
+    <div className="ml-auto flex shrink-0 items-center gap-2 pr-4 text-[13px] text-asphalt-soft lg:pr-0" aria-label="路網狀態" data-testid="network-lights">
       <span className="max-xxl:hidden">{latest.length} 個入口</span>
       <span className="flex gap-[3px] max-xxl:hidden">
         {latest.map((g, i) => {

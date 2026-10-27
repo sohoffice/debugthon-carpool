@@ -346,3 +346,63 @@ for (const [width, height] of [[768, 1024], [820, 1180]]) {
     expect(trafficCell.width).toBeGreaterThanOrEqual(40)
   })
 }
+
+type Box = { x: number; y: number; width: number; height: number }
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+// T81: below 390px the three tabs fit whole beside the road status, the tab row does not scroll.
+for (const [width, height] of [[320, 568], [360, 780], [375, 667], [390, 844]]) {
+  for (const homeLink of [false, true]) {
+    test(`${width}×${height}${homeLink ? ' with the static site 首頁 padding' : ''}: all three tabs whole on screen, no sideways tab scroll, nothing in the top bar overlaps (T81, REQ-079)`, async ({ browser }) => {
+      const page = await open(browser, width, height)
+      if (homeLink) await page.addStyleTag({ content: HOME_LINK_PADDING })
+      const header = page.locator('#root header')
+      const tabs = header.getByRole('tablist', { name: '分頁' })
+      expect(await tabs.evaluate((t) => t.scrollWidth - t.clientWidth)).toBe(0)
+      // Each tab's text, not just its button, inside the window.
+      for (const name of TABS) {
+        const text = await page.getByRole('tab', { name }).evaluate((b) => {
+          const range = document.createRange()
+          range.selectNodeContents(b)
+          const r = range.getBoundingClientRect()
+          return { left: r.left, right: r.right }
+        })
+        expect(text.left, name).toBeGreaterThanOrEqual(0)
+        expect(text.right, name).toBeLessThanOrEqual(width)
+      }
+
+      // The road status still reads, shortened or not (REQ-079).
+      const lights = header.getByTestId('network-lights')
+      await expect(lights.getByText(/^\S+ \d+ 處$/)).toBeVisible()
+
+      const items: [string, Box][] = [
+        ['名稱', (await header.locator('h1').boundingBox())!],
+        ['日期', (await header.getByText(/^\d{1,2}\/\d{1,2} 週/).boundingBox())!],
+        ['時鐘', (await header.getByText(/^\d{2}:\d{2}$/).boundingBox())!],
+        ['模擬時間', (await header.getByText('模擬時間').boundingBox())!],
+        ['分頁', (await tabs.boundingBox())!],
+        ['路網狀態', (await lights.boundingBox())!],
+      ]
+      for (const [name, box] of items) expect(box.x + box.width, name).toBeLessThanOrEqual(width)
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          // The name and the tabs are the bar's first column; the clock group and lights its second.
+          if (items[i][0] === '名稱' && items[j][0] === '分頁') continue
+          expect(overlaps(items[i][1], items[j][1]), `${items[i][0]} / ${items[j][0]}`).toBe(false)
+        }
+      }
+    })
+  }
+}
+
+// T81: the narrow tab spacing is scoped below 390px; desktop keeps today's spacing and road status.
+test('1440×900: the top bar keeps its tab spacing and road status (T81)', async ({ browser }) => {
+  const page = await open(browser, 1440, 900)
+  for (const name of TABS) {
+    const pad = await page.getByRole('tab', { name }).evaluate((b) => getComputedStyle(b).paddingLeft)
+    expect(pad, name).toBe('14px')
+  }
+  const lights = page.getByTestId('network-lights')
+  await expect(lights.getByText('16 個入口')).toBeVisible()
+  await expect(lights.locator('[data-level]')).toHaveCount(16)
+})
