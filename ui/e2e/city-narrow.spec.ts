@@ -111,29 +111,40 @@ test.describe('390px (T71)', () => {
 
 // T78: phone sizes, including a short screen (Safari's bars on an iPhone 13, iPhone SE).
 const PHONES = [[390, 844], [390, 664], [375, 548]] as const
-type Box = { x: number; y: number; width: number; height: number }
-const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+const PICKUPS = ['松山車站', '台北世貿中心', '台北大巨蛋']
+
+/** Each pickup point's waiting count in the 上車點 card, by name. */
+async function cardCounts(page: Page) {
+  const card = page.getByRole('region', { name: '上車點', exact: true })
+  const counts: Record<string, string> = {}
+  for (const name of PICKUPS) {
+    const big = card.getByLabel(new RegExp(`^${name} 等待 \\d+ 人$`))
+    await expect(big).toHaveCount(1)
+    counts[name] = (await big.textContent())!.trim()
+  }
+  return counts
+}
 
 for (const [width, height] of PHONES) {
-  test(`${width}×${height} 即時地圖: one wait sign per pickup point, apart, with its name and count, off the map (T78, REQ-078)`, async ({ browser }) => {
+  test(`${width}×${height} 即時地圖: no wait signs under or on the map; the 上車點 card shows each pickup's count, the desktop signs' numbers (T80, REQ-078)`, async ({ browser }) => {
     const page = await open(browser, width, height)
     await page.getByRole('tab', { name: '即時地圖' }).click()
+    await expect(page.getByRole('list', { name: '各上車點等待配對' })).toBeHidden()
+    await expect(page.getByText(/^等待 \d+$/).filter({ visible: true })).toHaveCount(0)
+    // Nothing takes the row's place: the column starts right under the map.
+    const map = (await page.getByRole('region', { name: '即時地圖', exact: true }).boundingBox())!
+    const column = (await page.locator('aside').boundingBox())!
+    expect(column.y).toBe(map.y + map.height)
+
+    const narrow = await cardCounts(page)
+    for (const n of Object.values(narrow)) expect(n).toMatch(/^\d+$/)
+    // The same data on a desktop window: the bottom-left signs read the card's numbers.
+    await page.setViewportSize({ width: 1440, height: 900 })
     const signs = page.getByRole('list', { name: '各上車點等待配對' }).getByRole('listitem')
     await expect(signs).toHaveCount(3)
-    const boxes: Box[] = []
-    for (const name of ['松山車站', '台北世貿中心', '台北大巨蛋']) {
-      // Exactly one sign per pickup point, and it reads 等待 N, zeros included.
-      const sign = signs.filter({ hasText: name })
-      await expect(sign).toHaveCount(1)
-      await expect(sign).toHaveText(new RegExp(`^${name}等待 \\d+$`))
-      await sign.scrollIntoViewIfNeeded()
-      await expect(sign).toBeInViewport({ ratio: 1 })
-      boxes.push((await sign.boundingBox())!)
-    }
-    for (const [i, a] of boxes.entries()) for (const b of boxes.slice(i + 1)) expect(overlaps(a, b)).toBe(false)
-    // Under the map, not over it: nothing covers the map's own station signs.
-    const map = (await page.getByRole('region', { name: '即時地圖', exact: true }).boundingBox())!
-    for (const b of boxes) expect(b.y).toBeGreaterThanOrEqual(map.y + map.height)
+    for (const name of PICKUPS) await expect(signs.filter({ hasText: name })).toHaveText(`${name}等待 ${narrow[name]}`)
+    expect(await cardCounts(page)).toEqual(narrow)
   })
 }
 
