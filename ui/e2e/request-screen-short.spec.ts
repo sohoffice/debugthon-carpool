@@ -50,7 +50,7 @@ for (const size of [...SHORT_SIZES, TALL_SIZE]) {
     const label = `${size.width}×${size.height}${destination ? ', two-line drop-off' : ''}`
     test(`${label}: map ≥ ${MIN_MAP_HEIGHT}px or none, both buttons on screen, same with no key (UD-05, UD-29)`, async ({ browser, request }) => {
       const withMap = await openRequest(browser, request, WITH_MAP, size, destination)
-      const mapped = await requestScreenLayout(withMap)
+      const mapped = await requestScreenLayout(withMap, 'mounts')
       await expectButtonsOnScreen(withMap, mapped, size.height)
       expectMapReadableOrAbsent(mapped)
       // There is room for one on all these sizes; the static site's 375×548 is the one with none.
@@ -59,7 +59,7 @@ for (const size of [...SHORT_SIZES, TALL_SIZE]) {
       await resetBackend(request)
 
       const noKey = await openRequest(browser, request, NO_KEY, size, destination)
-      const plain = await requestScreenLayout(noKey)
+      const plain = await requestScreenLayout(noKey, 'never')
       expect(plain.mapDrawn).toBe(false)
       // No hint text in the map's place (UD-29).
       await expect(noKey.getByText(/地圖/)).toHaveCount(0)
@@ -71,7 +71,7 @@ for (const size of [...SHORT_SIZES, TALL_SIZE]) {
 
 test('390×844: the full sizes, as before T76 (names 48px, 確認 112px, 婉拒 72px)', async ({ browser, request }) => {
   const page = await openRequest(browser, request, WITH_MAP, TALL_SIZE)
-  const layout = await requestScreenLayout(page)
+  const layout = await requestScreenLayout(page, 'mounts')
   expect(layout.nameSize).toBe(48)
   expect(layout.confirm.height).toBe(112)
   expect(layout.decline.height).toBe(72)
@@ -80,7 +80,7 @@ test('390×844: the full sizes, as before T76 (names 48px, 確認 112px, 婉拒 
 
 test('390×664: the short sizes (names 36px, 確認 88px, 婉拒 64px)', async ({ browser, request }) => {
   const page = await openRequest(browser, request, WITH_MAP, SHORT_SIZES[0])
-  const layout = await requestScreenLayout(page)
+  const layout = await requestScreenLayout(page, 'mounts')
   expect(layout.nameSize).toBe(36)
   expect(layout.confirm.height).toBe(88)
   expect(layout.decline.height).toBe(64)
