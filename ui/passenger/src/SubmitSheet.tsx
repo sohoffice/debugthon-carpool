@@ -11,7 +11,10 @@ interface SubmitSheetProps {
   onClose: () => void
 }
 
-/** 7.3: filters can still be changed before sending (REQ-035); one more step against pocket taps (UD-08). */
+/**
+ * 7.3: filters can still be changed before sending (REQ-035); one more step against pocket taps (UD-08).
+ * The buttons and a send error stay at the bottom of the sheet; only the options above scroll (T77).
+ */
 export function SubmitSheet({ myTags, filters, submitting, error, onSubmit, onClose }: SubmitSheetProps) {
   const [value, setValue] = useState(filters)
   const [editingAbout, setEditingAbout] = useState(false)
@@ -26,57 +29,61 @@ export function SubmitSheet({ myTags, filters, submitting, error, onSubmit, onCl
       <section
         role="dialog"
         aria-label="送出搭車請求"
-        className="relative max-h-[86%] overflow-y-auto rounded-t-sheet bg-canvas px-6 pt-7 pb-[calc(var(--safe-bottom)+12px)]"
+        className="relative flex max-h-[86%] flex-col rounded-t-sheet bg-canvas pb-[calc(var(--safe-bottom)+12px)]"
       >
-        <h2 className="text-[30px]/tight font-semibold">送出搭車請求</h2>
-        <p className="mt-1 text-lg text-fg-soft">平台會替你分配一台最快能送你到的車。</p>
-        {/* Saved to the passenger's tags at once, so this request is matched on them (REQ-040). */}
-        <div className="mt-6 rounded-control bg-surface px-4 py-3 ring-[1.5px] ring-inset ring-line">
-          <div className="flex items-center gap-3">
-            <span className="shrink-0 text-base font-semibold text-fg-soft">關於我</span>
-            <span className="min-w-0 flex-1 truncate text-base">
-              {summary}
-            </span>
-            <button
-              type="button"
-              aria-expanded={editingAbout}
-              onClick={() => setEditingAbout((on) => !on)}
-              className="-my-2 min-h-11 shrink-0 px-1 text-base font-semibold text-accent"
-            >
-              修改
-            </button>
+        <div data-testid="submit-options" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-7">
+          <h2 className="text-[30px]/tight font-semibold">送出搭車請求</h2>
+          <p className="mt-1 text-lg text-fg-soft">平台會替你分配一台最快能送你到的車。</p>
+          {/* Saved to the passenger's tags at once, so this request is matched on them (REQ-040). */}
+          <div className="mt-6 rounded-control bg-surface px-4 py-3 ring-[1.5px] ring-inset ring-line">
+            <div className="flex items-center gap-3">
+              <span className="shrink-0 text-base font-semibold text-fg-soft">關於我</span>
+              <span className="min-w-0 flex-1 truncate text-base">
+                {summary}
+              </span>
+              <button
+                type="button"
+                aria-expanded={editingAbout}
+                onClick={() => setEditingAbout((on) => !on)}
+                className="-my-2 min-h-11 shrink-0 px-1 text-base font-semibold text-accent"
+              >
+                修改
+              </button>
+            </div>
+            {editingAbout && (
+              <div className="mt-3">
+                <ChipSelect label="關於我" options={about} selected={selected} onToggle={myTags.toggle} />
+              </div>
+            )}
           </div>
-          {editingAbout && (
+          {myTags.error && (
             <div className="mt-3">
-              <ChipSelect label="關於我" options={about} selected={selected} onToggle={myTags.toggle} />
+              <ErrorNote>{myTags.error}</ErrorNote>
             </div>
           )}
-        </div>
-        {myTags.error && (
+          <h3 className="mt-6 text-base font-semibold text-fg-soft">這趟車要</h3>
+          {/* Simulated and never sent in the filters (DD-43). */}
           <div className="mt-3">
-            <ErrorNote>{myTags.error}</ErrorNote>
+            <CompanyChip label="同企業" />
           </div>
-        )}
-        <h3 className="mt-6 text-base font-semibold text-fg-soft">這趟車要</h3>
-        {/* Simulated and never sent in the filters (DD-43). */}
-        <div className="mt-3">
-          <CompanyChip label="同企業" />
-        </div>
-        <div className="mt-1">
-          <TagFilterEditor tags={filterTags(tags)} value={value} onChange={setValue} intentLabels={INTENT_LABELS} />
-        </div>
-        {error && (
-          <div className="mt-4">
-            <ErrorNote>{error}</ErrorNote>
+          <div className="mt-1">
+            <TagFilterEditor tags={filterTags(tags)} value={value} onChange={setValue} intentLabels={INTENT_LABELS} />
           </div>
-        )}
-        <div className="mt-6 flex flex-col gap-3">
-          <Button className="h-16 text-xl" disabled={submitting} onClick={() => onSubmit(value)}>
-            {submitting ? '送出中…' : '送出請求'}
-          </Button>
-          <Button variant="secondary" disabled={submitting} onClick={onClose}>
-            先不要
-          </Button>
+        </div>
+        <div className="shrink-0 px-6">
+          {error && (
+            <div className="mt-4">
+              <ErrorNote>{error}</ErrorNote>
+            </div>
+          )}
+          <div className="mt-6 flex flex-col gap-3">
+            <Button className="h-16 text-xl" disabled={submitting} onClick={() => onSubmit(value)}>
+              {submitting ? '送出中…' : '送出請求'}
+            </Button>
+            <Button variant="secondary" disabled={submitting} onClick={onClose}>
+              先不要
+            </Button>
+          </div>
         </div>
       </section>
     </div>
