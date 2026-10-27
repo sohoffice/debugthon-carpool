@@ -109,6 +109,63 @@ test.describe('390px (T71)', () => {
   })
 })
 
+// T78: phone sizes, including a short screen (Safari's bars on an iPhone 13, iPhone SE).
+const PHONES = [[390, 844], [390, 664], [375, 548]] as const
+type Box = { x: number; y: number; width: number; height: number }
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+for (const [width, height] of PHONES) {
+  test(`${width}×${height} 即時地圖: one wait sign per pickup point, apart, with its name and count, off the map (T78, REQ-078)`, async ({ browser }) => {
+    const page = await open(browser, width, height)
+    await page.getByRole('tab', { name: '即時地圖' }).click()
+    const signs = page.getByRole('list', { name: '各上車點等待配對' }).getByRole('listitem')
+    await expect(signs).toHaveCount(3)
+    const boxes: Box[] = []
+    for (const name of ['松山車站', '台北世貿中心', '台北大巨蛋']) {
+      // Exactly one sign per pickup point, and it reads 等待 N, zeros included.
+      const sign = signs.filter({ hasText: name })
+      await expect(sign).toHaveCount(1)
+      await expect(sign).toHaveText(new RegExp(`^${name}等待 \\d+$`))
+      await sign.scrollIntoViewIfNeeded()
+      await expect(sign).toBeInViewport({ ratio: 1 })
+      boxes.push((await sign.boundingBox())!)
+    }
+    for (const [i, a] of boxes.entries()) for (const b of boxes.slice(i + 1)) expect(overlaps(a, b)).toBe(false)
+    // Under the map, not over it: nothing covers the map's own station signs.
+    const map = (await page.getByRole('region', { name: '即時地圖', exact: true }).boundingBox())!
+    for (const b of boxes) expect(b.y).toBeGreaterThanOrEqual(map.y + map.height)
+  })
+}
+
+/**
+ * Whether a slot's column, found by its header label, shows whole right of the sticky gateway names,
+ * the grid itself scrolled as the page left it.
+ */
+async function columnShows(grid: ReturnType<Page['getByRole']>, time: string) {
+  const head = (await grid.getByText(time, { exact: true }).boundingBox())!
+  const names = (await grid.getByRole('rowheader').first().boundingBox())!
+  const box = (await grid.boundingBox())!
+  return head.x >= names.x + names.width - 0.5 && head.x + head.width <= box.x + box.width + 0.5
+}
+
+for (const [width, height] of [[390, 844], [375, 548]] as const) {
+  test(`${width}×${height}: 總覽 and 車流熱力 open with the current slot's column on screen, and 車流熱力 keeps a picked slot there (T78, REQ-079)`, async ({ browser }) => {
+    const page = await open(browser, width, height)
+    // The current slot is the simulated clock's (DD-41): the mock backend opens at 08:00–08:15.
+    const overview = page.getByRole('grid', { name: '今天各入口每 15 分鐘的路況' })
+    await expect(overview.getByRole('gridcell', { name: /內湖路一段 08:00–/ })).toBeVisible()
+    await expect.poll(() => columnShows(overview, '08:00'), '總覽').toBe(true)
+
+    await page.getByRole('tab', { name: '車流熱力' }).click()
+    const traffic = page.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })
+    await expect(traffic).toBeVisible()
+    await expect.poll(() => columnShows(traffic, '08:00'), '車流熱力').toBe(true)
+    // Picking another slot on the time line brings that column on screen too.
+    await page.getByRole('group', { name: '時段' }).getByRole('button', { name: '07:00–07:15' }).click()
+    await expect.poll(() => columnShows(traffic, '07:00'), '車流熱力 07:00').toBe(true)
+  })
+}
+
 // The static site's 首頁 link pads the header's first child on narrow screens (T68's contract).
 const HOME_LINK_PADDING = '@media (max-width: 1023.98px) { #root header > :first-child { padding-left: 56px } }'
 

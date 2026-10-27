@@ -1,5 +1,5 @@
 import { SimulatedBadge, type CityGateway } from '@carpool/shared'
-import { Fragment, type CSSProperties } from 'react'
+import { Fragment, useEffect, useRef, type CSSProperties } from 'react'
 import { LEVEL_BG, LEVEL_NAMES, VS_USUAL_BG, VS_USUAL_NAMES, type CongestionLevel } from './congestion'
 import type { GridCell, GridRow } from './gatewayRows'
 import { shortGateway } from './gatewayRows'
@@ -54,11 +54,32 @@ function minHeight(rows: GridRow[]): number {
 // scrolling sideways inside the grid where there is not, under a sticky name column.
 const STICKY = 'max-lg:sticky max-lg:left-0 max-lg:z-2 max-lg:bg-white'
 
+/**
+ * Below 1024px, where the slots scroll sideways: keeps the framed slot's column in the middle of what
+ * shows right of the sticky name column, so it is on screen without scrolling (T78). Only the grid
+ * scrolls, never the page; on desktop every slot already fits.
+ */
+function useFramedInView(framed: number) {
+  const grid = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const g = grid.current
+    const head = g?.querySelector<HTMLElement>('[data-framed]')
+    const names = g?.firstElementChild
+    if (!g || !head || !names || g.scrollWidth <= g.clientWidth) return
+    const left = head.getBoundingClientRect().left - g.getBoundingClientRect().left + g.scrollLeft
+    const nameWidth = names.getBoundingClientRect().width
+    g.scrollLeft = left - nameWidth - (g.clientWidth - nameWidth - head.offsetWidth) / 2
+  }, [framed])
+  return grid
+}
+
 /** Gateways × 15-minute slots in UD-28's order, with the two groups' titles (REQ-079, SC-C1). */
 export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, label, onCell, onRow, selected, onHover }: GridCellsProps) {
   const firstFreeway = rows.findIndex((r) => r.gateway.source === 'freeway')
+  const grid = useFramedInView(framed)
   return (
     <div
+      ref={grid}
       role="grid"
       aria-label={label}
       className={`grid min-h-0 grid-cols-[8.5rem_repeat(12,minmax(2.75rem,1fr))] gap-0.5 text-xs/[18px] max-lg:auto-rows-[18px] max-lg:overflow-x-auto lg:grid-cols-[minmax(0,21rem)_repeat(12,minmax(0,1fr))] lg:leading-[13px] ${fixedRows ? 'lg:auto-rows-[13px]' : 'lg:flex-1 lg:auto-rows-[minmax(13px,1fr)] lg:[contain:size] lg:[contain-intrinsic-height:var(--grid-min)]'}`}
@@ -67,7 +88,7 @@ export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, l
     >
       <span className={`font-bold tracking-wide text-ink-soft ${STICKY}`}>市區道路</span>
       {DAY_SLOTS.map((t, s) => (
-        <span key={t} className={`text-center whitespace-nowrap max-lg:text-xs lg:text-[11px] ${s === framed ? 'font-bold text-ink' : 'text-ink-soft'}`}>
+        <span key={t} data-framed={s === framed || undefined} className={`text-center whitespace-nowrap max-lg:text-xs lg:text-[11px] ${s === framed ? 'font-bold text-ink' : 'text-ink-soft'}`}>
           {everyLabel || s % 2 === 0 || s === framed ? t : ''}
         </span>
       ))}

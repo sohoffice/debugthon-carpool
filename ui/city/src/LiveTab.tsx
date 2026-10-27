@@ -17,7 +17,7 @@ interface LiveTabProps {
 
 /**
  * The live map, almost full width: unnamed cars (REQ-081); right column, the four live numbers and the
- * pickup points (REQ-078). Below 1024px the map is on top and the column under it (T71, T72).
+ * pickup points (REQ-078). Below 1024px the map is on top, the wait signs and the column under it (T71, T72, T78).
  */
 export function LiveTab({ live, liveError, today, history, trafficDay }: LiveTabProps) {
   const [overlay, setOverlay] = useState(false)
@@ -25,7 +25,7 @@ export function LiveTab({ live, liveError, today, history, trafficDay }: LiveTab
   // 疊上車流: the latest slot's gateway lines, 80% opaque, under the cars (SC-C1).
   const lines = overlay && trafficDay && at >= 0 ? gridRows(trafficDay).map((r) => r.cells[at]) : []
   return (
-    <div className="flex flex-col lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="flex flex-col lg:relative lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_360px]">
       <section aria-label="即時地圖" className="relative min-h-0 min-w-0 max-lg:h-[55dvh]">
         <MapView>
           {lines.length > 0 && <GatewayLines cells={lines} mode="level" overlay />}
@@ -36,12 +36,15 @@ export function LiveTab({ live, liveError, today, history, trafficDay }: LiveTab
           <input type="checkbox" checked={overlay} onChange={(e) => setOverlay(e.target.checked)} className="size-4 accent-ink" />
           疊上車流
         </label>
-        {live && (
-          <div className="absolute bottom-9 left-4">
-            <PickupWaitSigns live={live} />
-          </div>
-        )}
       </section>
+      {/* Desktop: over the map's bottom left, placed against this grid, whose left column is the map.
+          Below 1024px a row of its own under the map, so the signs cover neither each other nor the
+          map's station signs (T78). */}
+      {live && (
+        <div className="border-rule bg-white px-4 py-3 max-lg:border-t lg:absolute lg:bottom-9 lg:left-4 lg:border-0 lg:bg-transparent lg:p-0">
+          <PickupWaitSigns live={live} />
+        </div>
+      )}
       <aside className="flex flex-col gap-3.5 border-rule bg-paper p-4 max-lg:border-t lg:min-h-0 lg:overflow-hidden lg:border-l">
         <LiveCountsCard live={live} error={liveError} />
         <Panel name="上車點" kicker="上車點" marks={[(live?.simulated || today?.simulated) && '含模擬']}>
