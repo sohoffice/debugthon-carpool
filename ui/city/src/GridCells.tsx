@@ -1,5 +1,5 @@
 import { SimulatedBadge, type CityGateway } from '@carpool/shared'
-import { Fragment, useEffect, useRef, type CSSProperties } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { LEVEL_BG, LEVEL_NAMES, VS_USUAL_BG, VS_USUAL_NAMES, type CongestionLevel } from './congestion'
 import type { GridCell, GridRow } from './gatewayRows'
 import { shortGateway } from './gatewayRows'
@@ -14,7 +14,7 @@ interface GridCellsProps {
   mode: TrafficMode
   /** The slot framed in ink: the latest slot on 總覽, the selected one on 車流熱力. */
   framed: number
-  /** Every header label, or every other one where the grid is narrow. */
+  /** Every header label, or every other one on desktop where the grid is narrow; below 1024px always every one (T79). */
   everyLabel: boolean
   /** Rows a fixed 13px, so the grid under the traffic map takes only what it needs. */
   fixedRows?: boolean
@@ -59,24 +59,57 @@ const STICKY = 'max-lg:sticky max-lg:left-0 max-lg:z-2 max-lg:bg-white'
  * shows right of the sticky name column, so it is on screen without scrolling (T78). Only the grid
  * scrolls, never the page; on desktop every slot already fits.
  */
-function useFramedInView(framed: number) {
-  const grid = useRef<HTMLDivElement>(null)
+function useFramedInView(grid: RefObject<HTMLDivElement | null>, framed: number, onScrolled: () => void) {
   useEffect(() => {
     const g = grid.current
     const head = g?.querySelector<HTMLElement>('[data-framed]')
     const names = g?.firstElementChild
-    if (!g || !head || !names || g.scrollWidth <= g.clientWidth) return
-    const left = head.getBoundingClientRect().left - g.getBoundingClientRect().left + g.scrollLeft
-    const nameWidth = names.getBoundingClientRect().width
-    g.scrollLeft = left - nameWidth - (g.clientWidth - nameWidth - head.offsetWidth) / 2
-  }, [framed])
-  return grid
+    if (g && head && names && g.scrollWidth > g.clientWidth) {
+      const left = head.getBoundingClientRect().left - g.getBoundingClientRect().left + g.scrollLeft
+      const nameWidth = names.getBoundingClientRect().width
+      g.scrollLeft = left - nameWidth - (g.clientWidth - nameWidth - head.offsetWidth) / 2
+    }
+    onScrolled()
+  }, [grid, framed, onScrolled])
+}
+
+/**
+ * The slots whose whole column shows right of the sticky names, kept up to date while the grid is
+ * swiped or resized: a time header is shown whole or not at all, never cut by the names or the
+ * grid's edge (T79). All of them on desktop, where nothing scrolls.
+ */
+function useWholeSlots(grid: RefObject<HTMLDivElement | null>) {
+  const [whole, setWhole] = useState<ReadonlySet<number> | null>(null)
+  const measure = useCallback(() => {
+    const g = grid.current
+    if (!g) return
+    const from = g.firstElementChild!.getBoundingClientRect().right
+    const to = g.getBoundingClientRect().right
+    const heads = [...g.querySelectorAll('[data-slot]')].map((h) => h.getBoundingClientRect())
+    // Half a pixel either way: sub-pixel column widths must not hide a header that fits.
+    const next = new Set(heads.flatMap((r, s) => (r.left >= from - 0.5 && r.right <= to + 0.5 ? [s] : [])))
+    setWhole((prev) => (prev && prev.size === next.size && [...next].every((s) => prev.has(s)) ? prev : next))
+  }, [grid])
+  useEffect(() => {
+    const g = grid.current
+    if (!g) return
+    // The grid is as wide as the window lets it be: a window resize is the only other change.
+    g.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('resize', measure)
+    return () => {
+      g.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
+    }
+  }, [grid, measure])
+  return { whole, measure }
 }
 
 /** Gateways × 15-minute slots in UD-28's order, with the two groups' titles (REQ-079, SC-C1). */
 export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, label, onCell, onRow, selected, onHover }: GridCellsProps) {
   const firstFreeway = rows.findIndex((r) => r.gateway.source === 'freeway')
-  const grid = useFramedInView(framed)
+  const grid = useRef<HTMLDivElement>(null)
+  const { whole, measure } = useWholeSlots(grid)
+  useFramedInView(grid, framed, measure)
   return (
     <div
       ref={grid}
@@ -88,8 +121,15 @@ export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, l
     >
       <span className={`font-bold tracking-wide text-ink-soft ${STICKY}`}>市區道路</span>
       {DAY_SLOTS.map((t, s) => (
-        <span key={t} data-framed={s === framed || undefined} className={`text-center whitespace-nowrap max-lg:text-xs lg:text-[11px] ${s === framed ? 'font-bold text-ink' : 'text-ink-soft'}`}>
-          {everyLabel || s % 2 === 0 || s === framed ? t : ''}
+        <span
+          key={t}
+          data-slot={s}
+          data-framed={s === framed || undefined}
+          // Hidden, not removed: the header keeps its column, so none moves to fit (T79).
+          // Every other label only on desktop 總覽, where the columns are narrow; on a phone every column is wide enough (T79).
+          className={`text-center whitespace-nowrap max-lg:text-xs lg:text-[11px] ${s === framed ? 'font-bold text-ink' : 'text-ink-soft'} ${whole && !whole.has(s) ? 'invisible' : ''} ${everyLabel || s % 2 === 0 || s === framed ? '' : 'lg:invisible'}`}
+        >
+          {t}
         </span>
       ))}
       {rows.map((r, i) => (

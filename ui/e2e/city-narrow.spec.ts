@@ -166,6 +166,53 @@ for (const [width, height] of [[390, 844], [375, 548]] as const) {
   })
 }
 
+/**
+ * The time headers drawn on screen that are cut by the sticky names or the grid's edge; a hidden
+ * header (visibility) is not drawn. Also how many are drawn, so an all-hidden row cannot pass.
+ */
+function cutHeaders(grid: ReturnType<Page['getByRole']>) {
+  return grid.evaluate((g) => {
+    const from = g.firstElementChild!.getBoundingClientRect().right
+    const to = g.getBoundingClientRect().right
+    // The header row: the group title, then one header per slot.
+    const heads = [...g.children].slice(1, 13) as HTMLElement[]
+    const drawn = heads.filter((h) => h.textContent && getComputedStyle(h).visibility !== 'hidden')
+    // A header left of the names is under them (sticky, white): not drawn either.
+    const onScreen = drawn.filter((h) => h.getBoundingClientRect().right > from + 0.5 && h.getBoundingClientRect().left < to - 0.5)
+    const cut = onScreen.filter((h) => { const r = h.getBoundingClientRect(); return r.left < from - 0.5 || r.right > to + 0.5 })
+    return { cut: cut.map((h) => h.textContent), shown: onScreen.length - cut.length }
+  })
+}
+
+for (const [width, height] of [[390, 844], [375, 548]] as const) {
+  test(`${width}×${height}: every time header on screen is whole, on opening, after picking a slot and after a swipe (T79, REQ-079)`, async ({ browser }) => {
+    const page = await open(browser, width, height)
+    const whole = async (grid: ReturnType<Page['getByRole']>, label: string) =>
+      expect.poll(async () => { const h = await cutHeaders(grid); return h.cut.length === 0 && h.shown >= 2 ? 'ok' : JSON.stringify(h) }, label).toBe('ok')
+
+    const overview = page.getByRole('grid', { name: '今天各入口每 15 分鐘的路況' })
+    await expect(overview.getByRole('gridcell', { name: /內湖路一段 08:00–/ })).toBeVisible()
+    await whole(overview, '總覽')
+    // T78 still holds: the framed slot's header is drawn, whole.
+    await expect(overview.getByText('08:00', { exact: true })).toBeVisible()
+    // A swipe by hand: whatever comes on screen is whole too.
+    for (const by of [-70, 45, 130]) {
+      await overview.evaluate((g, d) => (g.scrollLeft += d), by)
+      await whole(overview, `總覽 swiped ${by}`)
+    }
+
+    await page.getByRole('tab', { name: '車流熱力' }).click()
+    const traffic = page.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })
+    await expect(traffic).toBeVisible()
+    await whole(traffic, '車流熱力')
+    await page.getByRole('group', { name: '時段' }).getByRole('button', { name: '07:00–07:15' }).click()
+    await expect(traffic.getByText('07:00', { exact: true })).toBeVisible()
+    await whole(traffic, '車流熱力 07:00')
+    await traffic.evaluate((g) => (g.scrollLeft += 95))
+    await whole(traffic, '車流熱力 swiped')
+  })
+}
+
 // The static site's 首頁 link pads the header's first child on narrow screens (T68's contract).
 const HOME_LINK_PADDING = '@media (max-width: 1023.98px) { #root header > :first-child { padding-left: 56px } }'
 
