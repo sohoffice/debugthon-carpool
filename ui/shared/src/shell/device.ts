@@ -10,5 +10,10 @@ export const FRAME_WIDTH = SCREEN_WIDTH + BEZEL * 2
 export const FRAME_HEIGHT = SCREEN_HEIGHT + BEZEL * 2
 /** Below this browser width the app is on a real phone: full screen, no frame (UD-13). */
 export const FRAME_MIN_VIEWPORT_WIDTH = 600
+/**
+ * Below this height a touch screen is a phone on its side: full screen, no frame (UD-13, T83).
+ * Phones on their side are at most ~430px tall; an iPad on its side (768px) keeps the frame.
+ */
+export const FRAME_MIN_TOUCH_VIEWPORT_HEIGHT = 600
 /** The clock always reads morning rush hour, even at a 16:30 demo (UD-13). */
 export const STATUS_BAR_TIME = '08:12'
