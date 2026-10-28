@@ -23,7 +23,7 @@ interface GridCellsProps {
   /** Clicking a row name: only 車流熱力 selects a gateway that way (SC-C1). */
   onRow?: (gateway: CityGateway) => void
   selected?: string
-  /** Below 1024px, the cell picked for the bar under the grid, outlined in ink (T85). */
+  /** Below 1024px, the cell picked for the bar under the grid, outlined in brand (T85). */
   picked?: { vdId: string; time: string }
   onHover?: (cell: GridCell | null, at?: { x: number; y: number }) => void
 }

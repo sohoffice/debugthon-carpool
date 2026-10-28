@@ -1,12 +1,25 @@
 import type { CityGateway } from '@carpool/shared'
 import { LEVEL_NAMES, VS_USUAL_NAMES } from './congestion'
 import { slotLabel } from './format'
-import { shortGateway, type GridCell } from './gatewayRows'
+import { shortGateway, type GridCell, type GridRow } from './gatewayRows'
 import { readCell, type TrafficMode } from './trafficView'
+
+/** What a tap picks: a gateway and a slot, not the cell, so a new date or poll is read fresh (T85 review). */
+export interface PickKey {
+  vdId: string
+  time: string
+}
 
 export interface Picked {
   cell: GridCell
   gateway: CityGateway
+}
+
+/** The picked cell in the rows shown now; null when that gateway or slot is not in them. */
+export function findPicked(rows: GridRow[], key: PickKey | null): Picked | null {
+  const row = key && rows.find((r) => r.gateway.vd_id === key.vdId)
+  const cell = row && row.cells.find((c) => c.time === key.time)
+  return row && cell ? { cell, gateway: row.gateway } : null
 }
 
 interface CellPickProps {

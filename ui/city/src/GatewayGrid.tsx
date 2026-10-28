@@ -1,6 +1,6 @@
 import type { CityTrafficDay } from '@carpool/shared'
 import { useState } from 'react'
-import { CellPick, type Picked } from './CellPick'
+import { CellPick, findPicked, type PickKey } from './CellPick'
 import { gridRows, latestIndex, slowestRun } from './gatewayRows'
 import { GridCells, GridLegend } from './GridCells'
 import { Panel } from './Panel'
@@ -19,8 +19,9 @@ interface GatewayGridProps {
  */
 export function GatewayGrid({ day, error, onCell }: GatewayGridProps) {
   const narrow = useNarrow()
-  const [picked, setPicked] = useState<Picked | null>(null)
+  const [pick, setPick] = useState<PickKey | null>(null)
   const rows = day ? gridRows(day) : []
+  const picked = narrow ? findPicked(rows, pick) : null
   const latest = day ? latestIndex(day) : -1
   return (
     <Panel
@@ -37,8 +38,8 @@ export function GatewayGrid({ day, error, onCell }: GatewayGridProps) {
           framed={latest}
           everyLabel={false}
           label="今天各入口每 15 分鐘的路況"
-          picked={narrow && picked ? { vdId: picked.gateway.vd_id, time: picked.cell.time } : undefined}
-          onCell={(c, g) => (narrow ? setPicked({ cell: c, gateway: g }) : onCell(g.vd_id, c.time))}
+          picked={picked ? { vdId: picked.gateway.vd_id, time: picked.cell.time } : undefined}
+          onCell={(c, g) => (narrow ? setPick({ vdId: g.vd_id, time: c.time }) : onCell(g.vd_id, c.time))}
         />
       )}
       {day && narrow && <CellPick picked={picked} mode="level" action="看車流熱力 →" onOpen={(p) => onCell(p.gateway.vd_id, p.cell.time)} />}

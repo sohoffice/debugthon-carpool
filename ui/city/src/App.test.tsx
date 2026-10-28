@@ -484,6 +484,39 @@ describe('city war room (SC-C1, UD-27)', () => {
         expect(document.documentElement.scrollTop).toBe(0)
       })
 
+      it('車流熱力: after a date change the bar reads the picked cell on the new date (T85 review)', async () => {
+        await renderApp()
+        tab('車流熱力')
+        const cells = () => within(screen.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })).getAllByRole('gridcell')
+        fireEvent.click(cells()[12 + 6]) // 環東大道 08:30: not over yet today
+        expect(bar('入口 × 15 分鐘（車流熱力）')).toHaveTextContent('2. 環東大道 08:30–08:45 · 還沒到')
+        fireEvent.change(dateMenu(), { target: { value: '2026-10-22' } })
+        await act(() => vi.advanceTimersByTimeAsync(0))
+        // On 10/22 it has data, 20/60: the bar and the button follow the cell under the outline.
+        expect(cells()[12 + 6]).toHaveAttribute('data-picked', 'true')
+        expect(cells()[12 + 6]).toHaveAttribute('data-level', '3')
+        expect(bar('入口 × 15 分鐘（車流熱力）')).toHaveTextContent('2. 環東大道 08:30–08:45 · 壅塞')
+        fireEvent.click(within(bar('入口 × 15 分鐘（車流熱力）')).getByRole('button', { name: '在地圖上看 ↑' }))
+        expect(selectedName()).toHaveTextContent('2. 環東大道')
+        expect(slotButton('08:30–08:45')).toHaveAttribute('aria-pressed', 'true')
+      })
+
+      it('總覽: a poll that brings the next slot updates the picked cell from 還沒到 (T85 review)', async () => {
+        await renderApp()
+        fireEvent.click(overviewCells()[5]) // 堤頂大道 08:15, not over yet
+        expect(bar('入口 × 15 分鐘')).toHaveTextContent('1. 堤頂大道 08:15–08:30 · 還沒到')
+        const later = { ...CLOCK, now: '2026-10-26T08:30:00+08:00' }
+        respond = (path) => {
+          const r = ok(path)
+          if (!path.startsWith('/api/city/traffic')) return r
+          const day = r.body as CityTrafficDay
+          return { ...r, body: { ...day, ...later, slots: day.slots.map((sl, i) => (i === 5 ? trafficDay('2026-10-23').slots[5] : sl)) } }
+        }
+        await act(() => vi.advanceTimersByTimeAsync(TRAFFIC_POLL_MS))
+        expect(overviewCells()[5]).toHaveAttribute('data-kind', 'data')
+        expect(bar('入口 × 15 分鐘')).toHaveTextContent('1. 堤頂大道 08:15–08:30 · 壅塞')
+      })
+
       it('車流熱力: the bar follows 比平常', async () => {
         await renderApp()
         tab('車流熱力')

@@ -1,6 +1,6 @@
 import { FitBounds, MapView, type CityHistory, type CityTrafficDay } from '@carpool/shared'
 import { useState } from 'react'
-import { CellPick, type Picked } from './CellPick'
+import { CellPick, findPicked, type PickKey, type Picked } from './CellPick'
 import { LEVEL_BG, LEVEL_NAMES, VS_USUAL_BG, VS_USUAL_NAMES, type CongestionLevel } from './congestion'
 import { GatewayDetail } from './GatewayDetail'
 import { GatewayLines } from './GatewayLines'
@@ -56,7 +56,9 @@ export function TrafficTab(p: TrafficTabProps) {
   // Every gateway's line, so none falls under the legend or off the map (UD-28).
   const fitPoints = rows.flatMap((r) => gatewayPath(r.gateway))
   const narrow = useNarrow()
-  const [picked, setPicked] = useState<Picked | null>(null)
+  const [pick, setPick] = useState<PickKey | null>(null)
+  // Read from the rows shown now, so a date change or a poll gives the cell's current level (T85 review).
+  const picked = narrow ? findPicked(rows, pick) : null
   const slotData = shown?.slots[s]
   const isToday = !!shown && shown.date === p.today
   const source = slotData ? sourceOf(slotData, isToday && s >= over) : ''
@@ -106,8 +108,8 @@ export function TrafficTab(p: TrafficTabProps) {
               fixedRows
               label="所選日期各入口每 15 分鐘的路況"
               selected={p.selected}
-              picked={narrow && picked ? { vdId: picked.gateway.vd_id, time: picked.cell.time } : undefined}
-              onCell={(c, g) => (narrow ? setPicked({ cell: c, gateway: g }) : open({ cell: c, gateway: g }))}
+              picked={picked ? { vdId: picked.gateway.vd_id, time: picked.cell.time } : undefined}
+              onCell={(c, g) => (narrow ? setPick({ vdId: g.vd_id, time: c.time }) : open({ cell: c, gateway: g }))}
               onRow={(g) => p.onSelect(g.vd_id)}
               onHover={hover}
             />
