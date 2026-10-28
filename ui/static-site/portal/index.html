@@ -17,7 +17,8 @@
       <header class="flex flex-col gap-3">
         <h1 class="flex items-stretch gap-3 text-2xl/tight font-extrabold text-ink md:text-4xl/tight">
           <span class="w-2 shrink-0 bg-brand" aria-hidden="true"></span>
-          內科上班順起來: 內科順路共乘
+          <!-- T84: each half stays whole, so a narrow phone breaks after the colon, never before the last character. -->
+          <span><span class="whitespace-nowrap">內科上班順起來:</span> <span class="whitespace-nowrap">內科順路共乘</span></span>
         </h1>
         <p class="text-base text-ink-soft md:text-lg">選一個身分，約 1 分鐘走完一趟。</p>
       </header>
