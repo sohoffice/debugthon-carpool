@@ -426,6 +426,114 @@ describe('city war room (SC-C1, UD-27)', () => {
       expect(screen.getByRole('group', { name: '時段' }).scrollLeft).toBe(0)
     })
 
+    describe('a grid cell is picked first, then opened with a 44px button (T85, REQ-079)', () => {
+      // Only the narrow query matches, so reduced motion and the rest stay off.
+      beforeEach(() => {
+        vi.stubGlobal('matchMedia', (media: string) => ({ media, matches: media === '(max-width: 63.99rem)', addEventListener() {}, removeEventListener() {} }))
+      })
+      const bar = (region: string) => within(screen.getByRole('region', { name: region })).getByTestId('cell-pick')
+      const overviewCells = () => within(screen.getByRole('region', { name: '入口 × 15 分鐘' })).getAllByRole('gridcell')
+
+      it('總覽: before a tap the bar asks for one and its button is off', async () => {
+        await renderApp()
+        expect(bar('入口 × 15 分鐘')).toHaveTextContent('點一格選取入口與時段')
+        expect(within(bar('入口 × 15 分鐘')).getByRole('button', { name: '看車流熱力 →' })).toBeDisabled()
+      })
+
+      it('總覽: a tap only picks the cell and names it; the button opens 車流熱力 at that gateway and slot', async () => {
+        await renderApp()
+        fireEvent.click(overviewCells()[12 + 4]) // 環東大道 08:00
+        expect(screen.getByRole('tab', { name: '總覽' })).toHaveAttribute('aria-selected', 'true')
+        expect(overviewCells()[12 + 4]).toHaveAttribute('data-picked', 'true')
+        expect(overviewCells().filter((c) => c.hasAttribute('data-picked'))).toHaveLength(1)
+        expect(bar('入口 × 15 分鐘')).toHaveTextContent('2. 環東大道 08:00–08:15 · 順暢')
+
+        fireEvent.click(overviewCells()[1]) // 堤頂大道 07:15: picking again moves the pick
+        expect(bar('入口 × 15 分鐘')).toHaveTextContent('1. 堤頂大道 07:15–07:30 · 壅塞')
+        expect(overviewCells()[12 + 4]).not.toHaveAttribute('data-picked')
+
+        fireEvent.click(within(bar('入口 × 15 分鐘')).getByRole('button', { name: '看車流熱力 →' }))
+        expect(screen.getByRole('tab', { name: '車流熱力' })).toHaveAttribute('aria-selected', 'true')
+        expect(slotButton('07:15–07:30')).toHaveAttribute('aria-pressed', 'true')
+        expect(selectedName()).toHaveTextContent('1. 堤頂大道')
+      })
+
+      it('總覽: a cell not over yet says 還沒到 and still opens the latest slot', async () => {
+        await renderApp()
+        fireEvent.click(overviewCells()[12 + 9]) // 環東大道 09:15
+        expect(bar('入口 × 15 分鐘')).toHaveTextContent('2. 環東大道 09:15–09:30 · 還沒到')
+        fireEvent.click(within(bar('入口 × 15 分鐘')).getByRole('button', { name: '看車流熱力 →' }))
+        expect(slotButton('08:00–08:15')).toHaveAttribute('aria-pressed', 'true')
+        expect(selectedName()).toHaveTextContent('2. 環東大道')
+      })
+
+      it('車流熱力: a tap only picks; 在地圖上看 changes the map to that gateway and slot and goes up to it', async () => {
+        await renderApp()
+        tab('車流熱力')
+        const cells = () => within(screen.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })).getAllByRole('gridcell')
+        fireEvent.click(cells()[12 + 2]) // 環東大道 07:30
+        expect(selectedName()).toHaveTextContent('1. 堤頂大道')
+        expect(slotButton('08:00–08:15')).toHaveAttribute('aria-pressed', 'true')
+        expect(bar('入口 × 15 分鐘（車流熱力）')).toHaveTextContent('2. 環東大道 07:30–07:45 · 順暢')
+
+        document.documentElement.scrollTop = 900
+        Object.defineProperty(document, 'scrollingElement', { value: document.documentElement, configurable: true })
+        fireEvent.click(within(bar('入口 × 15 分鐘（車流熱力）')).getByRole('button', { name: '在地圖上看 ↑' }))
+        expect(selectedName()).toHaveTextContent('2. 環東大道')
+        expect(slotButton('07:30–07:45')).toHaveAttribute('aria-pressed', 'true')
+        expect(document.documentElement.scrollTop).toBe(0)
+      })
+
+      it('車流熱力: after a date change the bar reads the picked cell on the new date (T85 review)', async () => {
+        await renderApp()
+        tab('車流熱力')
+        const cells = () => within(screen.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })).getAllByRole('gridcell')
+        fireEvent.click(cells()[12 + 6]) // 環東大道 08:30: not over yet today
+        expect(bar('入口 × 15 分鐘（車流熱力）')).toHaveTextContent('2. 環東大道 08:30–08:45 · 還沒到')
+        fireEvent.change(dateMenu(), { target: { value: '2026-10-22' } })
+        await act(() => vi.advanceTimersByTimeAsync(0))
+        // On 10/22 it has data, 20/60: the bar and the button follow the cell under the outline.
+        expect(cells()[12 + 6]).toHaveAttribute('data-picked', 'true')
+        expect(cells()[12 + 6]).toHaveAttribute('data-level', '3')
+        expect(bar('入口 × 15 分鐘（車流熱力）')).toHaveTextContent('2. 環東大道 08:30–08:45 · 壅塞')
+        fireEvent.click(within(bar('入口 × 15 分鐘（車流熱力）')).getByRole('button', { name: '在地圖上看 ↑' }))
+        expect(selectedName()).toHaveTextContent('2. 環東大道')
+        expect(slotButton('08:30–08:45')).toHaveAttribute('aria-pressed', 'true')
+      })
+
+      it('總覽: a poll that brings the next slot updates the picked cell from 還沒到 (T85 review)', async () => {
+        await renderApp()
+        fireEvent.click(overviewCells()[5]) // 堤頂大道 08:15, not over yet
+        expect(bar('入口 × 15 分鐘')).toHaveTextContent('1. 堤頂大道 08:15–08:30 · 還沒到')
+        const later = { ...CLOCK, now: '2026-10-26T08:30:00+08:00' }
+        respond = (path) => {
+          const r = ok(path)
+          if (!path.startsWith('/api/city/traffic')) return r
+          const day = r.body as CityTrafficDay
+          return { ...r, body: { ...day, ...later, slots: day.slots.map((sl, i) => (i === 5 ? trafficDay('2026-10-23').slots[5] : sl)) } }
+        }
+        await act(() => vi.advanceTimersByTimeAsync(TRAFFIC_POLL_MS))
+        expect(overviewCells()[5]).toHaveAttribute('data-kind', 'data')
+        expect(bar('入口 × 15 分鐘')).toHaveTextContent('1. 堤頂大道 08:15–08:30 · 壅塞')
+      })
+
+      it('車流熱力: the bar follows 比平常', async () => {
+        await renderApp()
+        tab('車流熱力')
+        fireEvent.click(screen.getByRole('button', { name: '比平常' }))
+        fireEvent.click(within(screen.getByRole('grid', { name: '所選日期各入口每 15 分鐘的路況' })).getAllByRole('gridcell')[0])
+        expect(bar('入口 × 15 分鐘（車流熱力）')).toHaveTextContent('1. 堤頂大道 07:00–07:15 · 慢 25% 以上')
+      })
+    })
+
+    it('desktop: one tap still opens 車流熱力, with no pick bar (T85)', async () => {
+      await renderApp()
+      expect(screen.queryByTestId('cell-pick')).toBeNull()
+      fireEvent.click(within(screen.getByRole('region', { name: '入口 × 15 分鐘' })).getAllByRole('gridcell')[12 + 4])
+      expect(screen.getByRole('tab', { name: '車流熱力' })).toHaveAttribute('aria-selected', 'true')
+      expect(selectedName()).toHaveTextContent('2. 環東大道')
+    })
+
     it('a grid cell opens 車流熱力 at the top of the page, not where 總覽 was scrolled to', async () => {
       await renderApp()
       document.documentElement.scrollTop = 900

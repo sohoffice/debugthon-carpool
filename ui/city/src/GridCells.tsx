@@ -23,6 +23,8 @@ interface GridCellsProps {
   /** Clicking a row name: only 車流熱力 selects a gateway that way (SC-C1). */
   onRow?: (gateway: CityGateway) => void
   selected?: string
+  /** Below 1024px, the cell picked for the bar under the grid, outlined in brand (T85). */
+  picked?: { vdId: string; time: string }
   onHover?: (cell: GridCell | null, at?: { x: number; y: number }) => void
 }
 
@@ -105,7 +107,7 @@ function useWholeSlots(grid: RefObject<HTMLDivElement | null>) {
 }
 
 /** Gateways × 15-minute slots in UD-28's order, with the two groups' titles (REQ-079, SC-C1). */
-export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, label, onCell, onRow, selected, onHover }: GridCellsProps) {
+export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, label, onCell, onRow, selected, picked, onHover }: GridCellsProps) {
   const firstFreeway = rows.findIndex((r) => r.gateway.source === 'freeway')
   const grid = useRef<HTMLDivElement>(null)
   const { whole, measure } = useWholeSlots(grid)
@@ -140,13 +142,16 @@ export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, l
             </span>
           )}
           <RowName gateway={r.gateway} selected={selected === r.gateway.vd_id} onRow={onRow} />
-          {r.cells.map((c, s) => (
+          {r.cells.map((c, s) => {
+            const isPicked = picked?.vdId === r.gateway.vd_id && picked.time === c.time
+            return (
             <button
               key={c.time}
               type="button"
               role="gridcell"
               data-kind={c.kind}
               data-level={readCell(c.at, c.kind, mode).level ?? 'none'}
+              data-picked={isPicked || undefined}
               aria-label={c.label}
               aria-selected={onRow ? selected === r.gateway.vd_id && s === framed : undefined}
               title={onHover ? undefined : c.label}
@@ -154,9 +159,11 @@ export function GridCells({ rows, mode, framed, everyLabel, fixedRows = false, l
               disabled={c.kind === 'none' && !onRow}
               onClick={() => onCell(c, r.gateway)}
               onMouseMove={onHover && ((e) => onHover(c, { x: e.clientX, y: e.clientY }))}
-              className={`rounded-[2px] disabled:cursor-default ${cellClass(c, mode, s === framed)}`}
+              // An outline, so the four levels still read under it; brand, not ink, so it is not the framed slot (T85).
+              className={`rounded-[2px] disabled:cursor-default ${cellClass(c, mode, s === framed)} ${isPicked ? 'relative z-1 outline-3 outline-offset-1 outline-brand' : ''}`}
             />
-          ))}
+            )
+          })}
         </Fragment>
       ))}
     </div>
