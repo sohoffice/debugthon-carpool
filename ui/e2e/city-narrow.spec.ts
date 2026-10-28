@@ -85,12 +85,13 @@ test.describe('390px (T71)', () => {
     expect(rate.y).toBeGreaterThan(cars.y)
   })
 
-  test('a grid cell still opens 車流熱力 at that gateway and slot', async ({ browser }) => {
+  test('a grid cell, picked and then opened, still opens 車流熱力 at that gateway and slot (T85)', async ({ browser }) => {
     const page = await open(browser, 390, 844)
     const grid = page.getByRole('grid', { name: '今天各入口每 15 分鐘的路況' })
     const cell = grid.getByRole('gridcell', { name: /內湖路一段 07:15–/ })
     await cell.scrollIntoViewIfNeeded()
     await cell.click()
+    await page.getByRole('button', { name: '看車流熱力 →' }).click()
     await expect(page.getByRole('tab', { name: '車流熱力' })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('group', { name: '時段' }).getByRole('button', { name: '07:15–07:30' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByRole('region', { name: '選取的入口' }).getByRole('heading')).toContainText('內湖路一段')
@@ -405,4 +406,109 @@ test('1440×900: the top bar keeps its tab spacing and road status (T81)', async
   const lights = page.getByTestId('network-lights')
   await expect(lights.getByText('16 個入口')).toBeVisible()
   await expect(lights.locator('[data-level]')).toHaveCount(16)
+})
+
+// T85: rows are 18px apart, so a cell is picked with a tap and opened with a 44px button under the grid.
+const OVERVIEW_GRID = '今天各入口每 15 分鐘的路況'
+const TRAFFIC_GRID = '所選日期各入口每 15 分鐘的路況'
+
+/**
+ * Taps at a cell's centre and 2px inside each edge; each tap must pick that cell, not a neighbour.
+ * Between taps another cell is picked, so every tap has to move the pick back.
+ */
+async function tapAround(page: Page, grid: string, name: RegExp) {
+  const g = page.getByRole('grid', { name: grid })
+  // The slots start at 07:00 right of the sticky names, so the early cells are not under them.
+  await g.evaluate((e) => (e.scrollLeft = 0))
+  const cell = g.getByRole('gridcell', { name })
+  await cell.scrollIntoViewIfNeeded()
+  const other = g.getByRole('gridcell', { name: /^10\. .* 07:00–07:15 / })
+  const spots: [string, (b: Box) => [number, number]][] = [
+    ['centre', (b) => [b.x + b.width / 2, b.y + b.height / 2]],
+    ['top', (b) => [b.x + b.width / 2, b.y + 2]],
+    ['bottom', (b) => [b.x + b.width / 2, b.y + b.height - 2]],
+    ['left', (b) => [b.x + 2, b.y + b.height / 2]],
+    ['right', (b) => [b.x + b.width - 2, b.y + b.height / 2]],
+  ]
+  const label = (await cell.getAttribute('aria-label'))!
+  const otherLabel = (await other.getAttribute('aria-label'))!
+  const picked = g.locator('[data-picked]')
+  for (const [where, at] of spots) {
+    await other.tap()
+    await expect(picked).toHaveAttribute('aria-label', otherLabel)
+    // Measured after the tap above, which may have scrolled the page to reach row 10.
+    await cell.scrollIntoViewIfNeeded()
+    const [x, y] = at((await cell.boundingBox())!)
+    await page.touchscreen.tap(x, y)
+    await expect(picked, `${where} of ${label}`).toHaveCount(1)
+    await expect(picked, `${where} of ${label}`).toHaveAttribute('aria-label', label)
+  }
+}
+
+/** The bar and its button are whole in the window, the button at least 44px tall. */
+async function barInView(page: Page, region: string, button: string, height: number) {
+  const bar = page.getByRole('region', { name: region, exact: true }).getByTestId('cell-pick')
+  await bar.scrollIntoViewIfNeeded()
+  const b = (await bar.getByRole('button', { name: button }).boundingBox())!
+  const r = (await bar.boundingBox())!
+  expect(b.height).toBeGreaterThanOrEqual(MIN_TARGET_PX)
+  expect(r.y).toBeGreaterThanOrEqual(0)
+  expect(r.y + r.height).toBeLessThanOrEqual(height)
+}
+
+const MIN_TARGET_PX = 44
+
+for (const [width, height] of [[390, 844], [375, 548]] as const) {
+  test(`${width}×${height} 總覽: a tap at a cell's centre or edge picks that cell; the bar names it and 看車流熱力 → opens it (T85, REQ-079)`, async ({ browser }) => {
+    const page = await open(browser, width, height)
+    const region = '入口 × 15 分鐘'
+    await expect(page.getByRole('region', { name: region, exact: true }).getByTestId('cell-pick')).toHaveText(/點一格選取入口與時段/)
+    // Row 2 and a middle slot: neighbours above, below, left and right.
+    await tapAround(page, OVERVIEW_GRID, /^2\. .* 07:30–07:45 /)
+    const bar = page.getByRole('region', { name: region, exact: true }).getByTestId('cell-pick')
+    await expect(bar).toContainText(/^2\. .+ 07:30–07:45 · /)
+    // Picking does not leave 總覽.
+    await expect(page.getByRole('tab', { name: '總覽' })).toHaveAttribute('aria-selected', 'true')
+    await barInView(page, region, '看車流熱力 →', height)
+
+    await bar.getByRole('button', { name: '看車流熱力 →' }).click()
+    await expect(page.getByRole('tab', { name: '車流熱力' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('group', { name: '時段' }).getByRole('button', { name: '07:30–07:45' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('region', { name: '選取的入口' }).getByRole('heading')).toHaveText(/^2\. /)
+  })
+
+  test(`${width}×${height} 車流熱力: a tap picks that cell; 在地圖上看 ↑ moves the map to it and goes up to the map (T85, REQ-079)`, async ({ browser }) => {
+    const page = await open(browser, width, height)
+    await page.getByRole('tab', { name: '車流熱力' }).click()
+    const region = '入口 × 15 分鐘（車流熱力）'
+    const selected = page.getByRole('region', { name: '選取的入口' }).getByRole('heading')
+    const before = await selected.textContent()
+    // Row 14, a freeway exit, is not the gateway 車流熱力 opens with (the slowest one).
+    expect(before).not.toMatch(/^14\. /)
+    await tapAround(page, TRAFFIC_GRID, /^14\. .* 07:15–07:30 /)
+    // Picking alone changes neither the gateway nor the slot.
+    await expect(selected).toHaveText(before!)
+    await expect(page.getByRole('group', { name: '時段' }).getByRole('button', { name: '08:00–08:15' })).toHaveAttribute('aria-pressed', 'true')
+    await barInView(page, region, '在地圖上看 ↑', height)
+
+    const bar = page.getByRole('region', { name: region, exact: true }).getByTestId('cell-pick')
+    // The grid's short name, so it fits two lines: 國1 內湖 南向往成功路, not the full 國道1號… name.
+    await expect(bar).toContainText(/^14\. 國1 .+ 07:15–07:30 · /)
+    await bar.getByRole('button', { name: '在地圖上看 ↑' }).click()
+    await expect(page.getByRole('group', { name: '時段' }).getByRole('button', { name: '07:15–07:30' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(selected).toHaveText(/^14\. /)
+    await expect(page.getByTestId('map-slot')).toContainText('07:15–07:30')
+    expect(await page.evaluate(() => scrollY)).toBe(0)
+  })
+}
+
+test('1440×900: one click on a cell still opens 車流熱力, no pick bar (T85)', async ({ browser }) => {
+  const page = await open(browser, 1440, 900)
+  await expect(page.getByTestId('cell-pick')).toHaveCount(0)
+  await page.getByRole('grid', { name: OVERVIEW_GRID }).getByRole('gridcell', { name: /^2\. .* 07:30–07:45 / }).click()
+  await expect(page.getByRole('tab', { name: '車流熱力' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('group', { name: '時段' }).getByRole('button', { name: '07:30–07:45' })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('grid', { name: TRAFFIC_GRID }).getByRole('gridcell', { name: /^3\. .* 07:15–07:30 / }).click()
+  await expect(page.getByRole('group', { name: '時段' }).getByRole('button', { name: '07:15–07:30' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('cell-pick')).toHaveCount(0)
 })

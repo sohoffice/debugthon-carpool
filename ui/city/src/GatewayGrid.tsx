@@ -1,7 +1,10 @@
 import type { CityTrafficDay } from '@carpool/shared'
+import { useState } from 'react'
+import { CellPick, type Picked } from './CellPick'
 import { gridRows, latestIndex, slowestRun } from './gatewayRows'
 import { GridCells, GridLegend } from './GridCells'
 import { Panel } from './Panel'
+import { useNarrow } from './useNarrow'
 
 interface GatewayGridProps {
   day: CityTrafficDay | undefined
@@ -10,8 +13,13 @@ interface GatewayGridProps {
   onCell: (vdId: string, time: string) => void
 }
 
-/** Today's gateways × 15-minute slots, coloured by DD-44's level; the headline names the slowest run (REQ-079, SC-C1). */
+/**
+ * Today's gateways × 15-minute slots, coloured by DD-44's level; the headline names the slowest run (REQ-079, SC-C1).
+ * Below 1024px a tap only picks a cell and 看車流熱力 → opens it (T85); on desktop a click opens it.
+ */
 export function GatewayGrid({ day, error, onCell }: GatewayGridProps) {
+  const narrow = useNarrow()
+  const [picked, setPicked] = useState<Picked | null>(null)
   const rows = day ? gridRows(day) : []
   const latest = day ? latestIndex(day) : -1
   return (
@@ -29,9 +37,11 @@ export function GatewayGrid({ day, error, onCell }: GatewayGridProps) {
           framed={latest}
           everyLabel={false}
           label="今天各入口每 15 分鐘的路況"
-          onCell={(c, g) => onCell(g.vd_id, c.time)}
+          picked={narrow && picked ? { vdId: picked.gateway.vd_id, time: picked.cell.time } : undefined}
+          onCell={(c, g) => (narrow ? setPicked({ cell: c, gateway: g }) : onCell(g.vd_id, c.time))}
         />
       )}
+      {day && narrow && <CellPick picked={picked} mode="level" action="看車流熱力 →" onOpen={(p) => onCell(p.gateway.vd_id, p.cell.time)} />}
       {day && <GridLegend mode="level" notYet />}
     </Panel>
   )

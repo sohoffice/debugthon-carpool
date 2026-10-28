@@ -1,5 +1,6 @@
 import { FitBounds, MapView, type CityHistory, type CityTrafficDay } from '@carpool/shared'
 import { useState } from 'react'
+import { CellPick, type Picked } from './CellPick'
 import { LEVEL_BG, LEVEL_NAMES, VS_USUAL_BG, VS_USUAL_NAMES, type CongestionLevel } from './congestion'
 import { GatewayDetail } from './GatewayDetail'
 import { GatewayLines } from './GatewayLines'
@@ -13,6 +14,7 @@ import { TrafficControls } from './TrafficControls'
 import { TrafficTip } from './TrafficTip'
 import { DAY_SLOTS, type SlotChoice } from './trafficSlots'
 import { gatewayPath, sourceOf, tooltipLines, type TrafficMode } from './trafficView'
+import { useNarrow } from './useNarrow'
 
 interface TrafficTabProps {
   /** The shown date's 12 slots. */
@@ -34,7 +36,6 @@ const LEVELS: CongestionLevel[] = [1, 2, 3, 4]
 const LINES_PADDING = { top: 72, right: 48, bottom: 32, left: 200 }
 // Below 1024px the date and the legend sit across the map's top, so the lines go under them (T71, T72).
 const NARROW_LINES_PADDING = { top: 190, right: 16, bottom: 16, left: 16 }
-const NARROW = '(max-width: 63.99rem)'
 const LEVEL_RANGES = ['≥ 75%', '50–75%', '30–50%', '< 30%']
 const LEVEL_WIDTH = [4, 5, 7, 9]
 const VS_USUAL_WIDTH = [4, 4, 7, 9]
@@ -54,12 +55,18 @@ export function TrafficTab(p: TrafficTabProps) {
   const slotCells = rows.map((r) => r.cells[s]).filter((c): c is GridCell => !!c)
   // Every gateway's line, so none falls under the legend or off the map (UD-28).
   const fitPoints = rows.flatMap((r) => gatewayPath(r.gateway))
-  const narrow = typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches
+  const narrow = useNarrow()
+  const [picked, setPicked] = useState<Picked | null>(null)
   const slotData = shown?.slots[s]
   const isToday = !!shown && shown.date === p.today
   const source = slotData ? sourceOf(slotData, isToday && s >= over) : ''
   const hover = (cell: GridCell | null, at?: { x: number; y: number }) => setTip(cell && at ? { cell, at } : null)
   const tipLines = tip && shown ? tooltipLines(tip.cell.at, tip.cell.kind, shown.date, tip.cell.time, tip.cell.kind === 'not-yet' ? '還沒到' : sourceOf(shown.slots[DAY_SLOTS.indexOf(tip.cell.time)], false)) : null
+  // A cell selects its gateway, and its slot when it has data; a cell without data keeps the slot (SC-C1).
+  const open = ({ cell, gateway }: Picked) => {
+    p.onSelect(gateway.vd_id)
+    if (cell.kind === 'data' && shown) p.onSlot({ date: shown.date, time: cell.time })
+  }
   const dayName = shown && (isToday ? `今天（${shown.simulated ? '模擬' : '實測'}）` : `${monthDay(shown.date)} 週${weekdayOf(shown.date)}（${shown.simulated ? '模擬' : '實測'}）`)
 
   return (
@@ -99,12 +106,22 @@ export function TrafficTab(p: TrafficTabProps) {
               fixedRows
               label="所選日期各入口每 15 分鐘的路況"
               selected={p.selected}
-              onCell={(c, g) => {
-                p.onSelect(g.vd_id)
-                if (c.kind === 'data') p.onSlot({ date: shown.date, time: c.time })
-              }}
+              picked={narrow && picked ? { vdId: picked.gateway.vd_id, time: picked.cell.time } : undefined}
+              onCell={(c, g) => (narrow ? setPicked({ cell: c, gateway: g }) : open({ cell: c, gateway: g }))}
               onRow={(g) => p.onSelect(g.vd_id)}
               onHover={hover}
+            />
+          )}
+          {shown && narrow && (
+            <CellPick
+              picked={picked}
+              mode={p.mode}
+              action="在地圖上看 ↑"
+              onOpen={(picked) => {
+                open(picked)
+                // The map is at the top of the stacked page (T71, T72).
+                if (document.scrollingElement) document.scrollingElement.scrollTop = 0
+              }}
             />
           )}
           {shown && <GridLegend mode={p.mode} notYet={isToday && over < DAY_SLOTS.length} />}
