@@ -204,3 +204,48 @@ test('direct showcase.html is still the two-phone showcase, and 開始 Demo runs
   await expect(passenger.getByRole('heading', { name: '共乘完成' })).toBeVisible({ timeout: STEP_TIMEOUT_MS })
   await expect(driver.getByText('這趟載了 1 位乘客')).toBeVisible({ timeout: STEP_TIMEOUT_MS })
 })
+
+/** The title's text split into its drawn lines, one character's box at a time. */
+function titleLines(page: Page) {
+  return page.getByRole('heading', { level: 1 }).evaluate((h1) => {
+    const lines: { top: number; text: string }[] = []
+    const walker = document.createTreeWalker(h1, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.textContent ?? ''
+      for (let i = 0; i < text.length; i++) {
+        if (!text[i].trim()) continue
+        const range = document.createRange()
+        range.setStart(node, i)
+        range.setEnd(node, i + 1)
+        const top = Math.round(range.getBoundingClientRect().top)
+        const line = lines.find((l) => Math.abs(l.top - top) < 4)
+        if (line) line.text += text[i]
+        else lines.push({ top, text: text[i] })
+      }
+    }
+    return lines.sort((a, b) => a.top - b.top).map((l) => l.text)
+  })
+}
+
+// T84: on a narrow phone the title never leaves one character alone on a line.
+for (const [width, height] of [[320, 568], [360, 780], [375, 667], [390, 844], [430, 932]]) {
+  test(`${width}×${height}: every line of the title has at least two characters (T84)`, async ({ browser }) => {
+    const page = await openAt(browser, width, height, PORTAL)
+    await page.evaluate(() => document.fonts.ready)
+    const lines = await titleLines(page)
+    expect(lines.join('')).toBe('內科上班順起來:內科順路共乘')
+    for (const line of lines) expect([...line].length, lines.join(' / ')).toBeGreaterThanOrEqual(2)
+    // Each half stays whole, so it must still fit: no sideways scroll, the title inside the window.
+    await noSideScroll(page)
+    const box = (await page.getByRole('heading', { level: 1 }).boundingBox())!
+    expect(box.x + box.width).toBeLessThanOrEqual(width)
+    await page.context().close()
+  })
+}
+
+test('1440×900: the title is one line, as before (T84)', async ({ browser }) => {
+  const page = await openAt(browser, 1440, 900, PORTAL)
+  await page.evaluate(() => document.fonts.ready)
+  expect(await titleLines(page)).toEqual(['內科上班順起來:內科順路共乘'])
+  await page.context().close()
+})
